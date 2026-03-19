@@ -22,6 +22,6 @@ dist/
 
 ## License
 
-[BSL 1.1](LICENSE) — Business Source License. Converts to MIT on 2029-03-18.
+[BSL 1.1](LICENSE) — Business Source License. Converts to MIT on 2027-09-18.
 
-[Gravicity](https://gravicity.ai) · [soma.gravicity.ai](https://soma.gravicity.ai)
+[meetsoma](https://soma.gravicity.ai) · [soma.gravicity.ai](https://soma.gravicity.ai)
