@@ -1,0 +1,13 @@
+{
+  "name": "soma-beta-runtime",
+  "version": "0.6.0",
+  "description": "Soma compiled runtime — the AI agent that remembers",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.58.3",
+    "@mariozechner/pi-ai": "^0.58.3",
+    "@mariozechner/pi-tui": "^0.58.3"
+  },
+  "license": "BSL-1.1"
+}
