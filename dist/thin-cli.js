@@ -767,7 +767,12 @@ async function delegateToCore() {
 
   const env = {
     ...process.env,
+    // Pi reads ENV_AGENT_DIR dynamically based on APP_NAME from piConfig.
+    // With piConfig.name="soma", Pi looks for SOMA_CODING_AGENT_DIR.
+    // Without piConfig (raw pi binary), it looks for PI_CODING_AGENT_DIR.
+    // Set BOTH so delegation works regardless of piConfig load order.
     PI_CODING_AGENT_DIR: CORE_DIR,
+    SOMA_CODING_AGENT_DIR: CORE_DIR,
     // Override Pi's package dir so it reads piConfig from soma-beta's package.json
     // This gives us APP_NAME="soma", CONFIG_DIR_NAME=".soma" → project .soma/ paths
     PI_PACKAGE_DIR: CORE_DIR,
