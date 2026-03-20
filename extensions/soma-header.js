@@ -1,0 +1,14 @@
+/**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: curtis@meetsoma.com
+ */
+
+var M=Object.defineProperty;var a=(i,m)=>M(i,"name",{value:m,configurable:!0});import{existsSync as p}from"fs";import{join as l}from"path";import{findSomaDir as A,hasPreload as I,hasIdentity as P,discoverProtocols as R}from"../core/index.js";function v(i){i.on("session_start",async(m,d)=>{d.ui.setHeader((w,h)=>({invalidate(){},dispose(){},render(u){let o="\x1B[0m",s=h.getColorMode()==="truecolor",r=s?"\x1B[1;38;2;124;156;255m":"\x1B[1;38;5;111m",x=s?"\x1B[38;2;90;120;200m":"\x1B[38;5;68m",b=s?"\x1B[38;2;200;180;140m":"\x1B[38;5;180m",t=s?"\x1B[38;2;120;130;150m":"\x1B[38;5;245m",n=s?"\x1B[38;2;80;85;100m":"\x1B[38;5;240m",f=`${r}\u03C3\u1FF6\u03BC\u03B1${o}`,g=`${b}the body that grows around you${o}`,$=A(),e=[];if($){P($)&&e.push(`${r}\u25CF${o} ${t}identity${o}`),I($)&&e.push(`${r}\u25CF${o} ${t}preload${o}`),(p(l($.path,"amps"))||p(l($.path,"memory")))&&e.push(`${r}\u25CF${o} ${t}memory${o}`);let c=R($);c.length>0&&e.push(`${r}\u25CF${o} ${t}${c.length} protocols${o}`)}e.length===0&&e.push(`${n}\u25CB empty \u2014 will grow${o}`);let y=e.join(`${n}  \xB7  ${o}`),D=`${n}esc${o}${t} interrupt${o}  ${n}ctrl+l${o}${t} clear${o}  ${n}/${o}${t} commands${o}  ${n}!${o}${t} bash${o}`,E=`${x}${"\u2500".repeat(Math.min(u-2,50))}${o}`;return["",`  ${f}  ${n}\xB7${o}  ${g}`,`  ${y}`,`  ${D}`,`  ${E}`,""]}}))})}a(v,"somaHeaderExtension");export{v as default};
