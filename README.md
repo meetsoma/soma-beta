@@ -1,27 +1,56 @@
-# Soma Beta Runtime
+<div align="center">
 
-Compiled runtime for [Soma](https://soma.gravicity.ai) — the AI agent that remembers.
+<br>
 
-This repo contains the obfuscated runtime that `soma init` downloads. You don't need to interact with it directly.
+### σ
 
-## Install
+**You don't need to be here.**
+
+<br>
+
+This is Soma's compiled runtime — the body that `soma init` downloads.
+<br>
+It's not meant to be read. It's meant to be *lived in*.
+
+<br>
 
 ```bash
 npm install -g meetsoma
 soma
 ```
 
-## What's Here
+<br>
 
-```
-dist/
-  core/index.js         — compiled core modules
-  extensions/soma-*.js  — compiled extensions
-  content/protocols/    — readable protocol files
-```
+If you're reading source code, you want the [agent repo](https://github.com/meetsoma/soma-agent).
+<br>
+If you're browsing patterns, you want the [community hub](https://github.com/meetsoma/community).
+<br>
+If you're just curious, start at [soma.gravicity.ai](https://soma.gravicity.ai).
 
-## License
+<br>
 
-[BSL 1.1](LICENSE) — Business Source License. Converts to MIT on 2027-09-18.
+---
 
-[meetsoma](https://soma.gravicity.ai) · [soma.gravicity.ai](https://soma.gravicity.ai)
+<br>
+
+#### What's in here
+
+Obfuscated extensions, compiled core, bundled protocols.
+<br>
+The skeleton. The machinery. The part that runs so the part that *thinks* can focus.
+
+Every `.soma/` directory in the world starts from this repo.
+<br>
+By session two, no two of them look the same.
+
+<br>
+
+---
+
+<br>
+
+<sub>BSL 1.1 © Curtis Mercier — open source 2030</sub>
+
+<br>
+
+</div>
