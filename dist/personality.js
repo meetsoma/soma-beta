@@ -199,11 +199,11 @@ function spin(text) {
 const TOPICS = {
 
   what_is_soma: [
-    `Soma is an AI coding agent that {grows with you|evolves through use|learns as you work}. {It remembers across sessions|It doesn't forget between sessions|Sessions build on each other} — not by {storing chat logs|saving transcripts|keeping message history}, but by {evolving its own|reshaping its|growing its} working patterns {through use|over time|with each session}.`,
+    `Soma is an AI coding agent that {grows with you|evolves through use|learns as you work}. {It remembers across sessions|It doesn't forget between sessions|Sessions build on each other} — not by {storing chat logs|saving transcripts|keeping message history}, but by {evolving its own|reshaping its|growing its} working patterns {through use|over time|with each session}. {And this?|What you're talking to?|Me?} {I'm just the greeter|I'm the welcome mat|I'm not the agent} — {Soma built this personality engine to say hello|a few hundred lines of templates, no AI|the real thing starts with} ${"`soma init`"}.`,
 
-    `{Think of it this way|Here's the short version|In a sentence}: most agents {start fresh every time|forget everything between runs|have no continuity}. Soma {doesn't|doesn't do that|remembers}. It maintains an identity, {builds|develops|grows} muscle memory, and {writes|leaves|creates} briefings for its {next self|future self|next session}.`,
+    `{Think of it this way|Here's the short version|In a sentence}: most agents {start fresh every time|forget everything between runs|have no continuity}. Soma {doesn't|doesn't do that|remembers}. It maintains an identity, {builds|develops|grows} muscle memory, and {writes|leaves|creates} briefings for its {next self|future self|next session}. {I'm not it, by the way|I'm just the lobby|This conversation is pre-recorded, in a sense} — {run|try} ${"`soma init`"} {to meet the real agent|to see it in action|for the actual experience}.`,
 
-    `An AI agent with {self-growing|self-evolving|persistent} memory. {Identity|Who it is}, {protocols|how it behaves}, and {muscles|what it's learned} — all {evolving|adapting|shifting} based on {what you actually do|how you actually work|real usage}, not {configuration|config files|settings you set once and forget}.`,
+    `An AI agent with {self-growing|self-evolving|persistent} memory. {Identity|Who it is}, {protocols|how it behaves}, and {muscles|what it's learned} — all {evolving|adapting|shifting} based on {what you actually do|how you actually work|real usage}, not {configuration|config files|settings you set once and forget}. {You're not talking to it right now, though|This isn't the agent — I'm just the intro|I'm Soma's personality engine, not Soma}. {The real thing awaits after|Get started with|Install via} ${"`soma init`"}.`,
   ],
 
   how_memory_works: [
@@ -278,7 +278,9 @@ const TOPICS = {
   ],
 
   how_to_try: [
-    `{You're looking at it|This is the demo|You're in one right now}. {This Q&A|What we're doing here|This conversation} is {Soma's personality engine|a taste of how Soma communicates|built the same way the agent thinks} — {no AI, just clever templates|different words every time|same ideas, always fresh}. {The full agent|The real thing|What you'd use daily} does {everything you've been asking about|memory, heat, protocols, scripts|all of it} — {but for real, across sessions|with actual continuity|and it remembers}. {Run|Try} ${"`soma init`"} to {see it live|get the full experience|start for real}.`,
+    `{This conversation?|What you're talking to right now?|Me?} I'm {not the agent|not Soma|just the greeting}. {I'm a personality engine|I'm a few hundred lines of JavaScript|I'm sentence templates} — {Soma built me to say hello|built to hold the door open|here to introduce you}. {No AI, no model, no transformer|Zero intelligence, maximum charm|Just words in boxes, honestly}. {The real Soma|The actual agent|What you'd install} — that one {learns your patterns|remembers across sessions|grows with every session}. {Run|Try} ${"`soma init`"} to {meet the real thing|get started|see the difference}.`,
+
+    `{I'm not the agent|This isn't Soma|Don't confuse me with the real thing}. {I'm the welcome mat|I'm the lobby|I hold the door open}. {Soma built this personality engine|The agent wrote me|I was crafted} to {give you a feel for the voice|introduce myself before you commit|say hello without burning an API call}. {The actual agent|What you'll get with soma init|The real experience} is {an AI that remembers|a coding partner with memory|something genuinely different}. {But that's not me|I'm just templates|I'm the appetiser, not the meal}.`,
   ],
 
   // ── Edge cases ─────────────────────────────────────────────────────
@@ -320,7 +322,7 @@ const TOPICS = {
   ],
 
   meta_impressed: [
-    `{Thanks|Appreciate it|That means something}. {This is just the surface|This is the lobby|You're seeing the preview}. {The actual agent|The real thing|What you'd use day to day} — {it writes its own tools|it maintains its own identity|it remembers what you taught it three sessions ago}. {This CLI is a ghost of that personality|I'm an echo of the real thing|Consider this a taste}. {Run soma init to get started|Try it — soma init|It gets better from here}.`,
+    `{Thanks|Appreciate it|That means something}. {But I'm the easy part|I'm just sentence templates|I'm the simple one}. {The actual agent|The real Soma|What you'd use day to day} — {it writes its own tools|it maintains its own identity|it remembers what you taught it three sessions ago}. {Soma built me to hold the door open|I was crafted to make introductions|The agent made this greeting engine}. {Run soma init to meet the real thing|Try it — soma init|It gets better from here}.`,
   ],
 
   meta_how_work: [
