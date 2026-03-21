@@ -49,7 +49,7 @@ By session two, no two of them look the same.
 
 <br>
 
-<sub>BSL 1.1 © Curtis Mercier — open source 2030</sub>
+<sub>BSL 1.1 © Curtis Mercier — open source 2027</sub>
 
 <br>
 
