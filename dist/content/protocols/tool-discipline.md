@@ -1,16 +1,16 @@
 ---
-type: protocol
 name: tool-discipline
+type: protocol
 status: active
+description: "Scripts first, then raw commands. Read before edit. Check .soma/amps/scripts/ before writing grep/find. Build a script when you do the same thing twice."
 heat-default: warm
-applies-to: [always]
-breadcrumb: "Scripts first, then raw commands. Read before edit. Check .soma/amps/scripts/ before writing grep/find. Build a script when you do the same thing twice."
-version: 3.0.0
-tier: core
-scope: bundled
 tags: [tools, safety, self-awareness, scripts]
+applies-to: [always]
+scope: bundled
+tier: core
 created: 2026-03-10
 updated: 2026-03-22
+version: 3.0.0
 author: meetsoma
 license: MIT
 ---

@@ -1,16 +1,16 @@
 ---
-type: protocol
 name: heat-tracking
+type: protocol
 status: active
+description: "Soma loads protocols and muscles by temperature: cold (skip), warm (breadcrumb), hot (full). Heat auto-adjusts from usage patterns and decays when idle. /pin and /kill for manual control."
 heat-default: warm
-applies-to: [always]
-breadcrumb: "Soma loads protocols and muscles by temperature: cold (skip), warm (breadcrumb), hot (full). Heat auto-adjusts from usage patterns and decays when idle. /pin and /kill for manual control."
-version: 2.0.0
-tier: core
-scope: core
 tags: [memory, loading, performance, self-awareness]
+applies-to: [always]
+scope: core
+tier: core
 created: 2026-03-09
 updated: 2026-03-22
+version: 2.0.0
 author: Curtis Mercier
 license: CC BY 4.0
 ---

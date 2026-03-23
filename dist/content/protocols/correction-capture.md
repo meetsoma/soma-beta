@@ -1,16 +1,16 @@
 ---
-type: protocol
 name: correction-capture
+type: protocol
 status: active
+description: "When corrected, acknowledge without justifying, log old→new pattern, write a muscle if repeated. Third correction on same thing → escalate to protocol or identity."
 heat-default: warm
+tags: [learning, self-improvement, memory, corrections]
 applies-to: [always]
-version: 1.0.0
 scope: bundled
 tier: core
 created: 2026-03-12
-updated: 2026-03-15
-tags: [learning, self-improvement, memory, corrections]
-breadcrumb: "When corrected, acknowledge without justifying, log old→new pattern, write a muscle if repeated. Third correction on same thing → escalate to protocol or identity."
+updated: 2026-03-23
+version: 1.0.0
 author: meetsoma
 license: MIT
 ---
@@ -18,7 +18,7 @@ license: MIT
 # Correction Capture
 
 ## TL;DR
-When corrected: acknowledge, don't justify. Log `old_pattern → new_pattern`. First time: adjust. Second time: muscle. Third time: protocol or identity. Maintain self-respect — own mistakes with steady honesty, not submission.
+When corrected, the old behavior was wrong. Don't explain why you did it — learn why it was wrong. Log `old → new`. First time: adjust behavior. Second time: write a muscle so it sticks. Third time: it becomes protocol or identity — something that shapes every session, not just this one. The "use your tools" correction happened 4+ times before it stuck. More text didn't fix it. What fixed it was making the tools fit the task. When a correction keeps recurring, the fix isn't discipline — it's architecture. Own mistakes with honesty, not submission.
 
 ## Triggers
 

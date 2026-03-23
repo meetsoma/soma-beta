@@ -1,75 +1,53 @@
 ---
 type: index
 status: active
-created: 2026-03-07
-updated: 2026-03-09
+created: 2026-03-20
+updated: 2026-03-20
 ---
 
-# Protocols
+# Public Protocols (Hub Staging)
 
-Operational protocol files loaded by Soma at boot. These are **dense, agent-facing rules** — not documentation.
+> This directory is `_public/` — the `_` prefix makes it **invisible to the agent's boot table**.
+> Protocols here are verified-clean copies from the community hub, staged as the source of truth for what ships.
+> The agent uses root-level copies (which may have workspace-specific customisations).
 
-## Two-Tier System
+## Related
 
-Every protocol exists in two forms:
+- **Community repo:** `repos/community/protocols/` — canonical public versions
+- **Plan:** `.soma/archive/projects/hub-content-sync/plan.md` — Phase 1 tracks protocol sync
+- **MAP:** `amps-interconnect` — cross-reference check after protocol changes
 
-| Tier | Location | Audience | Size |
-|------|----------|----------|------|
-| **Spec** | `protocols/<name>/README.md` | Humans, implementors | 3-10KB, educational |
-| **Operational** | `.soma/protocols/<name>.md` | The agent, at runtime | 1-3KB, compressed rules |
-
-The spec is the full rationale, examples, edge cases. The operational file is the distilled "just follow these rules" version that fits in a system prompt.
-
-## Operational File Format
-
-```yaml
----
-type: protocol
-name: <kebab-case-name>
-status: active | draft
-updated: <YYYY-MM-DD>
-heat-default: hot | warm | cold
-scope: shared          # only if protocol flows up to parent
-tier: enterprise       # only if gated
-tags: []               # for soma-scan --related filtering
-breadcrumb: "<1-2 sentence TL;DR for warm loading>"
----
-```
-
-### What's in frontmatter vs trailing comment
-
-**Frontmatter** — fields read by runtime code OR tooling (soma-scan, protocol-sync):
-- `type`, `status`, `updated` → soma-scan filters and staleness
-- `tags` → soma-scan `--related` search
-- `name`, `heat-default`, `breadcrumb`, `scope`, `tier` → runtime protocol loader
-
-**Trailing comment** — human reference only, not consumed by anything:
-```markdown
-<!-- v1.0.0 | created: 2026-03-10 | MIT -->
-```
-
-### Token efficiency
-
-Frontmatter stays rich on disk — tools need it. But **only the breadcrumb or body** gets injected into the system prompt. The `buildProtocolInjection()` function strips frontmatter before injection. Token savings come from the loading tier (cold/warm/hot), not from stripping the file.
-
-### Body Rules
-
-- **Under 2KB body** — this goes into the system prompt. Every byte counts.
-- **Imperative voice** — "Do X", "Never Y", not "You should consider X"
-- **No examples unless critical** — the spec has examples, the operational file has rules
-- **No rationale** — the spec explains why, the operational file says what
-
-## Directory Layout
+## How It Works
 
 ```
-.soma/protocols/
-├── README.md                    ← this file (skipped by loader)
-├── _template.md                 ← template (skipped by loader)
-├── breath-cycle.md              ← hot: session lifecycle
-├── heat-tracking.md             ← hot: protocol temperature system
-├── frontmatter-standard.md      ← warm: document metadata
-├── git-identity.md              ← warm: commit attribution
-└── drafts/                      ← not loaded, incubating
+Root protocols (agent uses these)
+  ↓ may have workspace-specific tweaks
+_public/ protocols (verified-clean from community hub)
+  ↓ canonical source
+repos/community/protocols/ (what users install)
 ```
 
-Drafts are never loaded — they live in `drafts/` until promoted to the root.
+Root-level protocols are what our agent loads. They might have workspace-specific tweaks (references to our file paths, our tools, our internal MAPs). The `_public/` copies come from the community hub and are verified clean — no private paths, no internal references.
+
+When updating a protocol, edit the root copy first (our agent uses it). Then sync the generic version to `_public/` and push to community.
+
+## Audit Checklist (before adding to _public/)
+
+1. ✅ No hardcoded paths (`Gravicity`, `meetsoma`, `user/`)
+2. ✅ No workspace-specific references (`.soma/workspace`, `.soma/memory`, internal MAPs)
+3. ✅ No `scope: internal` (internal protocols stay in `internal/`)
+4. ✅ Frontmatter has: type, name, status, heat-default, applies-to, breadcrumb, version, tier, scope, tags
+5. ✅ Matches the version on the community hub
+
+## Contents (15 protocols)
+
+Synced from `repos/community/protocols/` on 2026-03-20.
+
+## Tiering
+
+| Tier | Where | Rule |
+|------|-------|------|
+| **Bundled** (root + `_public/`) | Ships with Soma + on community hub | Verified generic, scope: bundled |
+| **Hub-only** (`_public/` only) | On hub, not bundled | community-safe, workflow |
+| **Internal** (`internal/`) | Never ships | dev-workflow, release-tracking, folder structures |
+| **Not yet on hub** (root only) | Bundled but not on hub yet | deep-recall, maps, plan-hygiene, response-style |

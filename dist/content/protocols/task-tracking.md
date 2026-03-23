@@ -1,20 +1,20 @@
 ---
-type: protocol
 name: task-tracking
+type: protocol
 status: active
+description: "One board: .soma/_kanban.md. Move cards in real time. Verify on exhale. A stale board is worse than no board."
 heat-default: warm
-applies-to: [always]
-breadcrumb: "One board: .soma/_kanban.md. Move cards in real time. Verify on exhale. A stale board is worse than no board."
-author: Curtis Mercier
-license: CC BY 4.0
-version: 1.0.0
-upstream: core
-upstream-version: 1.0.0
-tier: core
-scope: bundled
 tags: [workflow, planning, continuity, kanban]
+applies-to: [always]
+scope: bundled
+tier: core
 created: 2026-03-12
 updated: 2026-03-12
+version: 1.0.0
+author: Curtis Mercier
+license: CC BY 4.0
+upstream: core
+upstream-version: 1.0.0
 ---
 
 # Task Tracking Protocol

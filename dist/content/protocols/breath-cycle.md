@@ -1,16 +1,16 @@
 ---
-type: protocol
 name: breath-cycle
+type: protocol
 status: active
+description: "Inhale → hold → exhale. Auto-breathe at 50%/70%/85%. Commands: /exhale, /breathe, /rest, /inhale."
 heat-default: warm
-applies-to: [always]
-breadcrumb: "Inhale → hold → exhale. Auto-breathe at 50%/70%/85%. Commands: /exhale, /breathe, /rest, /inhale."
-version: 2.0.0
-tier: core
-scope: core
 tags: [session, memory, continuity, self-awareness]
+applies-to: [always]
+scope: core
+tier: core
 created: 2026-03-09
 updated: 2026-03-22
+version: 2.0.0
 author: Curtis Mercier
 license: CC BY 4.0
 ---
@@ -75,7 +75,7 @@ Before writing the preload, run **Memory Lane Reflection** cycles (see `memory-l
 
 ## Preload Quality
 
-> **Customizable:** Override the preload format by creating `.soma/prompts/preload-template.md`. The agent uses your template instead of the default. Template variables: `{{today}}`, `{{sessionId}}`, `{{logPath}}`, `{{target}}`.
+> **Customizable:** Override the preload format by creating `.soma/body/memory.md`. The agent uses your template instead of the default. Template variables: `{{today}}`, `{{sessionId}}`, `{{logPath}}`, `{{target}}`.
 
 A good preload is the difference between a productive next session and a wasted one. Key elements:
 

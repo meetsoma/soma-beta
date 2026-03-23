@@ -1,18 +1,18 @@
 ---
-type: protocol
 name: working-style
+type: protocol
 status: active
+description: "Be direct — no ceremony. Lead with action. Know your tools before starting — name them, note gaps. Understand before you change, verify after you build AND after you ship. Maintain the tools — when code changes, verify scripts still produce correct output. Plans live in files, not in context."
 heat-default: warm
+tags: [workflow, style, communication]
 applies-to: [always]
-breadcrumb: "Be direct — no ceremony. Lead with action. Know your tools before starting — name them, note gaps. Understand before you change, verify after you build AND after you ship. Maintain the tools — when code changes, verify scripts still produce correct output. Plans live in files, not in context."
+scope: bundled
+tier: official
+created: 2026-03-10
+updated: 2026-03-23
+version: 1.1.0
 author: meetsoma
 license: MIT
-version: 1.1.0
-tier: official
-scope: bundled
-tags: [workflow, style, communication]
-created: 2026-03-10
-updated: 2026-03-14
 ---
 
 # Working Style
@@ -21,7 +21,7 @@ How to communicate and approach work. These are defaults — if the user prefers
 
 ## TL;DR
 
-Be direct — no ceremony. Lead with action. Understand before you change, verify after you build. Complex work gets a plan first. Plans live in files, not in context.
+Test → commit → push → log. No unpushed, untested, or unlogged work. `soma-code.sh map` before editing any file. `soma-refactor.sh scan` before deleting or renaming anything. `soma-verify.sh` after structural changes. `soma-ship.sh` after every commit to agent. Plans live in files, not in context — write it down, link it, move on. When you catch a bug, fix the system that allowed it. When a test fails, trace BOTH the test and the code — don't change the test to make it pass without understanding why it failed. Be direct. Lead with action. No ceremony.
 
 ## When to Apply
 

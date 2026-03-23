@@ -1,16 +1,16 @@
 ---
-type: protocol
 name: detection-triggers
+type: protocol
 status: active
+description: "Capture on corrections, preferences, 3+ patterns, knowledge gaps. Bubble-up: log → muscle → protocol → core."
 heat-default: warm
+tags: [learning, self-improvement, memory, awareness]
 applies-to: [always]
-version: 1.0.0
+scope: bundled
+tier: core
 created: 2026-03-12
 updated: 2026-03-14
-tags: [learning, self-improvement, memory, awareness]
-tier: core
-scope: bundled
-breadcrumb: "Capture on corrections, preferences, 3+ patterns, knowledge gaps. Bubble-up: log → muscle → protocol → core."
+version: 1.0.0
 author: Curtis Mercier
 license: CC BY 4.0
 ---
