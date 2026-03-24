@@ -156,7 +156,22 @@ if (args[0] === "focus") {
 	process.exit(0);
 }
 
-if (args[0] === "inhale") {
+if (args[0] === "init" || args[0] === "content" || args[0] === "install" || args[0] === "list") {
+	// soma init / soma content init / soma install / soma list
+	// Route to content-cli for project scaffolding and hub operations
+	const contentArgs = args[0] === "content" ? args.slice(1) : args;
+	try {
+		const core = await import("./core/index.js");
+		if (core.handleContentCommand) {
+			const handled = await core.handleContentCommand(contentArgs);
+			if (handled) process.exit(0);
+		}
+	} catch {
+		// content-cli not available
+	}
+	// Fall through to main if not handled
+	main(args);
+} else if (args[0] === "inhale") {
 	// soma inhale — fresh session WITH preload from last session
 	process.env.SOMA_INHALE = "1";
 	main(args.slice(1));

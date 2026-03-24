@@ -813,7 +813,18 @@ if (cmd === "--version" || cmd === "-v" || cmd === "-V") {
 } else if (cmd === "about") {
   await showAbout();
 } else if (cmd === "init") {
-  await initSoma();
+  // If runtime is installed AND (has --template/--orphan args OR no .soma/ in cwd),
+  // route to project init via content-cli instead of runtime install
+  const hasProjectArgs = args.includes("--template") || args.includes("--orphan") || args.includes("-o");
+  const runtimeInstalled = isInstalled();
+  const hasSomaDir = existsSync(join(process.cwd(), ".soma"));
+  
+  if (runtimeInstalled && (hasProjectArgs || !hasSomaDir)) {
+    // Delegate to content-cli for project init
+    await delegateToCore();
+  } else {
+    await initSoma();
+  }
 } else if (cmd === "update") {
   checkForUpdates();
 } else if (cmd === "doctor") {
