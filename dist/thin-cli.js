@@ -8,7 +8,7 @@
  * For returning users: detects installed runtime → delegates to it.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, statSync } from "fs";
 import { join, dirname } from "path";
 import { homedir, platform } from "os";
 import { fileURLToPath } from "url";
@@ -469,27 +469,64 @@ async function apiKeyGetOne() {
   await apiKeyEntry();
 }
 
+function readSecret(prompt) {
+  return new Promise(resolve => {
+    process.stdout.write(prompt);
+    if (!process.stdin.isTTY) { resolve(""); return; }
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf-8");
+    let buf = "";
+    const onData = chunk => {
+      for (const ch of chunk) {
+        if (ch === "\r" || ch === "\n") {
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+          process.stdin.removeListener("data", onData);
+          process.stdout.write("\n");
+          resolve(buf);
+          return;
+        } else if (ch === "\u007F" || ch === "\b") {
+          // Backspace
+          if (buf.length > 0) {
+            buf = buf.slice(0, -1);
+            process.stdout.write("\b \b");
+          }
+        } else if (ch === "\u0003") {
+          // Ctrl+C
+          process.stdout.write("\n");
+          process.exit(0);
+        } else if (ch >= " ") {
+          buf += ch;
+          process.stdout.write("•");
+        }
+      }
+    };
+    process.stdin.on("data", onData);
+  });
+}
+
 async function apiKeyEntry() {
   console.log("");
   console.log(`  ${cyan("Step 2:")} Paste your key below.`);
-  console.log(`  ${dim("It starts with sk-ant-... and won't be shown on screen.")}`);
+  console.log(`  ${dim("It starts with")} sk-ant-...`);
   console.log("");
 
-  // Read the key (won't echo in raw mode... but readLine does echo)
-  // For now, just have them paste it and we'll write it to their shell config
-  const apiKey = await readLine(`  ${dim("Key:")} `);
+  const apiKey = await readSecret(`  ${dim("Key:")} `);
 
   if (!apiKey || !apiKey.startsWith("sk-")) {
     console.log("");
-    console.log(`  ${yellow("!")} That doesn't look like an Anthropic key.`);
-    console.log(`  ${dim("Keys start with")} sk-ant-...`);
+    if (!apiKey) {
+      console.log(`  ${dim("No key entered. You can set it up later.")}`);
+    } else {
+      console.log(`  ${yellow("!")} That doesn't look like an Anthropic key.`);
+      console.log(`  ${dim("Keys start with")} sk-ant-...`);
+    }
     console.log("");
-    console.log(`  ${dim("You can set it manually later:")}`);
     const sc = getShellConfigPath();
-    console.log(`    ${dim("1.")} Open ${dim(sc)}`);
-    console.log(`    ${dim("2.")} Add: ${green('export ANTHROPIC_API_KEY="your-key-here"')}`);
-    console.log(`    ${dim("3.")} Restart your terminal`);
-    console.log(`    ${dim("4.")} Run ${green("soma")} again`);
+    console.log(`  ${dim("When you have your key, add it to")} ${dim(sc)}${dim(":")}`);
+    console.log(`    ${green('export ANTHROPIC_API_KEY="your-key-here"')}`);
+    console.log(`  ${dim("Then restart your terminal and run")} ${green("soma")}`);
     console.log("");
     return;
   }
@@ -500,8 +537,7 @@ async function apiKeyEntry() {
   const exportLine = `\nexport ANTHROPIC_API_KEY="${apiKey}"\n`;
 
   try {
-    const fs = await import("fs");
-    fs.appendFileSync(shellConfigPath, exportLine);
+    appendFileSync(shellConfigPath, exportLine);
     console.log("");
     console.log(`  ${green("✓")} Key saved to ${dim(shellConfigName)}`);
     console.log("");
@@ -516,6 +552,7 @@ async function apiKeyEntry() {
     console.log(`  ${yellow("!")} Couldn't write to ${dim(shellConfigName)}.`);
     console.log(`  ${dim("Add this line manually:")}`);
     console.log(`    ${green(`export ANTHROPIC_API_KEY="${apiKey}"`)}`);
+    console.log(`  ${dim("Then restart your terminal and run")} ${green("soma")}`);
     console.log("");
   }
 }
@@ -529,6 +566,8 @@ async function oauthGuide() {
   console.log("");
   await typeOut(`  ${voice.spin("{Let's launch.|Starting up.|Here we go.}")}\n`);
   console.log("");
+  // Mark that user chose OAuth so we don't block launch
+  process.env._SOMA_OAUTH_PENDING = "1";
 }
 
 // ── Welcome / First Run ─────────────────────────────────────────────
@@ -561,8 +600,8 @@ async function showWelcome() {
 
       await apiKeySetup();
 
-      // If they set a key, launch. If not, exit gracefully.
-      if (!hasAnyAuth() && !process.env.ANTHROPIC_API_KEY) {
+      // If they set a key or chose OAuth, launch. If not, exit gracefully.
+      if (!hasAnyAuth() && !process.env.ANTHROPIC_API_KEY && !process.env._SOMA_OAUTH_PENDING) {
         console.log(`  ${dim("No worries.")} ${voice.spin("{Come back when you're ready.|Set up a key and run soma again.|We'll be here.}")}`);
         console.log("");
         console.log(`  ${dim(`v${VERSION} · BSL 1.1 · soma.gravicity.ai`)}`);
@@ -603,8 +642,8 @@ async function showWelcome() {
     await apiKeySetup();
   }
 
-  // If they have auth now, offer to launch
-  if (isInstalled() && (hasAnyAuth() || process.env.ANTHROPIC_API_KEY)) {
+  // If they have auth now (or chose OAuth), offer to launch
+  if (isInstalled() && (hasAnyAuth() || process.env.ANTHROPIC_API_KEY || process.env._SOMA_OAUTH_PENDING)) {
     console.log(`  ${dim("─".repeat(58))}`);
     console.log("");
     const launch = await confirmYN(`  ${voice.spin("{Ready to go?|Want to start your first session?|Launch Soma?}")}`);
