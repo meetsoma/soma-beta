@@ -377,6 +377,162 @@ function getGitHubUsername() {
 
 // ── Commands ─────────────────────────────────────────────────────────
 
+// ── Auth helpers ─────────────────────────────────────────────────────
+
+function hasAnyAuth() {
+  const hasEnvKey = !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.XAI_API_KEY);
+  if (hasEnvKey) return true;
+  try {
+    const authData = JSON.parse(readFileSync(join(CORE_DIR, "auth.json"), "utf-8"));
+    return Object.keys(authData).length > 0;
+  } catch { return false; }
+}
+
+function getShellConfigPath() {
+  return process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
+}
+
+function getShellConfigAbsPath() {
+  const home = homedir();
+  return process.env.SHELL?.includes("zsh") ? join(home, ".zshrc") : join(home, ".bashrc");
+}
+
+function detectKeyInShellConfig() {
+  // Check if key is in shell config but not loaded (user hasn't restarted terminal)
+  try {
+    const configContent = readFileSync(getShellConfigAbsPath(), "utf-8");
+    const keyPattern = /export\s+(ANTHROPIC_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY)=/;
+    const match = configContent.match(keyPattern);
+    if (match) return match[1];
+  } catch {}
+  return null;
+}
+
+// ── API key setup wizard ─────────────────────────────────────────────
+
+async function apiKeySetup() {
+  console.log(`  ${yellow("!")} One more thing — Soma needs an AI provider to work.`);
+  console.log("");
+  await typeOut(`  ${voice.spin("{Do you have an Anthropic API key?|Got a Claude API key?|Have an API key for Claude?}")}\n`);
+  console.log("");
+  console.log(`    ${green("y")}  ${dim("Yes, I have a key")}`);
+  console.log(`    ${green("n")}  ${dim("No, I need one")}`);
+  console.log(`    ${green("s")}  ${dim("I have a Claude Pro/Max subscription")}`);
+  console.log(`    ${green("?")}  ${dim("What's an API key?")}`);
+  console.log("");
+
+  const key = await waitForKey(`  ${dim("→")} `);
+  const choice = key.toLowerCase();
+
+  if (choice === "y") {
+    await apiKeyEntry();
+  } else if (choice === "s") {
+    await oauthGuide();
+  } else if (choice === "?") {
+    await apiKeyExplain();
+  } else {
+    await apiKeyGetOne();
+  }
+}
+
+async function apiKeyExplain() {
+  console.log("");
+  await typeParagraph("An API key is like a password that lets Soma talk to an AI model. You get one from Anthropic (the company that makes Claude), paste it into your terminal config, and Soma handles the rest. Your key stays on your machine — Soma never sends it anywhere.");
+  console.log("");
+  await typeParagraph("If you have a Claude Pro or Max subscription, you don't need a separate key — you can log in with your account instead.");
+  console.log("");
+
+  console.log(`    ${green("g")}  ${dim("Get a key (I'll show you how)")}`);
+  console.log(`    ${green("s")}  ${dim("I have Claude Pro/Max — log in instead")}`);
+  console.log("");
+
+  const key = await waitForKey(`  ${dim("→")} `);
+  if (key.toLowerCase() === "s") {
+    await oauthGuide();
+  } else {
+    await apiKeyGetOne();
+  }
+}
+
+async function apiKeyGetOne() {
+  console.log("");
+  await typeOut(`  ${voice.spin("{Here's how.|Let me walk you through it.|Quick steps.}")}\n`);
+  console.log("");
+  console.log(`  ${cyan("Step 1:")} Open this link to create a key:`);
+  console.log("");
+  console.log(`    ${cyan("https://console.anthropic.com/settings/keys")}`);
+  console.log("");
+  openBrowser("https://console.anthropic.com/settings/keys");
+  console.log(`    ${dim("(opened in your browser)")}`);
+  console.log("");
+  await confirm(`  ${dim("→")} Press ${bold("Enter")} when you have your key`);
+  await apiKeyEntry();
+}
+
+async function apiKeyEntry() {
+  console.log("");
+  console.log(`  ${cyan("Step 2:")} Paste your key below.`);
+  console.log(`  ${dim("It starts with sk-ant-... and won't be shown on screen.")}`);
+  console.log("");
+
+  // Read the key (won't echo in raw mode... but readLine does echo)
+  // For now, just have them paste it and we'll write it to their shell config
+  const apiKey = await readLine(`  ${dim("Key:")} `);
+
+  if (!apiKey || !apiKey.startsWith("sk-")) {
+    console.log("");
+    console.log(`  ${yellow("!")} That doesn't look like an Anthropic key.`);
+    console.log(`  ${dim("Keys start with")} sk-ant-...`);
+    console.log("");
+    console.log(`  ${dim("You can set it manually later:")}`);
+    const sc = getShellConfigPath();
+    console.log(`    ${dim("1.")} Open ${dim(sc)}`);
+    console.log(`    ${dim("2.")} Add: ${green('export ANTHROPIC_API_KEY="your-key-here"')}`);
+    console.log(`    ${dim("3.")} Restart your terminal`);
+    console.log(`    ${dim("4.")} Run ${green("soma")} again`);
+    console.log("");
+    return;
+  }
+
+  // Write to shell config
+  const shellConfigPath = getShellConfigAbsPath();
+  const shellConfigName = getShellConfigPath();
+  const exportLine = `\nexport ANTHROPIC_API_KEY="${apiKey}"\n`;
+
+  try {
+    const fs = await import("fs");
+    fs.appendFileSync(shellConfigPath, exportLine);
+    console.log("");
+    console.log(`  ${green("✓")} Key saved to ${dim(shellConfigName)}`);
+    console.log("");
+
+    // Set it for the current process too so we can launch immediately
+    process.env.ANTHROPIC_API_KEY = apiKey;
+
+    await typeOut(`  ${voice.spin("{You're all set.|Good to go.|Ready.}")} ${dim("Soma can start now.")}\n`);
+    console.log("");
+  } catch {
+    console.log("");
+    console.log(`  ${yellow("!")} Couldn't write to ${dim(shellConfigName)}.`);
+    console.log(`  ${dim("Add this line manually:")}`);
+    console.log(`    ${green(`export ANTHROPIC_API_KEY="${apiKey}"`)}`);
+    console.log("");
+  }
+}
+
+async function oauthGuide() {
+  console.log("");
+  await typeParagraph("Nice — with a Pro or Max subscription, you can log in with your Anthropic account. No API key needed.");
+  console.log("");
+  console.log(`  ${dim("When Soma starts, type")} ${green("/login")} ${dim("and follow the prompts.")}`);
+  console.log(`  ${dim("It'll open your browser to authenticate.")}`);
+  console.log("");
+  await typeOut(`  ${voice.spin("{Let's launch.|Starting up.|Here we go.}")}\n`);
+  console.log("");
+}
+
+// ── Welcome / First Run ─────────────────────────────────────────────
+
 async function showWelcome() {
   printSigma();
   console.log(`  ${bold("Soma")} ${dim("—")} ${white("the AI agent that remembers")}`);
@@ -389,35 +545,75 @@ async function showWelcome() {
     if (ghUser) {
       console.log(`  ${green("✓")} ${voice.greetBack(ghUser)}`);
     }
-    console.log(`  ${green("✓")} Core installed. Starting Soma...`);
+
+    if (!hasAnyAuth()) {
+      console.log(`  ${green("✓")} Core installed`);
+      console.log("");
+
+      // Check if key exists in shell config but isn't loaded
+      const unloadedKey = detectKeyInShellConfig();
+      if (unloadedKey) {
+        console.log(`  ${yellow("!")} Found ${bold(unloadedKey)} in ${dim(getShellConfigPath())} but it's not loaded.`);
+        console.log(`  ${dim("Restart your terminal and run")} ${green("soma")} ${dim("again.")}`);
+        console.log("");
+        return;
+      }
+
+      await apiKeySetup();
+
+      // If they set a key, launch. If not, exit gracefully.
+      if (!hasAnyAuth() && !process.env.ANTHROPIC_API_KEY) {
+        console.log(`  ${dim("No worries.")} ${voice.spin("{Come back when you're ready.|Set up a key and run soma again.|We'll be here.}")}`);
+        console.log("");
+        console.log(`  ${dim(`v${VERSION} · BSL 1.1 · soma.gravicity.ai`)}`);
+        console.log("");
+        return;
+      }
+    } else {
+      console.log(`  ${green("✓")} Core installed. Starting Soma...`);
+    }
     console.log("");
     await delegateToCore();
     return;
   }
 
-  // Not installed — guided setup flow
-  const concept = CONCEPTS[getConceptIndex()];
-  const body = getConceptBody(concept.topic);
+  // ── Not installed — first time ever ────────────────────────────────
 
-  console.log(`  ${magenta("❝")} ${bold(concept.title)}`);
+  await typeOut(`  ${voice.greet()}\n`);
   console.log("");
-  await typeParagraph(body);
+  await typeParagraph("Soma is an AI coding agent that remembers across sessions. It learns your patterns, builds its own tools, and picks up where it left off.");
   console.log("");
   console.log(`  ${dim("─".repeat(58))}`);
   console.log("");
-  console.log(`  ${dim("→")} Press ${green("Enter")} to set up Soma, or type a question.`);
+  console.log(`  ${dim("→")} Press ${green("Enter")} to set up, or type a question.`);
   console.log("");
 
-  const input = await readLine(`  ${dim("Your move:")} `);
+  const input = await readLine(`  ${dim("→")} `);
 
   if (input && input !== "") {
-    // User typed something — treat as a question, then offer setup
     await handleQuestion(input);
     await interactiveQ();
   }
 
-  // Proceed to install (whether they asked questions first or just pressed Enter)
+  // Install the runtime
   await initSoma();
+
+  // If install succeeded, run the API key setup
+  if (isInstalled() && !hasAnyAuth()) {
+    await apiKeySetup();
+  }
+
+  // If they have auth now, offer to launch
+  if (isInstalled() && (hasAnyAuth() || process.env.ANTHROPIC_API_KEY)) {
+    console.log(`  ${dim("─".repeat(58))}`);
+    console.log("");
+    const launch = await confirmYN(`  ${voice.spin("{Ready to go?|Want to start your first session?|Launch Soma?}")}`);
+    if (launch) {
+      console.log("");
+      await delegateToCore();
+      return;
+    }
+  }
 
   console.log("");
   console.log(`  ${dim(`v${VERSION} · BSL 1.1 · soma.gravicity.ai`)}`);
@@ -530,43 +726,56 @@ async function initSoma() {
     && existsSync(join(installDir, ".git"))
     && (existsSync(join(installDir, "dist", "extensions")) || existsSync(join(installDir, "extensions")));
 
+  // Track user files to preserve across repair/reinstall
+  let preservedFiles = {};
+
   if (existsSync(installDir) && !isValidInstall) {
-    // Broken/partial install — ask before replacing
-    console.log(`  ${yellow("⚠")} Incomplete installation detected at ${dim("~/.soma/agent/")}`);
-    console.log(`    ${dim("Missing:")} ${!existsSync(join(installDir, ".git")) ? ".git (not a git repo)" : "dist/ core files"}`);
+    // Broken/partial install — try to repair, preserve user files
+    console.log(`  ${yellow("⚠")} Incomplete installation detected.`);
+    console.log(`    ${dim("Missing:")} ${!existsSync(join(installDir, ".git")) ? "git repo" : "core files"}`);
     console.log("");
 
-    // Check for any user-created files (beyond what git clone would produce)
-    let hasCustomFiles = false;
-    try {
-      const entries = readdirSync(installDir);
-      const expectedFiles = [".git", "dist", "extensions", "core", "node_modules", "package.json", "package-lock.json", "README.md", "LICENSE", ".gitignore", "auth.json", "models.json", "piConfig.json"];
-      const custom = entries.filter(f => !expectedFiles.includes(f));
-      hasCustomFiles = custom.length > 0;
-      if (hasCustomFiles) {
-        console.log(`    ${yellow("Custom files found:")} ${custom.slice(0, 5).join(", ")}${custom.length > 5 ? ` (+${custom.length - 5} more)` : ""}`);
-      } else {
-        console.log(`    ${dim("No custom files detected — safe to replace.")}`);
+    // Save user files before touching anything
+    const userFileNames = ["auth.json", "models.json"];
+    for (const f of userFileNames) {
+      const fp = join(installDir, f);
+      if (existsSync(fp)) {
+        try {
+          preservedFiles[f] = readFileSync(fp, "utf-8");
+          console.log(`  ${dim("→")} Preserving ${f}`);
+        } catch {}
       }
-    } catch {}
-
-    console.log("");
-    const shouldReplace = await confirmYN(`  ${dim("→")} Replace core files and re-install?`);
-    if (!shouldReplace) {
-      console.log("");
-      console.log(`  ${dim("Skipped. To fix manually:")}`);
-      console.log(`    ${green("rm -rf ~/.soma/agent && soma init")}`);
-      console.log("");
-      return;
     }
 
-    try {
-      execSync(`rm -rf "${installDir}"`, { stdio: "ignore" });
-    } catch {
-      console.log(`  ${red("✗")} Could not remove broken install at ${dim(installDir)}`);
-      console.log(`  ${dim("Try manually:")} rm -rf ~/.soma/agent && soma init`);
-      console.log("");
-      return;
+    // Try repair: if it's a git repo, fetch + reset. Otherwise move aside for fresh clone.
+    const hasGit = existsSync(join(installDir, ".git"));
+    let repaired = false;
+
+    if (hasGit) {
+      console.log(`  ${yellow("⏳")} Repairing...`);
+      try {
+        execSync("git fetch origin", { cwd: installDir, stdio: "ignore", timeout: 30000 });
+        execSync("git reset --hard origin/main", { cwd: installDir, stdio: "ignore" });
+        console.log(`  ${green("✓")} Repaired from remote`);
+        repaired = true;
+      } catch {
+        console.log(`  ${yellow("!")} Repair failed — will re-download.`);
+      }
+    }
+
+    if (!repaired) {
+      // Move broken dir aside (never delete), then clone will happen below
+      const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const backup = join(SOMA_HOME, `agent-backup-${ts}`);
+      try {
+        execSync(`mv "${installDir}" "${backup}"`, { stdio: "ignore" });
+        console.log(`  ${dim("Old files saved to")} ${dim(backup.replace(homedir(), "~"))}`);
+      } catch {
+        console.log(`  ${red("✗")} Could not move old installation aside.`);
+        console.log(`  ${dim("Try:")} mv ~/.soma/agent ~/.soma/agent-old && soma init`);
+        console.log("");
+        return;
+      }
     }
   }
 
@@ -612,6 +821,16 @@ async function initSoma() {
     }
   }
 
+  // Restore preserved user files (from broken install repair)
+  if (Object.keys(preservedFiles).length > 0) {
+    for (const [f, content] of Object.entries(preservedFiles)) {
+      try {
+        writeFileSync(join(installDir, f), content, { mode: 0o600 });
+        console.log(`  ${green("✓")} Restored ${f}`);
+      } catch {}
+    }
+  }
+
   // Verify — gate success on actual working install
   const hasExts = existsSync(join(installDir, "dist", "extensions"));
   const hasCore = existsSync(join(installDir, "dist", "core"));
@@ -635,30 +854,6 @@ async function initSoma() {
 
   console.log("");
   console.log(`  ${green("✓")} ${bold("Soma is installed!")}`);
-  console.log("");
-
-  // API key check — guide the user if not set
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.log(`  ${yellow("⚠")} ${bold("API key needed")} — Soma uses Claude via your Anthropic key.`);
-    console.log("");
-    console.log(`  ${cyan("1.")} Get a key at ${cyan("https://console.anthropic.com/settings/keys")}`);
-    console.log(`  ${cyan("2.")} Add to your shell config:`);
-    console.log("");
-    console.log(`     ${green('export ANTHROPIC_API_KEY="sk-ant-..."')}`);
-    console.log("");
-    const shellConfig = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
-    console.log(`     ${dim(`Add that line to ${shellConfig}, then restart your terminal.`)}`);
-    console.log("");
-    console.log(`  ${dim("─".repeat(58))}`);
-    console.log("");
-  }
-
-  console.log(`  Next steps:`);
-  console.log(`    ${cyan("1.")} ${green("cd <your-project>")}`);
-  console.log(`    ${cyan("2.")} ${green("soma")} to start your first session`);
-  console.log("");
-  console.log(`  Soma will create a ${dim(".soma/")} directory in your project`);
-  console.log(`  and begin learning how you work.`);
   console.log("");
 }
 
@@ -767,16 +962,17 @@ async function doctor() {
     }
   }
 
-  // API key
-  const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
-  warn(hasApiKey,
-    "ANTHROPIC_API_KEY set",
-    "ANTHROPIC_API_KEY not set — needed for sessions"
-  );
-  if (!hasApiKey) {
-    const shellConfig = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
-    console.log(`    ${dim("Get a key:")} ${cyan("https://console.anthropic.com/settings/keys")}`);
-    console.log(`    ${dim("Then add:")} ${green('export ANTHROPIC_API_KEY="sk-ant-..."')} ${dim(`to ${shellConfig}`)}`);
+  // API key (check env + auth.json + shell config)
+  const hasAuth = hasAnyAuth();
+  if (hasAuth) {
+    console.log(`  ${green("✓")} API key configured`);
+  } else {
+    const unloadedKey = detectKeyInShellConfig();
+    if (unloadedKey) {
+      console.log(`  ${yellow("⚠")} ${unloadedKey} found in ${dim(getShellConfigPath())} but not loaded — restart your terminal`);
+    } else {
+      console.log(`  ${yellow("⚠")} No API key — run ${green("soma")} to set one up`);
+    }
   }
 
   // Git
