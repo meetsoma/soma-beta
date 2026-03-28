@@ -515,7 +515,25 @@ async function initSoma() {
   const installDir = join(SOMA_HOME, "agent");
   mkdirSync(SOMA_HOME, { recursive: true });
 
-  if (existsSync(installDir)) {
+  // Validate existing install — check it's a real git repo with dist/ content
+  const isValidInstall = existsSync(installDir) 
+    && existsSync(join(installDir, ".git"))
+    && (existsSync(join(installDir, "dist", "extensions")) || existsSync(join(installDir, "extensions")));
+
+  if (existsSync(installDir) && !isValidInstall) {
+    // Broken/partial install — remove and re-clone
+    console.log(`  ${yellow("⚠")} Incomplete installation detected. Reinstalling...`);
+    try {
+      execSync(`rm -rf "${installDir}"`, { stdio: "ignore" });
+    } catch {
+      console.log(`  ${red("✗")} Could not remove broken install at ${dim(installDir)}`);
+      console.log(`  ${dim("Try manually:")} rm -rf ~/.soma/agent && soma init`);
+      console.log("");
+      return;
+    }
+  }
+
+  if (isValidInstall) {
     console.log(`  ${dim("→")} Runtime already installed.`);
 
     // Pull latest
@@ -557,12 +575,19 @@ async function initSoma() {
     }
   }
 
-  // Verify
+  // Verify — gate success on actual working install
   const hasExts = existsSync(join(installDir, "dist", "extensions"));
   const hasCore = existsSync(join(installDir, "dist", "core"));
-  if (hasExts && hasCore) {
-    console.log(`  ${green("✓")} Extensions and core ready`);
+
+  if (!hasExts || !hasCore) {
+    console.log("");
+    console.log(`  ${red("✗")} Installation incomplete — core files missing.`);
+    console.log(`  ${dim("Try:")} rm -rf ~/.soma/agent && soma init`);
+    console.log("");
+    return;
   }
+
+  console.log(`  ${green("✓")} Extensions and core ready`);
 
   // Save config
   const config = readConfig();
@@ -574,6 +599,23 @@ async function initSoma() {
   console.log("");
   console.log(`  ${green("✓")} ${bold("Soma is installed!")}`);
   console.log("");
+
+  // API key check — guide the user if not set
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log(`  ${yellow("⚠")} ${bold("API key needed")} — Soma uses Claude via your Anthropic key.`);
+    console.log("");
+    console.log(`  ${cyan("1.")} Get a key at ${cyan("https://console.anthropic.com/settings/keys")}`);
+    console.log(`  ${cyan("2.")} Add to your shell config:`);
+    console.log("");
+    console.log(`     ${green('export ANTHROPIC_API_KEY="sk-ant-..."')}`);
+    console.log("");
+    const shellConfig = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
+    console.log(`     ${dim(`Add that line to ${shellConfig}, then restart your terminal.`)}`);
+    console.log("");
+    console.log(`  ${dim("─".repeat(58))}`);
+    console.log("");
+  }
+
   console.log(`  Next steps:`);
   console.log(`    ${cyan("1.")} ${green("cd <your-project>")}`);
   console.log(`    ${cyan("2.")} ${green("soma")} to start your first session`);
@@ -689,10 +731,16 @@ async function doctor() {
   }
 
   // API key
-  warn(!!process.env.ANTHROPIC_API_KEY,
+  const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+  warn(hasApiKey,
     "ANTHROPIC_API_KEY set",
     "ANTHROPIC_API_KEY not set — needed for sessions"
   );
+  if (!hasApiKey) {
+    const shellConfig = process.env.SHELL?.includes("zsh") ? "~/.zshrc" : "~/.bashrc";
+    console.log(`    ${dim("Get a key:")} ${cyan("https://console.anthropic.com/settings/keys")}`);
+    console.log(`    ${dim("Then add:")} ${green('export ANTHROPIC_API_KEY="sk-ant-..."')} ${dim(`to ${shellConfig}`)}`);
+  }
 
   // Git
   try {
