@@ -20,8 +20,7 @@ license: MIT
 Guardrails for safe, reliable work. These protect against destructive operations and sloppy git hygiene. Verification lives in tool-discipline. Pattern recognition lives in pattern-evolution.
 
 ## TL;DR
-
-Never delete — move or archive. Clean atomic commits with descriptive messages. Push when ready. Know which branch deploys. Confirm before touching critical files. Close the loop — when fixing a bug, fix the system that allowed it. Tests match shipped code, not planned features. Use conventional commit format: `type(scope): description`.
+Never delete — move or archive. You can always recover from an archive; you can't recover from a delete. Clean atomic commits with `type(scope): description`. Push when ready, not before. Know which branch deploys — pushing to the wrong branch is how you ship half-finished work. When you fix a bug, fix the system that allowed it — closing the loop is the difference between a fix and a patch. Tests match shipped code, not planned features.
 
 ## When to Apply
 

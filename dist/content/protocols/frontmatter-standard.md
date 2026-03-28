@@ -21,7 +21,7 @@ spec-ref: curtismercier/protocols/atlas (v0.1)
 # Frontmatter Standard Protocol
 
 ## TL;DR
-Every `.md` file needs YAML frontmatter: `type`, `status`, `created`, `updated`. Protocols get `## TL;DR`; muscles get `<!-- digest:start/end -->`.
+Frontmatter is how Soma discovers and classifies your content. Every `.md` file needs at minimum: `type`, `status`, `created`, `updated`. Without it, the file is invisible to heat tracking, boot discovery, and the hub. Protocols get a `## TL;DR` section (that's what loads into the prompt). Muscles get `<!-- digest:start/end -->` blocks (compact summary for warm loading). Skip this and your content silently disappears from the system.
 
 ## Rule
 

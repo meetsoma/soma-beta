@@ -20,11 +20,9 @@ export class BashExecutionComponent extends Container {
     fullOutputPath;
     expanded = false;
     contentContainer;
-    ui;
     constructor(command, ui, excludeFromContext = false) {
         super();
         this.command = command;
-        this.ui = ui;
         // Use dim border for excluded-from-context commands (!! prefix)
         const colorKey = excludeFromContext ? "dim" : "bashMode";
         const borderColor = (str) => theme.fg(colorKey, str);
@@ -109,10 +107,25 @@ export class BashExecutionComponent extends Container {
                 this.contentContainer.addChild(new Text(`\n${displayText}`, 1, 0));
             }
             else {
-                // Use shared visual truncation utility
+                // Use shared visual truncation utility with width-aware caching
                 const styledOutput = previewLogicalLines.map((line) => theme.fg("muted", line)).join("\n");
-                const { visualLines } = truncateToVisualLines(`\n${styledOutput}`, PREVIEW_LINES, this.ui.terminal.columns, 1);
-                this.contentContainer.addChild({ render: () => visualLines, invalidate: () => { } });
+                const styledInput = `\n${styledOutput}`;
+                let cachedWidth;
+                let cachedLines;
+                this.contentContainer.addChild({
+                    render: (width) => {
+                        if (cachedLines === undefined || cachedWidth !== width) {
+                            const result = truncateToVisualLines(styledInput, PREVIEW_LINES, width, 1);
+                            cachedLines = result.visualLines;
+                            cachedWidth = width;
+                        }
+                        return cachedLines ?? [];
+                    },
+                    invalidate: () => {
+                        cachedWidth = undefined;
+                        cachedLines = undefined;
+                    },
+                });
             }
         }
         // Loader or status

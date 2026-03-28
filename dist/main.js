@@ -19,12 +19,13 @@ import { exportFromFile } from "./core/export-html/index.js";
 import { migrateKeybindingsConfigFile } from "./core/keybindings.js";
 import { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope } from "./core/model-resolver.js";
+import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
 import { DefaultResourceLoader } from "./core/resource-loader.js";
 import { createAgentSession } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { printTimings, time } from "./core/timings.js";
+import { printTimings, resetTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
@@ -368,15 +369,12 @@ function forkSessionOrExit(sourcePath, cwd, sessionDir) {
         process.exit(1);
     }
 }
-async function createSessionManager(parsed, cwd, extensions) {
+async function createSessionManager(parsed, cwd, extensions, settingsManager) {
     if (parsed.noSession) {
         return SessionManager.inMemory();
     }
-    // CLI flag takes precedence, otherwise ask extensions for custom session directory
-    let effectiveSessionDir = parsed.sessionDir;
-    if (!effectiveSessionDir) {
-        effectiveSessionDir = await callSessionDirectoryHook(extensions, cwd);
-    }
+    // Priority: CLI flag > settings.json > extension hook
+    const effectiveSessionDir = parsed.sessionDir ?? settingsManager.getSessionDir() ?? (await callSessionDirectoryHook(extensions, cwd));
     if (parsed.fork) {
         const resolved = await resolveSessionPath(parsed.fork, cwd, effectiveSessionDir);
         switch (resolved.type) {
@@ -524,6 +522,7 @@ async function handleConfigCommand(args) {
     process.exit(0);
 }
 export async function main(args) {
+    resetTimings();
     const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
     if (offlineMode) {
         process.env.PI_OFFLINE = "1";
@@ -535,10 +534,16 @@ export async function main(args) {
     if (await handleConfigCommand(args)) {
         return;
     }
-    // Run migrations (pass cwd for project-local migrations)
-    const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
     // First pass: parse args to get --extension paths
     const firstPass = parseArgs(args);
+    time("parseArgs.firstPass");
+    const shouldTakeOverStdout = firstPass.mode !== undefined || firstPass.print || !process.stdin.isTTY;
+    if (shouldTakeOverStdout) {
+        takeOverStdout();
+    }
+    // Run migrations (pass cwd for project-local migrations)
+    const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
+    time("runMigrations");
     // Early load extensions to discover their CLI flags
     const cwd = process.cwd();
     const agentDir = getAgentDir();
@@ -561,6 +566,7 @@ export async function main(args) {
         systemPrompt: firstPass.systemPrompt,
         appendSystemPrompt: firstPass.appendSystemPrompt,
     });
+    time("createResourceLoader");
     await resourceLoader.reload();
     time("resourceLoader.reload");
     const extensionsResult = resourceLoader.getExtensions();
@@ -587,6 +593,7 @@ export async function main(args) {
     }
     // Second pass: parse args with extension flags
     const parsed = parseArgs(args, extensionFlags);
+    time("parseArgs.secondPass");
     // Pass flag values to extensions via runtime
     for (const [name, value] of parsed.unknownFlags) {
         extensionsResult.runtime.flagValues.set(name, value);
@@ -613,6 +620,7 @@ export async function main(args) {
             parsed.print = true;
         }
     }
+    time("readPipedStdin");
     if (parsed.export) {
         let result;
         try {
@@ -628,15 +636,23 @@ export async function main(args) {
         process.exit(0);
     }
     migrateKeybindingsConfigFile(agentDir);
+    time("migrateKeybindingsConfigFile");
     if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
         console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
         process.exit(1);
     }
     validateForkFlags(parsed);
     const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize(), stdinContent);
+    time("prepareInitialMessage");
     const isInteractive = !parsed.print && parsed.mode === undefined;
+    const startupBenchmark = isTruthyEnvFlag(process.env.PI_STARTUP_BENCHMARK);
+    if (startupBenchmark && !isInteractive) {
+        console.error(chalk.red("Error: PI_STARTUP_BENCHMARK only supports interactive mode"));
+        process.exit(1);
+    }
     const mode = parsed.mode || "text";
     initTheme(settingsManager.getTheme(), isInteractive);
+    time("initTheme");
     // Show deprecation warnings in interactive mode
     if (isInteractive && deprecationWarnings.length > 0) {
         await showDeprecationWarnings(deprecationWarnings);
@@ -646,12 +662,16 @@ export async function main(args) {
     if (modelPatterns && modelPatterns.length > 0) {
         scopedModels = await resolveModelScope(modelPatterns, modelRegistry);
     }
+    time("resolveModelScope");
     // Create session manager based on CLI flags
-    let sessionManager = await createSessionManager(parsed, cwd, extensionsResult);
+    let sessionManager = await createSessionManager(parsed, cwd, extensionsResult, settingsManager);
+    time("createSessionManager");
     // Handle --resume: show session picker
     if (parsed.resume) {
         // Compute effective session dir for resume (same logic as createSessionManager)
-        const effectiveSessionDir = parsed.sessionDir || (await callSessionDirectoryHook(extensionsResult, cwd));
+        const effectiveSessionDir = parsed.sessionDir ??
+            settingsManager.getSessionDir() ??
+            (await callSessionDirectoryHook(extensionsResult, cwd));
         const selectedPath = await selectSession((onProgress) => SessionManager.list(cwd, effectiveSessionDir, onProgress), SessionManager.listAll);
         if (!selectedPath) {
             console.log(chalk.dim("No session selected"));
@@ -673,6 +693,7 @@ export async function main(args) {
         authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
     }
     const { session, modelFallbackMessage } = await createAgentSession(sessionOptions);
+    time("createAgentSession");
     if (!isInteractive && !session.model) {
         console.error(chalk.red("No models available."));
         console.error(chalk.yellow("\nSet an API key environment variable:"));
@@ -696,6 +717,7 @@ export async function main(args) {
         }
     }
     if (mode === "rpc") {
+        printTimings();
         await runRpcMode(session);
     }
     else if (isInteractive) {
@@ -708,8 +730,7 @@ export async function main(args) {
                 .join(", ");
             console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
         }
-        printTimings();
-        const mode = new InteractiveMode(session, {
+        const interactiveMode = new InteractiveMode(session, {
             migratedProviders,
             modelFallbackMessage,
             initialMessage,
@@ -717,20 +738,37 @@ export async function main(args) {
             initialMessages: parsed.messages,
             verbose: parsed.verbose,
         });
-        await mode.run();
+        if (startupBenchmark) {
+            await interactiveMode.init();
+            time("interactiveMode.init");
+            printTimings();
+            interactiveMode.stop();
+            stopThemeWatcher();
+            if (process.stdout.writableLength > 0) {
+                await new Promise((resolve) => process.stdout.once("drain", resolve));
+            }
+            if (process.stderr.writableLength > 0) {
+                await new Promise((resolve) => process.stderr.once("drain", resolve));
+            }
+            return;
+        }
+        printTimings();
+        await interactiveMode.run();
     }
     else {
-        await runPrintMode(session, {
+        printTimings();
+        const exitCode = await runPrintMode(session, {
             mode,
             messages: parsed.messages,
             initialMessage,
             initialImages,
         });
         stopThemeWatcher();
-        if (process.stdout.writableLength > 0) {
-            await new Promise((resolve) => process.stdout.once("drain", resolve));
+        restoreStdout();
+        if (exitCode !== 0) {
+            process.exitCode = exitCode;
         }
-        process.exit(0);
+        return;
     }
 }
 //# sourceMappingURL=main.js.map

@@ -19,7 +19,7 @@ license: CC BY 4.0
 > How Soma persists state across sessions using git. Auto-commit and diff-on-boot are built into the boot extension — this protocol helps you understand and configure it. Editing this file won't change the checkpoint behavior.
 
 ## TL;DR
-Two git tracks: `.soma/` auto-commits on exhale (diff-on-boot), project code gets checkpoint commits (squash before push). Settings: `checkpoints.*`.
+Two git tracks run in parallel. `.soma/` auto-commits on exhale — that's how boot sees what changed between sessions (the diff in the boot message). Project code gets regular checkpoint commits as you work — squash them before pushing. This means you can commit freely during a session without worrying about messy history. Settings: `checkpoints.*`.
 
 ## How It Works
 

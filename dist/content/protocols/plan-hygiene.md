@@ -15,7 +15,7 @@ applies-to: [always]
 # Plan Hygiene Protocol
 
 ## TL;DR
-Plans rot. Frontmatter needs `status`, `remaining`, `tooling`. Empty remaining = complete → archive. Budget: ≤12 active. Use `soma-plans.sh`. Verify on exhale.
+You've seen plans rot — three sessions of drift and suddenly 48 plans exist and 12 are stale. Every plan needs `status`, `remaining`, `tooling` in frontmatter. If remaining is empty, archive it — it's done. Keep ≤12 active plans or you'll stop reading them. Verify plans on exhale. The moment a plan stops being useful, kill it or archive it. Dead plans are worse than no plans because they create false confidence.
 
 ## The Problem
 

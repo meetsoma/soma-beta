@@ -20,8 +20,7 @@ updated: 2026-03-22
 > How Soma enforces git attribution. This behavior is built into `soma-guard.ts` — editing this file won't change the enforcement. This protocol helps you understand and configure it.
 
 ## TL;DR
-
-Soma's guard extension checks `git config user.email` on every `git commit`. If the email doesn't match `settings.guard.gitIdentity.email`, you get a warning. Configure your expected identity in settings.json — per-project or global.
+The guard watches your git commits. If the email doesn't match what's in `settings.guard.gitIdentity.email`, you get a warning before it goes through. This prevents committing as the wrong identity — especially in multi-project setups where global and project git configs conflict. Set your expected email(s) in settings.json once and forget about it.
 
 ## How It Works
 

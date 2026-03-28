@@ -19,7 +19,7 @@ license: CC BY 4.0
 > How Soma decides what to load into your context. The heat system is built into the boot extension — this protocol helps you understand what's happening and how to tune it. Editing this file won't change the heat system's behavior.
 
 ## TL;DR
-Cold (0-2): skipped. Warm (3-7): TL;DR only. Hot (8+): full body. Heat decays each session, bumps on use. `/pin` heats, `/kill` drops to 0.
+Heat decides what loads into your brain each session. Cold (0-2) content is skipped entirely — you won't see it. Warm (3-7) loads just the TL;DR summary. Hot (8+) loads the full body. Heat decays each session you don't use something, and bumps when you do. This means your prompt naturally evolves: frequently-used content stays visible, stale content fades. `/pin` forces something hot. `/kill` drops it to 0 immediately.
 
 ## How It Works
 

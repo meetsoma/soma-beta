@@ -19,7 +19,7 @@ spec-ref: curtismercier/protocols/amp (v0.2, §3.2)
 # Pattern Evolution Protocol
 
 ## TL;DR
-Maturation: Skills → Muscles → Protocols → Automations. Born from gaps and repeated friction. Not every pattern climbs the full ladder.
+Patterns mature: a skill you use once becomes a muscle after the third time, a protocol after you build a system around it, an automation when it should run without thinking. Not everything climbs the full ladder — most patterns stay as muscles. The signal to promote is friction: if you keep reaching for the same muscle and wishing it did more, it's ready to grow. If you keep forgetting to run something, it's ready to become automatic.
 
 ## The Maturation Layers
 

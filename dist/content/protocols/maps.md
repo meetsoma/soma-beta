@@ -16,8 +16,7 @@ scope: bundled
 # MAPS — My Automation Protocol Scripts
 
 ## TL;DR
-
-MAPS are the agent's navigation layer. Before starting any task, check if a MAP exists. A MAP tells you which muscles to load, which protocols to follow, which scripts to run, and in what order. MAPS reference AMPS content by name — they don't repeat it. Every MAP has a Gaps section. Refine on every use. Build a new MAP after the second time you do something manually. Load MAPs with `soma --map <name>` or let `soma focus <keyword>` find relevant MAPs automatically. MAP usage is tracked programmatically (`runs:` and `last-run:` update on each load).
+Read the MAP before starting. Not skim — **read**. The MAP has scar tissue from sessions where you made the exact mistake you're about to make. It tells you which muscles to load, which scripts to run, and in what order. The Gaps section is the most honest part — it's where the MAP admits what it doesn't handle yet. Refine the MAP every time you use it. Build a new one after the second time you do something manually. `soma focus <keyword>` finds relevant MAPs. When you feel confident enough to skip the MAP, that's exactly when you need it most.
 
 ## Why
 

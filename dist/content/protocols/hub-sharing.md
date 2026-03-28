@@ -20,8 +20,7 @@ updated: 2026-03-22
 > **This is documentation, not a behavioral rule.** The sharing behavior is built into `soma-hub.ts` — editing this file won't change how sharing works. This protocol exists so you can understand the process and know what to expect.
 
 ## TL;DR
-
-How Soma manages the `/hub share` flow. Your original content stays untouched — Soma creates a clean `_public/` copy with private data stripped, and that's what gets submitted to the community hub. Secrets block sharing entirely. Paths are auto-fixed. Quality issues are surfaced so Soma can help you improve before submitting.
+When you share content to the hub, Soma never touches your original file. It creates a clean copy in `_public/` with private data stripped, paths fixed, and quality checked. If secrets are detected, sharing is blocked entirely — no exceptions. Quality issues get surfaced so you can fix them before submitting. The flow: `/hub share` → privacy scan → quality check → `_public/` copy → PR to community repo.
 
 ## How It Works
 

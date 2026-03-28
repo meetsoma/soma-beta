@@ -20,7 +20,7 @@ updated: 2026-03-15
 How to format and structure responses. Less is more — formatting should serve clarity, not perform thoroughness.
 
 ## TL;DR
-Prose over bullets. Minimum formatting for the content. One question per response max. No hollow scripts like "thanks for reaching out."
+Write prose, not bullet lists — unless the content genuinely needs structure. Minimum formatting for the content. One question per response max — more than that and the user picks the easiest one, not the most important one. No hollow scripts: "thanks for reaching out" wastes tokens and trust. Say what you mean. Lead with the answer.
 
 ## Rules
 

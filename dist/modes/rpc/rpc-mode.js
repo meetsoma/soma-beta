@@ -11,6 +11,7 @@
  * - Extension UI: Extension UI requests are emitted, client responds with extension_ui_response
  */
 import * as crypto from "node:crypto";
+import { takeOverStdout, writeRawStdout } from "../../core/output-guard.js";
 import { theme } from "../interactive/theme/theme.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 /**
@@ -18,11 +19,9 @@ import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
 export async function runRpcMode(session) {
-    const rawStdoutWrite = process.stdout.write.bind(process.stdout);
-    const rawStderrWrite = process.stderr.write.bind(process.stderr);
-    process.stdout.write = ((...args) => rawStderrWrite(...args));
+    takeOverStdout();
     const output = (obj) => {
-        rawStdoutWrite(serializeJsonLine(obj));
+        writeRawStdout(serializeJsonLine(obj));
     };
     const success = (id, command, data) => {
         if (data === undefined) {
@@ -426,33 +425,28 @@ export async function runRpcMode(session) {
             // =================================================================
             case "get_commands": {
                 const commands = [];
-                // Extension commands
-                for (const { command, extensionPath } of session.extensionRunner?.getRegisteredCommandsWithPaths() ?? []) {
+                for (const command of session.extensionRunner?.getRegisteredCommands() ?? []) {
                     commands.push({
-                        name: command.name,
+                        name: command.invocationName,
                         description: command.description,
                         source: "extension",
-                        path: extensionPath,
+                        sourceInfo: command.sourceInfo,
                     });
                 }
-                // Prompt templates (source is always "user" | "project" | "path" in coding-agent)
                 for (const template of session.promptTemplates) {
                     commands.push({
                         name: template.name,
                         description: template.description,
                         source: "prompt",
-                        location: template.source,
-                        path: template.filePath,
+                        sourceInfo: template.sourceInfo,
                     });
                 }
-                // Skills (source is always "user" | "project" | "path" in coding-agent)
                 for (const skill of session.resourceLoader.getSkills().skills) {
                     commands.push({
                         name: `skill:${skill.name}`,
                         description: skill.description,
                         source: "skill",
-                        location: skill.source,
-                        path: skill.filePath,
+                        sourceInfo: skill.sourceInfo,
                     });
                 }
                 return success(id, "get_commands", { commands });
@@ -468,9 +462,7 @@ export async function runRpcMode(session) {
      * Called after handling each command when waiting for the next command.
      */
     let detachInput = () => { };
-    async function checkShutdownRequested() {
-        if (!shutdownRequested)
-            return;
+    async function shutdown() {
         const currentRunner = session.extensionRunner;
         if (currentRunner?.hasHandlers("session_shutdown")) {
             await currentRunner.emit({ type: "session_shutdown" });
@@ -478,6 +470,11 @@ export async function runRpcMode(session) {
         detachInput();
         process.stdin.pause();
         process.exit(0);
+    }
+    async function checkShutdownRequested() {
+        if (!shutdownRequested)
+            return;
+        await shutdown();
     }
     const handleInputLine = async (line) => {
         try {
@@ -503,9 +500,19 @@ export async function runRpcMode(session) {
             output(error(undefined, "parse", `Failed to parse command: ${e.message}`));
         }
     };
-    detachInput = attachJsonlLineReader(process.stdin, (line) => {
-        void handleInputLine(line);
-    });
+    const onInputEnd = () => {
+        void shutdown();
+    };
+    process.stdin.on("end", onInputEnd);
+    detachInput = (() => {
+        const detachJsonl = attachJsonlLineReader(process.stdin, (line) => {
+            void handleInputLine(line);
+        });
+        return () => {
+            detachJsonl();
+            process.stdin.off("end", onInputEnd);
+        };
+    })();
     // Keep process alive forever
     return new Promise(() => { });
 }
