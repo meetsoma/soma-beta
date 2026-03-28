@@ -89,6 +89,11 @@ async function confirm(prompt) {
   return true;
 }
 
+async function confirmYN(prompt) {
+  const key = await waitForKey(`${prompt} ${dim("[y/n]")} `);
+  return key.toLowerCase() === "y";
+}
+
 // ── Typing effect ────────────────────────────────────────────────────
 
 function sleep(ms) {
@@ -526,8 +531,35 @@ async function initSoma() {
     && (existsSync(join(installDir, "dist", "extensions")) || existsSync(join(installDir, "extensions")));
 
   if (existsSync(installDir) && !isValidInstall) {
-    // Broken/partial install — remove and re-clone
-    console.log(`  ${yellow("⚠")} Incomplete installation detected. Reinstalling...`);
+    // Broken/partial install — ask before replacing
+    console.log(`  ${yellow("⚠")} Incomplete installation detected at ${dim("~/.soma/agent/")}`);
+    console.log(`    ${dim("Missing:")} ${!existsSync(join(installDir, ".git")) ? ".git (not a git repo)" : "dist/ core files"}`);
+    console.log("");
+
+    // Check for any user-created files (beyond what git clone would produce)
+    let hasCustomFiles = false;
+    try {
+      const entries = readdirSync(installDir);
+      const expectedFiles = [".git", "dist", "extensions", "core", "node_modules", "package.json", "package-lock.json", "README.md", "LICENSE", ".gitignore", "auth.json", "models.json", "piConfig.json"];
+      const custom = entries.filter(f => !expectedFiles.includes(f));
+      hasCustomFiles = custom.length > 0;
+      if (hasCustomFiles) {
+        console.log(`    ${yellow("Custom files found:")} ${custom.slice(0, 5).join(", ")}${custom.length > 5 ? ` (+${custom.length - 5} more)` : ""}`);
+      } else {
+        console.log(`    ${dim("No custom files detected — safe to replace.")}`);
+      }
+    } catch {}
+
+    console.log("");
+    const shouldReplace = await confirmYN(`  ${dim("→")} Replace core files and re-install?`);
+    if (!shouldReplace) {
+      console.log("");
+      console.log(`  ${dim("Skipped. To fix manually:")}`);
+      console.log(`    ${green("rm -rf ~/.soma/agent && soma init")}`);
+      console.log("");
+      return;
+    }
+
     try {
       execSync(`rm -rf "${installDir}"`, { stdio: "ignore" });
     } catch {
