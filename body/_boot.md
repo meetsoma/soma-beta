@@ -6,6 +6,11 @@ description: Boot followUp message — what the agent sees on session start. Cus
 ---
 {{soma_changes}}
 
+{{git_context}}
+
 {{preload}}
 
 {{greeting}}
+
+Session ID: `{{session_id}}`
+{{session_files}}

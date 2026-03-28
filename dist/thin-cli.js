@@ -429,7 +429,10 @@ function showHelp() {
   console.log(`    ${green("soma")}                   Start a session`);
   console.log(`    ${green("soma focus <keyword>")}   Start a focused session`);
   console.log(`    ${green("soma inhale")}            Resume from last session's preload`);
-  console.log(`    ${green("soma --map <name>")}      Load a specific workflow`);
+  console.log(`    ${green("soma inhale <name>")}     Load a specific preload by name`);
+  console.log(`    ${green("soma inhale --list")}     Show available preloads`);
+  console.log(`    ${green("soma map <name>")}        Load a specific workflow (MAP)`);
+  console.log(`    ${green("soma map --list")}        Show available MAPs`);
   console.log("");
   console.log(`  ${bold("Maintenance")}`);
   console.log(`    ${green("soma doctor")}            Verify installation health`);
@@ -836,7 +839,7 @@ if (cmd === "--version" || cmd === "-v" || cmd === "-V") {
   await delegateToCore();
 } else {
   // Check if user typed a known post-install command
-  const postInstallCmds = ["focus", "inhale", "content", "install", "list", "--map", "--preload"];
+  const postInstallCmds = ["focus", "inhale", "content", "install", "list", "map", "--map", "--preload"];
   if (cmd && postInstallCmds.includes(cmd)) {
     printSigma();
     console.log(`  ${bold("soma " + cmd)} requires the Soma runtime.`);

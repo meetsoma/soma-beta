@@ -96,28 +96,41 @@ if (args[0] === "--help" || args[0] === "-h") {
 	process.exit(0);
 }
 
-// ── MAP / Preload targeting ────────────────────────────────────────────
-// soma --map <name>     → boot with MAP's prompt-config + targeted preload
-// soma --preload <name> → alias for --map
-// Writes .soma/.boot-target signal file, consumed by soma-boot.ts
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+const bold = s => `\x1b[1m${s}\x1b[0m`;
+const dim = s => `\x1b[2m${s}\x1b[0m`;
+const cyan = s => `\x1b[36m${s}\x1b[0m`;
+const green = s => `\x1b[32m${s}\x1b[0m`;
+const yellow = s => `\x1b[33m${s}\x1b[0m`;
+const red = s => `\x1b[31m${s}\x1b[0m`;
+
 function writeBootTarget(name) {
 	const targetPath = join(process.cwd(), ".soma", ".boot-target");
 	mkdirSync(join(process.cwd(), ".soma"), { recursive: true });
 	writeFileSync(targetPath, JSON.stringify({ type: "map", name, timestamp: Date.now() }));
 }
 
-// Check for --map or --preload flags before dispatch
+// ── MAP / Preload targeting (flags — backward compat) ──────────────────
+// soma --map <name>     → boot with MAP's prompt-config + targeted preload
+// soma --preload <name> → deprecated alias for --map (use `soma map <name>`)
 let mapTarget = null;
 for (let i = 0; i < args.length; i++) {
-	if ((args[i] === "--map" || args[i] === "--preload") && i + 1 < args.length) {
+	if (args[i] === "--map" && i + 1 < args.length) {
 		mapTarget = args[i + 1];
-		args.splice(i, 2); // Remove flag + value from args
+		args.splice(i, 2);
+		break;
+	}
+	if (args[i] === "--preload" && i + 1 < args.length) {
+		mapTarget = args[i + 1];
+		args.splice(i, 2);
+		console.log(`  ${yellow("⚠")} ${dim("--preload is deprecated. Use:")} ${green("soma map " + mapTarget)} ${dim("(for MAPs) or")} ${green("soma inhale " + mapTarget)} ${dim("(for preloads)")}`);
+		console.log("");
 		break;
 	}
 }
 
 if (mapTarget) {
-	// MAP targeting implies inhale (loads preload + prompt config)
 	process.env.SOMA_INHALE = "1";
 	process.env.SOMA_MAP_TARGET = mapTarget;
 	writeBootTarget(mapTarget);
@@ -156,25 +169,181 @@ if (args[0] === "focus") {
 	process.exit(0);
 }
 
-if (args[0] === "init" || args[0] === "content" || args[0] === "install" || args[0] === "list") {
+// ── soma map <name> — top-level MAP command ────────────────────────────
+// soma map <name>       → run a MAP (same as old --map)
+// soma map --list       → show available MAPs
+// soma map              → show available MAPs (same as --list)
+if (args[0] === "map") {
+	const mapArgs = args.slice(1);
+	const listFlag = mapArgs.includes("--list") || mapArgs.length === 0;
+
+	if (listFlag) {
+		// List available MAPs
+		try {
+			const somaDir = join(process.cwd(), ".soma");
+			const mapDirs = [
+				join(somaDir, "amps", "automations", "maps"),
+				join(somaDir, "amps", "automations"),
+				join(somaDir, "automations", "maps"),
+				join(somaDir, "automations"),
+				join(process.env.HOME || "", ".soma", "amps", "automations", "maps"),
+				join(process.env.HOME || "", ".soma", "amps", "automations"),
+			];
+			const seen = new Set();
+			const maps = [];
+			for (const dir of mapDirs) {
+				if (!existsSync(dir)) continue;
+				const { readdirSync: rd, readFileSync: rf } = await import("fs");
+				for (const f of rd(dir)) {
+					if (!f.endsWith(".md") || seen.has(f)) continue;
+					seen.add(f);
+					const name = f.replace(/\.md$/, "");
+					// Extract status from frontmatter
+					const content = rf(join(dir, f), "utf-8");
+					const statusMatch = content.match(/^status:\s*(.+)/m);
+					const descMatch = content.match(/^description:\s*(.+)/m);
+					maps.push({
+						name,
+						status: statusMatch?.[1]?.trim() || "—",
+						desc: descMatch?.[1]?.trim() || "",
+					});
+				}
+			}
+			if (maps.length === 0) {
+				console.log(`\n  ${dim("No MAPs found.")} Install from hub: ${green("soma install <map-name>")}\n`);
+			} else {
+				console.log(`\n  ${bold("Available MAPs")}\n`);
+				for (const m of maps) {
+					const status = m.status === "active" ? green("●") : dim("○");
+					const desc = m.desc ? dim(` — ${m.desc}`) : "";
+					console.log(`  ${status} ${bold(m.name)}${desc}`);
+				}
+				console.log(`\n  Run: ${green("soma map <name>")} to start a session with a MAP\n`);
+			}
+		} catch {
+			console.log(`\n  ${red("✗")} Could not list MAPs\n`);
+		}
+		process.exit(0);
+	}
+
+	// soma map <name> — run the MAP
+	const name = mapArgs.filter(a => !a.startsWith("-"))[0];
+	if (name) {
+		process.env.SOMA_INHALE = "1";
+		process.env.SOMA_MAP_TARGET = name;
+		writeBootTarget(name);
+		main([]);
+		// Don't exit here — main() handles the session
+	} else {
+		console.log(`  Usage: ${green("soma map <name>")} or ${green("soma map --list")}`);
+		process.exit(1);
+	}
+} else if (args[0] === "init" || args[0] === "content" || args[0] === "install" || args[0] === "list") {
 	// soma init / soma content init / soma install / soma list
 	// Route to content-cli for project scaffolding and hub operations
 	const contentArgs = args[0] === "content" ? args.slice(1) : args;
+	let handled = false;
+	// Try compiled core (co-located with node_modules for package resolution)
+	const agentDir = join(process.env.HOME || "", ".soma", "agent");
+	const compiledCore = join(agentDir, "core-compiled.js");
 	try {
-		const core = await import("./core/index.js");
-		if (core.handleContentCommand) {
-			const handled = await core.handleContentCommand(contentArgs);
-			if (handled) process.exit(0);
+		if (existsSync(compiledCore)) {
+			const core = await import(compiledCore);
+			if (core.handleContentCommand) {
+				handled = await core.handleContentCommand(contentArgs);
+			}
 		}
-	} catch {
-		// content-cli not available
+	} catch (e) {
+		// compiled core not available or failed
 	}
+	if (handled) process.exit(0);
 	// Fall through to main if not handled
 	main(args);
 } else if (args[0] === "inhale") {
-	// soma inhale — fresh session WITH preload from last session
-	process.env.SOMA_INHALE = "1";
-	main(args.slice(1));
+	// ── soma inhale — enhanced preload loading ──────────────────────────
+	// soma inhale                    → load most recent preload (existing)
+	// soma inhale --list             → show available preloads
+	// soma inhale <name>             → partial match by name
+	// soma inhale --load <path>      → load specific file as preload
+	const inhaleArgs = args.slice(1);
+	const listFlag = inhaleArgs.includes("--list");
+	const loadIdx = inhaleArgs.indexOf("--load");
+	const loadPath = loadIdx !== -1 ? inhaleArgs[loadIdx + 1] : null;
+	const nameArg = inhaleArgs.filter(a => !a.startsWith("-") && a !== loadPath)[0];
+
+	if (listFlag) {
+		// List available preloads
+		try {
+			const somaDir = join(process.cwd(), ".soma");
+			if (!existsSync(somaDir)) {
+				console.log(`\n  ${dim("No .soma/ found.")} Run ${green("soma init")} first.\n`);
+				process.exit(0);
+			}
+			const preloadDirs = [
+				join(somaDir, "memory", "preloads"),
+				somaDir,
+				join(somaDir, "memory"),
+			];
+			const seen = new Set();
+			const preloads = [];
+			const { readdirSync: rd, statSync: st } = await import("fs");
+			for (const dir of preloadDirs) {
+				if (!existsSync(dir)) continue;
+				for (const f of rd(dir)) {
+					if (!f.startsWith("preload-") || !f.endsWith(".md") || seen.has(f)) continue;
+					seen.add(f);
+					try {
+						const stat = st(join(dir, f));
+						const ageHours = (Date.now() - stat.mtimeMs) / 3600000;
+						preloads.push({ name: f, path: join(dir, f), ageHours });
+					} catch { /* skip */ }
+				}
+			}
+			preloads.sort((a, b) => a.ageHours - b.ageHours);
+			if (preloads.length === 0) {
+				console.log(`\n  ${dim("No preloads found.")} Run ${green("/exhale")} in a session to create one.\n`);
+			} else {
+				console.log(`\n  ${bold("Available Preloads")}  ${dim(`(stale after 48h)`)}\n`);
+				for (const p of preloads) {
+					const age = p.ageHours;
+					const stale = age > 48;
+					const ageStr = age < 1 ? `${Math.floor(age * 60)}m ago`
+						: age < 24 ? `${Math.floor(age)}h ago`
+						: `${Math.floor(age / 24)}d ago`;
+					const marker = stale ? yellow("⚠") : green("●");
+					const staleTag = stale ? dim(" (stale)") : "";
+					console.log(`  ${marker} ${bold(p.name)}  ${dim(ageStr)}${staleTag}`);
+				}
+				console.log(`\n  Run: ${green("soma inhale <name>")} to load a specific preload`);
+				console.log(`       ${green("soma inhale")} to load the most recent\n`);
+			}
+		} catch (err) {
+			console.log(`\n  ${red("✗")} Could not list preloads: ${err.message}\n`);
+		}
+		process.exit(0);
+	}
+
+	if (loadPath) {
+		// Load a specific file by path
+		const { resolve: resolvePath } = await import("path");
+		const fullPath = resolvePath(loadPath);
+		if (!existsSync(fullPath)) {
+			console.log(`\n  ${red("✗")} File not found: ${fullPath}\n`);
+			process.exit(1);
+		}
+		process.env.SOMA_INHALE = "1";
+		process.env.SOMA_INHALE_PATH = fullPath;
+		main([]);
+	} else if (nameArg) {
+		// Partial name match
+		process.env.SOMA_INHALE = "1";
+		process.env.SOMA_INHALE_TARGET = nameArg;
+		main([]);
+	} else {
+		// Default: load most recent
+		process.env.SOMA_INHALE = "1";
+		main([]);
+	}
 } else {
 	// soma (no subcommand) — fresh session, NO preload
 	main(args);
