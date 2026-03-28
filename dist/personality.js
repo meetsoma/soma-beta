@@ -246,9 +246,9 @@ const TOPICS = {
   // ── Practical / instructional ───────────────────────────────────────
 
   how_to_install: [
-    `{Three steps|Here's the short version|Pretty quick}. {First|Step one}: run ${"`soma init`"} {right here in your terminal|from any directory|from this CLI}. It'll {check your GitHub identity|verify who you are via GitHub|use your GitHub account} and {set everything up|install the runtime|get you running}. {You'll need|Requirements}: {Node.js 20+|Node 20 or newer} and the {GitHub CLI|gh command-line tool} (${"`brew install gh`"} {if you don't have it|on Mac|to get it}). {That's it|Nothing else|No other dependencies}.`,
+    `{Press Enter|Just hit Enter|Enter} and {I'll walk you through it|Soma handles the rest|the setup takes about a minute}. It {downloads the runtime|grabs everything you need|installs automatically}, {sets up your API key|walks you through authentication|helps you connect an AI provider}, and {you're ready to go|you can start right away|launches your first session}. {All you need is|Requirements:} {Node.js 20+|Node 20 or newer} and {git|git installed}. {That's it|Nothing else to do|One flow, start to finish}.`,
 
-    `Run ${"`soma init`"} — {it handles everything|that's the whole process|one command}. It {downloads the runtime|grabs the latest version|pulls everything you need} and {sets up Soma|installs dependencies|gets you running}. {Takes about a minute|Under 60 seconds|Quick}. {Just need|Requirements:} {Node.js 20+|Node 20 or newer} and {git|git installed}.`,
+    `{Hit Enter|Press Enter|Just Enter} — {Soma walks you through everything|the setup is guided|it's step by step}. {Downloads the runtime|Installs the engine|Gets everything ready}, {helps you set up an API key|handles authentication|connects you to an AI provider}, {done in about a minute|quick setup|takes sixty seconds}. {Need|Requirements:} {Node.js 20+|Node 20 or newer} and {git|git installed}.`,
   ],
 
   how_to_source: [
@@ -266,7 +266,7 @@ const TOPICS = {
   ],
 
   how_to_api_key: [
-    `{Yes|You'll need one|Required for sessions}. Soma uses {an LLM provider|an AI model|a language model} under the hood — {Anthropic (Claude)|Claude by default|Anthropic's Claude}, but {also supports|works with} {Google (Gemini)|OpenAI|other providers}. Set {your API key|it} as an environment variable: ${"`export ANTHROPIC_API_KEY=sk-...`"} {before running|in your shell|in your .bashrc/.zshrc}. {The key is yours|You bring your own key|We don't provide one} — {Soma never sees your key|it stays on your machine|nothing gets sent to us}.`,
+    `{Yes|You'll need one|Required}, but {Soma walks you through it|the setup handles it|we'll set it up together} when you install. {You bring your own key|It's your key|You get one from Anthropic} — {Soma stores it locally|it stays on your machine|nothing gets sent to us}. {If you have a Claude Pro or Max subscription|Got a Claude subscription?|Claude Pro/Max users}, you can {log in with your account instead|skip the API key entirely|use OAuth — no key needed}. {Press Enter to get started|Hit Enter and I'll walk you through it|Ready? Just press Enter}.`,
   ],
 
   how_to_model: [
@@ -274,7 +274,7 @@ const TOPICS = {
   ],
 
   how_to_start: [
-    `{Here's the path|Three steps|Quick start}: {1.|First,} run ${"`soma init`"} to {install the runtime|get set up|install everything}. {2.|Then} ${"`cd`"} into {any project|your project|a directory with code}. {3.|Finally,} run ${"`soma`"} — {it creates|Soma creates|it'll make} a ${"`~/.soma/`"} directory, {detects your stack|scans your project|figures out what you're building}, and {starts learning|begins adapting|you're off}. {First session is minimal|Session one is bare|It starts simple}. {By session five|After a few sessions|Give it a week} — {it knows your patterns|it's adapted to how you work|you'll feel the difference}.`,
+    `{Press Enter|Hit Enter|Just Enter} — {Soma handles everything|the setup is guided|I'll walk you through it}. {Installs the runtime|Downloads what you need|Gets everything ready}, {helps you connect an AI provider|sets up your API key|handles auth}, and {you can launch right away|your first session starts immediately|you're coding in about a minute}. After that, {cd into any project|go to a project directory} and run ${"`soma`"} — {it creates a .soma/ directory|Soma sets up in your project} and {starts learning how you work|begins adapting|picks up your patterns}. {By session five|After a few sessions|Give it a week} — {you'll feel the difference|it knows your workflow|it remembers everything}.`,
   ],
 
   how_to_try: [
