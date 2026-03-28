@@ -896,6 +896,119 @@ async function initSoma() {
   console.log("");
 }
 
+async function checkAndUpdate() {
+  printSigma();
+  console.log(`  ${bold("Soma")} — Status`);
+  console.log("");
+
+  const config = readConfig();
+  const installPath = config.installPath || join(SOMA_HOME, "agent");
+
+  // Check current version
+  let currentHash = "";
+  try {
+    currentHash = execSync("git rev-parse --short HEAD", {
+      cwd: installPath, encoding: "utf-8"
+    }).trim();
+    console.log(`  ${green("✓")} Core installed ${dim(`(${currentHash})`)}`);
+  } catch {
+    console.log(`  ${green("✓")} Core installed`);
+  }
+
+  // Check for updates
+  let behind = 0;
+  try {
+    console.log(`  ${yellow("⏳")} Checking for updates...`);
+    execSync("git fetch origin --quiet", { cwd: installPath, stdio: "ignore", timeout: 15000 });
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+      cwd: installPath, encoding: "utf-8"
+    }).trim();
+    const behindStr = execSync(
+      `git rev-list HEAD..origin/${branch} --count`,
+      { cwd: installPath, encoding: "utf-8" }
+    ).trim();
+    behind = parseInt(behindStr) || 0;
+  } catch {
+    console.log(`  ${dim("Could not check for updates.")}`);
+    console.log("");
+    return;
+  }
+
+  if (behind === 0) {
+    console.log(`  ${green("✓")} Already up to date.`);
+    console.log("");
+    console.log(`  ${dim("Soma is set up and ready.")} Run ${green("soma")} ${dim("in a project to start a session.")}`);
+    console.log("");
+    return;
+  }
+
+  console.log(`  ${cyan("⬆")} ${bold(`${behind} update${behind !== 1 ? "s" : ""} available.`)}`);
+  console.log("");
+
+  // Show what changed
+  try {
+    const log = execSync(
+      `git log HEAD..origin/main --oneline --no-decorate -5`,
+      { cwd: installPath, encoding: "utf-8" }
+    ).trim();
+    if (log) {
+      for (const line of log.split("\n")) {
+        console.log(`    ${dim("•")} ${line.slice(8)}`);
+      }
+      if (behind > 5) {
+        console.log(`    ${dim(`...and ${behind - 5} more`)}`);
+      }
+      console.log("");
+    }
+  } catch {}
+
+  const shouldUpdate = await confirmYN(`  ${dim("→")} Update now?`);
+  if (!shouldUpdate) {
+    console.log("");
+    console.log(`  ${dim("Skipped. Run")} ${green("soma init")} ${dim("anytime to update.")}`);
+    console.log("");
+    return;
+  }
+
+  // Pull + reinstall deps
+  console.log("");
+  try {
+    execSync("git pull --ff-only", { cwd: installPath, stdio: "ignore" });
+    console.log(`  ${green("✓")} Updated`);
+  } catch {
+    console.log(`  ${yellow("!")} Pull failed — trying reset...`);
+    try {
+      execSync("git reset --hard origin/main", { cwd: installPath, stdio: "ignore" });
+      console.log(`  ${green("✓")} Updated (reset)`);
+    } catch {
+      console.log(`  ${red("✗")} Update failed.`);
+      console.log(`  ${dim("Try:")} cd ~/.soma/agent && git pull`);
+      console.log("");
+      return;
+    }
+  }
+
+  // Reinstall deps if package.json changed
+  try {
+    const pkgChanged = execSync(
+      `git diff HEAD~${behind} HEAD --name-only -- package.json package-lock.json`,
+      { cwd: installPath, encoding: "utf-8" }
+    ).trim();
+    if (pkgChanged) {
+      console.log(`  ${yellow("⏳")} Updating dependencies...`);
+      execSync("npm install --omit=dev", { cwd: installPath, stdio: ["ignore", "ignore", "inherit"] });
+      console.log(`  ${green("✓")} Dependencies updated`);
+    }
+  } catch {}
+
+  const newHash = execSync("git rev-parse --short HEAD", {
+    cwd: installPath, encoding: "utf-8"
+  }).trim();
+  console.log("");
+  console.log(`  ${green("✓")} ${bold("Soma is up to date")} ${dim(`(${currentHash} → ${newHash})`)}`);
+  console.log("");
+}
+
 function checkForUpdates() {
   printSigma();
   console.log(`  ${bold("Soma")} — Update Check`);
@@ -1136,17 +1249,19 @@ if (cmd === "--version" || cmd === "-v" || cmd === "-V") {
 } else if (cmd === "about") {
   await showAbout();
 } else if (cmd === "init") {
-  // If runtime is installed AND (has --template/--orphan args OR no .soma/ in cwd),
-  // route to project init via content-cli instead of runtime install
   const hasProjectArgs = args.includes("--template") || args.includes("--orphan") || args.includes("-o");
   const runtimeInstalled = isInstalled();
   const hasSomaDir = existsSync(join(process.cwd(), ".soma"));
   
-  if (runtimeInstalled && (hasProjectArgs || !hasSomaDir)) {
-    // Delegate to content-cli for project init
+  if (!runtimeInstalled) {
+    // Not installed — run full install + setup
+    await initSoma();
+  } else if (hasProjectArgs || !hasSomaDir) {
+    // Installed, project init (new project or --template/--orphan)
     await delegateToCore();
   } else {
-    await initSoma();
+    // Installed + .soma/ exists — check for updates, don't re-run setup
+    await checkAndUpdate();
   }
 } else if (cmd === "update") {
   checkForUpdates();
