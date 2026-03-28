@@ -281,6 +281,42 @@ function readLine(prompt) {
   });
 }
 
+async function handleQuestion(input) {
+  const match = matchQuestion(input);
+  if (match) {
+    const answer = voice.ask(match.topic);
+    console.log("");
+    await typeParagraph(answer);
+    return true;
+  }
+
+  // Edge case routing — detect intent even without a topic match
+  const lower = input.toLowerCase();
+  const rude = /suck|stupid|dumb|trash|garbage|hate|worst|bad|ugly|boring|lame|waste/.test(lower);
+  const impressed = /cool|amazing|wow|nice|love|awesome|brilliant|impressive|neat|sick|fire|goat/.test(lower);
+  const meta = /are you|what are you|how do you|who are you|real|alive|ai\b|bot\b/.test(lower);
+  const greeting = /^(hi|hey|hello|sup|yo|howdy|hola|greetings|good morning|good evening)\b/.test(lower);
+
+  console.log("");
+  if (greeting) {
+    await typeOut(`  ${voice.greet()} ${voice.spin("{Ask me anything.|What do you want to know?|I know about 9 topics — pick one.}")}\n`);
+  } else if (rude) {
+    await typeParagraph(voice.ask("meta_rude"));
+  } else if (impressed) {
+    await typeParagraph(voice.ask("meta_impressed"));
+  } else if (meta) {
+    await typeParagraph(voice.ask("meta_self"));
+  } else {
+    // Anything with a question mark → try harder, then admit we don't know
+    if (input.includes("?")) {
+      await typeParagraph(voice.ask("meta_nonsense"));
+    } else {
+      await typeParagraph(voice.ask("meta_nonsense"));
+    }
+  }
+  return false;
+}
+
 async function interactiveQ() {
   console.log("");
   console.log(`  ${bold("Ask me anything.")}`);
@@ -290,7 +326,7 @@ async function interactiveQ() {
   console.log(`    ${dim("•")} Why no compaction?   ${dim("•")} Are you AI?`);
   console.log(`    ${dim("•")} How does it compare? ${dim("•")} Who made this?`);
   console.log("");
-  console.log(`  ${dim("...or ask anything. I'll do my best.")}`);
+  console.log(`  ${dim("...or ask anything. Press")} ${green("Enter")} ${dim("when you're ready to install.")}`);
 
   let rounds = 0;
   const maxRounds = 8;
@@ -299,56 +335,23 @@ async function interactiveQ() {
     console.log("");
     const input = await readLine(`  ${cyan("?")} `);
 
+    // Empty input or quit → exit Q&A, proceed to install
     if (!input || input === "q" || input === "quit" || input === "exit") {
-      console.log("");
-      await typeOut(`  ${voice.say("bye")}\n`);
       break;
     }
 
-    const match = matchQuestion(input);
-    if (match) {
-      const answer = voice.ask(match.topic);
-      console.log("");
-      await typeParagraph(answer);
-      rounds++;
+    await handleQuestion(input);
+    rounds++;
 
-      if (rounds < maxRounds) {
-        console.log("");
-        console.log(`  ${dim("Ask another, or")} ${green("Enter")} ${dim("to install Soma.")}`);
-      }
-    } else {
-      // Edge case routing — detect intent even without a topic match
-      const lower = input.toLowerCase();
-      const rude = /suck|stupid|dumb|trash|garbage|hate|worst|bad|ugly|boring|lame|waste/.test(lower);
-      const impressed = /cool|amazing|wow|nice|love|awesome|brilliant|impressive|neat|sick|fire|goat/.test(lower);
-      const meta = /are you|what are you|how do you|who are you|real|alive|ai\b|bot\b/.test(lower);
-      const greeting = /^(hi|hey|hello|sup|yo|howdy|hola|greetings|good morning|good evening)\b/.test(lower);
-
+    if (rounds < maxRounds) {
       console.log("");
-      if (greeting) {
-        await typeOut(`  ${voice.greet()} ${voice.spin("{Ask me anything.|What do you want to know?|I know about 9 topics — pick one.}")}\n`);
-      } else if (rude) {
-        await typeParagraph(voice.ask("meta_rude"));
-      } else if (impressed) {
-        await typeParagraph(voice.ask("meta_impressed"));
-      } else if (meta) {
-        await typeParagraph(voice.ask("meta_self"));
-      } else {
-        await typeParagraph(voice.ask("meta_nonsense"));
-      }
+      console.log(`  ${dim("Ask another, or")} ${green("Enter")} ${dim("to install Soma.")}`);
     }
   }
 
   if (rounds >= maxRounds) {
     console.log("");
-    await typeOut(`  ${voice.spin("{Curious enough?|Intrigued?|Want to see it in action?}")} ${dim("Let's get you in.")}\n`);
-    console.log("");
-    await confirm(`  ${dim("→")} Press ${bold("Enter")} to install Soma`);
-    if (openBrowser(SITE_URL)) {
-      console.log(`  ${green("✓")} Opened ${cyan(SITE_URL)}`);
-    } else {
-      console.log(`  ${dim("→")} Visit: ${cyan(SITE_URL)}`);
-    }
+    await typeOut(`  ${voice.spin("{Curious enough?|Intrigued?|Want to see it in action?}")} ${dim("Let's set you up.")}\n`);
   }
 }
 
@@ -387,7 +390,7 @@ async function showWelcome() {
     return;
   }
 
-  // Not installed — show a concept + offer to set up
+  // Not installed — guided setup flow
   const concept = CONCEPTS[getConceptIndex()];
   const body = getConceptBody(concept.topic);
 
@@ -397,17 +400,19 @@ async function showWelcome() {
   console.log("");
   console.log(`  ${dim("─".repeat(58))}`);
   console.log("");
-  console.log(`  ${dim("→")} ${green("Enter")}  Install Soma`);
-  console.log(`  ${dim("→")} ${green("?")}      Ask me something first`);
+  console.log(`  ${dim("→")} Press ${green("Enter")} to set up Soma, or type a question.`);
   console.log("");
 
-  const key = await waitForKey(`  ${dim("Your move:")} `);
+  const input = await readLine(`  ${dim("Your move:")} `);
 
-  if (key === "?") {
+  if (input && input !== "") {
+    // User typed something — treat as a question, then offer setup
+    await handleQuestion(input);
     await interactiveQ();
-  } else {
-    await initSoma();
   }
+
+  // Proceed to install (whether they asked questions first or just pressed Enter)
+  await initSoma();
 
   console.log("");
   console.log(`  ${dim(`v${VERSION} · BSL 1.1 · soma.gravicity.ai`)}`);
