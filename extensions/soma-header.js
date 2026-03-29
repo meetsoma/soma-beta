@@ -1,14 +1,1 @@
-/**
- * Soma Agent — © 2026 Curtis Mercier
- * Licensed under BSL 1.1 (Business Source License)
- *
- * You may view, use personally, and contribute to this software.
- * You may NOT use it for competing commercial products or services.
- * Converts to MIT license on 2027-09-18.
- *
- * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
- * Source available to contributors: https://soma.gravicity.ai/beta
- * Contact for commercial licensing: meetsoma@gravicity.ai
- */
-
 var I=Object.defineProperty;var p=(a,c)=>I(a,"name",{value:c,configurable:!0});import{existsSync as i}from"fs";import{join as m}from"path";import{findSomaDir as P,hasPreload as R,hasIdentity as S,discoverProtocols as _}from"../core/index.js";function v(a){a.on("session_start",async(c,l)=>{l.ui.setHeader((w,h)=>({invalidate(){},dispose(){},render(u){let o="\x1B[0m",r=h.getColorMode()==="truecolor",e=r?"\x1B[1;38;2;124;156;255m":"\x1B[1;38;5;111m",b=r?"\x1B[38;2;90;120;200m":"\x1B[38;5;68m",y=r?"\x1B[38;2;200;180;140m":"\x1B[38;5;180m",t=r?"\x1B[38;2;120;130;150m":"\x1B[38;5;245m",n=r?"\x1B[38;2;80;85;100m":"\x1B[38;5;240m",x=`${e}\u03C3\u1FF6\u03BC\u03B1${o}`,f=`${y}the body that grows around you${o}`,s=P(),$=[];if(s){let M=i(m(s.path,"body","soul.md")),A=i(m(s.path,"body"));M?$.push(`${e}\u25CF${o} ${t}soul${o}`):S(s)&&$.push(`${e}\u25CF${o} ${t}identity${o}`),R(s)?$.push(`${e}\u25CF${o} ${t}preload${o}`):(i(m(s.path,"amps"))||i(m(s.path,"memory")))&&$.push(`${e}\u25CF${o} ${t}memory${o}`),A&&i(m(s.path,"body","_mind.md"))&&$.push(`${e}\u25CF${o} ${t}body${o}`);let d=_(s);d.length>0&&$.push(`${e}\u25CF${o} ${t}${d.length} protocols${o}`)}$.length===0&&$.push(`${n}\u25CB empty \u2014 will grow${o}`);let g=$.join(`${n}  \xB7  ${o}`),D=`${n}esc${o}${t} interrupt${o}  ${n}ctrl+l${o}${t} clear${o}  ${n}/${o}${t} commands${o}  ${n}!${o}${t} bash${o}`,E=`${b}${"\u2500".repeat(Math.min(u-2,50))}${o}`;return["",`  ${x}  ${n}\xB7${o}  ${f}`,`  ${g}`,`  ${D}`,`  ${E}`,""]}}))})}p(v,"somaHeaderExtension");export{v as default};
