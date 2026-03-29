@@ -50,7 +50,9 @@ function isInstalled() {
   // Check both layouts: soma-beta (dist/extensions) and dev setup (extensions/)
   const hasDist = existsSync(join(CORE_DIR, "dist", "extensions")) && existsSync(join(CORE_DIR, "dist", "core"));
   const hasDev = existsSync(join(CORE_DIR, "extensions")) && existsSync(join(CORE_DIR, "core"));
-  return hasDist || hasDev;
+  // Check deps exist — Pi is the critical dependency
+  const hasDeps = existsSync(join(CORE_DIR, "node_modules", "@mariozechner"));
+  return (hasDist || hasDev) && hasDeps;
 }
 
 // ── Browser ──────────────────────────────────────────────────────────
@@ -1225,7 +1227,15 @@ async function delegateToCore() {
         }
         return;
       } catch (err) {
+        // Non-zero exit from session is normal (user quit, ctrl+c)
         if (err.status) process.exit(err.status);
+        // Module errors = broken install
+        if (err.message && err.message.includes("MODULE_NOT_FOUND")) {
+          console.log("");
+          console.log(`  ${red("✗")} Soma failed to start — missing dependencies.`);
+          console.log(`  ${dim("Run")} ${green("soma init")} ${dim("to repair the installation.")}`);
+          console.log("");
+        }
         return;
       }
     }
