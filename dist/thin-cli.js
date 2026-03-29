@@ -1181,6 +1181,27 @@ function showStatus() {
 // ── Delegation ───────────────────────────────────────────────────────
 
 async function delegateToCore() {
+  // Pre-flight: verify runtime can start before delegating
+  const piPkg = join(CORE_DIR, "node_modules", "@mariozechner", "pi-coding-agent");
+  if (!existsSync(piPkg)) {
+    console.log(`  ${red("✗")} Runtime dependencies missing.`);
+    console.log(`  ${dim("Run")} ${green("soma init")} ${dim("to repair the installation.")}`);
+    console.log("");
+    return;
+  }
+  const cliEntry = existsSync(join(CORE_DIR, "dist", "cli.js")) 
+    ? join(CORE_DIR, "dist", "cli.js") 
+    : null;
+  const mainEntry = existsSync(join(CORE_DIR, "dist", "main.js"))
+    ? join(CORE_DIR, "dist", "main.js")
+    : null;
+  if (!cliEntry && !mainEntry) {
+    console.log(`  ${red("✗")} Runtime entry point missing.`);
+    console.log(`  ${dim("Run")} ${green("soma init")} ${dim("to repair the installation.")}`);
+    console.log("");
+    return;
+  }
+
   const { execFileSync: execF } = await import("child_process");
   const passArgs = process.argv.slice(2);
 
