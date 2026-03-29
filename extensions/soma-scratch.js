@@ -1,3 +1,5 @@
+// (c) Gravicity · BSL 1.1 · soma.gravicity.ai
+// Built by Curtis Mercier
 var D=Object.defineProperty;var c=(l,y)=>D(l,"name",{value:y,configurable:!0});import{existsSync as f,readFileSync as h,writeFileSync as $,mkdirSync as x}from"fs";import{join as C,dirname as M}from"path";import{findSomaDir as O,loadSettings as E,getSomaChain as F,resolveSomaPath as G}from"../core/index.js";function P(l){let y=null,v=null,N=!1;l.on("session_start",async()=>{let s=O();if(!s)return;let e=F(),t=E(e);y=s.path,v=G(s.path,"sessions",t),j();let r=t?.scratch?.autoInject??!1;if(!N&&r){N=!0;let o=m();if(o.length>0){let i=`## \u{1F4DD} Scratch Notes
 
 You have ${o.length} active note(s) from previous sessions. Consider how they apply:
