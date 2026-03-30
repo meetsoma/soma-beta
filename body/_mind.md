@@ -2,11 +2,10 @@
 type: template
 name: mind
 description: >
-  System prompt structure — rearrange, add text, remove sections.
-  Variables resolve from body/ content files and boot discovery.
-  {{soul}} from soul.md, {{voice}} from voice.md, {{body}} from body.md.
-  Section vars (protocol_summaries, tools_section, etc.) filled at boot.
+  System prompt structure. Rearrange sections, add your own text,
+  remove what you don't need. Missing variable = section disappears.
 created: 2026-03-23
+updated: 2026-03-29
 ---
 {{core_rules}}
 
@@ -14,15 +13,22 @@ created: 2026-03-23
 {{soul}}
 
 {{#body}}
+## Where I Am
 {{body}}
 {{/body}}
 
+{{#voice}}
+## Voice
 {{voice}}
+{{/voice}}
 
+## How to Behave
 {{protocol_summaries}}
 
+## What I've Learned
 {{muscle_digests}}
 
+## My Tools
 {{tools_section}}
 
 {{guard_section}}

@@ -1,19 +1,25 @@
 ---
 type: content
 name: body
-description: >
-  Working context — what you're building, how the project works.
-  This is the project-shaped file. Soul is who you are. Voice is how you talk.
-  Body is what you're working with right now. It changes when the project changes.
-  
-  body.md → {{body}}. Place {{body}} in your _mind.md where you want it.
-  If you don't reference it, it won't load — no wasted tokens.
-  
-  Examples of what goes here:
-  - "This is a Next.js 15 app with App Router. Server components by default."
-  - "Rust API server. Routes in src/routes/. Use soma-rust.sh for cargo."
-  - "Client project. Match brand voice from style-guide.md before drafting."
-  - Project-specific conventions, repo layout, deploy targets
-  - Anything too specific for the soul but too important to be a muscle
+description: Working context — what you're building, how the project works
 created: 2026-03-23
+updated: 2026-03-30
 ---
+
+<!-- Replace these sections with real project context after your first session. -->
+
+## Project
+
+<!-- What is this project? One paragraph. Stack, purpose, stage. -->
+
+## Structure
+
+<!-- Key directories, entry points, conventions. Where does code live? -->
+
+## Workflow
+
+<!-- How does work get done here? Branch strategy, deploy targets, test commands. -->
+
+## Current Focus
+
+<!-- What's active right now? Update this each session or at exhale. -->
