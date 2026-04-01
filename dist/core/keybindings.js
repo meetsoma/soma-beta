@@ -58,6 +58,14 @@ export const KEYBINDINGS = {
         defaultKeys: ["ctrl+right", "alt+right"],
         description: "Unfold tree branch or move down",
     },
+    "app.tree.editLabel": {
+        defaultKeys: "shift+l",
+        description: "Edit tree label",
+    },
+    "app.tree.toggleLabelTimestamp": {
+        defaultKeys: "shift+t",
+        description: "Toggle tree label timestamps",
+    },
     "app.session.togglePath": {
         defaultKeys: "ctrl+p",
         description: "Toggle session path display",
@@ -132,6 +140,8 @@ const KEYBINDING_NAME_MIGRATIONS = {
     resume: "app.session.resume",
     treeFoldOrUp: "app.tree.foldOrUp",
     treeUnfoldOrDown: "app.tree.unfoldOrDown",
+    treeEditLabel: "app.tree.editLabel",
+    treeToggleLabelTimestamp: "app.tree.toggleLabelTimestamp",
     toggleSessionPath: "app.session.togglePath",
     toggleSessionSort: "app.session.toggleSort",
     renameSession: "app.session.rename",

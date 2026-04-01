@@ -37,6 +37,9 @@ export class FooterComponent {
         this.session = session;
         this.footerData = footerData;
     }
+    setSession(session) {
+        this.session = session;
+    }
     setAutoCompactEnabled(enabled) {
         this.autoCompactEnabled = enabled;
     }
@@ -78,7 +81,7 @@ export class FooterComponent {
         const contextPercentValue = contextUsage?.percent ?? 0;
         const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
         // Replace home directory with ~
-        let pwd = process.cwd();
+        let pwd = this.session.sessionManager.getCwd();
         const home = process.env.HOME || process.env.USERPROFILE;
         if (home && pwd.startsWith(home)) {
             pwd = `~${pwd.slice(home.length)}`;

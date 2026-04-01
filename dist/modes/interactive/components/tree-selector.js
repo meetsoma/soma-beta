@@ -1,7 +1,7 @@
 import { Container, getKeybindings, Input, matchesKey, Spacer, Text, TruncatedText, truncateToWidth, } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
-import { keyHint } from "./keybinding-hints.js";
+import { keyHint, keyText } from "./keybinding-hints.js";
 class TreeList {
     flatNodes = [];
     filteredNodes = [];
@@ -12,6 +12,7 @@ class TreeList {
     searchQuery = "";
     toolCallMap = new Map();
     multipleRoots = false;
+    showLabelTimestamps = false;
     activePathIds = new Set();
     visibleParentMap = new Map();
     visibleChildrenMap = new Map();
@@ -457,33 +458,41 @@ class TreeList {
     getSelectedNode() {
         return this.filteredNodes[this.selectedIndex]?.node;
     }
-    updateNodeLabel(entryId, label) {
+    updateNodeLabel(entryId, label, labelTimestamp) {
         for (const flatNode of this.flatNodes) {
             if (flatNode.node.entry.id === entryId) {
                 flatNode.node.label = label;
+                flatNode.node.labelTimestamp = label ? (labelTimestamp ?? new Date().toISOString()) : undefined;
                 break;
             }
         }
     }
-    getFilterLabel() {
+    getStatusLabels() {
+        let labels = "";
         switch (this.filterMode) {
             case "no-tools":
-                return " [no-tools]";
+                labels += " [no-tools]";
+                break;
             case "user-only":
-                return " [user]";
+                labels += " [user]";
+                break;
             case "labeled-only":
-                return " [labeled]";
+                labels += " [labeled]";
+                break;
             case "all":
-                return " [all]";
-            default:
-                return "";
+                labels += " [all]";
+                break;
         }
+        if (this.showLabelTimestamps) {
+            labels += " [+label time]";
+        }
+        return labels;
     }
     render(width) {
         const lines = [];
         if (this.filteredNodes.length === 0) {
             lines.push(truncateToWidth(theme.fg("muted", "  No entries found"), width));
-            lines.push(truncateToWidth(theme.fg("muted", `  (0/0)${this.getFilterLabel()}`), width));
+            lines.push(truncateToWidth(theme.fg("muted", `  (0/0)${this.getStatusLabels()}`), width));
             return lines;
         }
         const startIndex = Math.max(0, Math.min(this.selectedIndex - Math.floor(this.maxVisibleLines / 2), this.filteredNodes.length - this.maxVisibleLines));
@@ -542,14 +551,17 @@ class TreeList {
             const isOnActivePath = this.activePathIds.has(entry.id);
             const pathMarker = isOnActivePath ? theme.fg("accent", "• ") : "";
             const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
+            const labelTimestamp = this.showLabelTimestamps && flatNode.node.label && flatNode.node.labelTimestamp
+                ? theme.fg("muted", `${this.formatLabelTimestamp(flatNode.node.labelTimestamp)} `)
+                : "";
             const content = this.getEntryDisplayText(flatNode.node, isSelected);
-            let line = cursor + theme.fg("dim", prefix) + foldMarker + pathMarker + label + content;
+            let line = cursor + theme.fg("dim", prefix) + foldMarker + pathMarker + label + labelTimestamp + content;
             if (isSelected) {
                 line = theme.bg("selectedBg", line);
             }
             lines.push(truncateToWidth(line, width));
         }
-        lines.push(truncateToWidth(theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${this.getFilterLabel()}`), width));
+        lines.push(truncateToWidth(theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${this.getStatusLabels()}`), width));
         return lines;
     }
     getEntryDisplayText(node, isSelected) {
@@ -640,6 +652,25 @@ class TreeList {
                 result = "";
         }
         return isSelected ? theme.bold(result) : result;
+    }
+    formatLabelTimestamp(timestamp) {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const hours = date.getHours().toString().padStart(2, "0");
+        const minutes = date.getMinutes().toString().padStart(2, "0");
+        const time = `${hours}:${minutes}`;
+        if (date.getFullYear() === now.getFullYear() &&
+            date.getMonth() === now.getMonth() &&
+            date.getDate() === now.getDate()) {
+            return time;
+        }
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        if (date.getFullYear() === now.getFullYear()) {
+            return `${month}/${day} ${time}`;
+        }
+        const year = date.getFullYear().toString().slice(-2);
+        return `${year}/${month}/${day} ${time}`;
     }
     extractContent(content) {
         const maxLen = 200;
@@ -834,11 +865,14 @@ class TreeList {
                 this.applyFilter();
             }
         }
-        else if (matchesKey(keyData, "shift+l")) {
+        else if (kb.matches(keyData, "app.tree.editLabel")) {
             const selected = this.filteredNodes[this.selectedIndex];
             if (selected && this.onLabelEdit) {
                 this.onLabelEdit(selected.node.entry.id, selected.node.label);
             }
+        }
+        else if (kb.matches(keyData, "app.tree.toggleLabelTimestamp")) {
+            this.showLabelTimestamps = !this.showLabelTimestamps;
         }
         else {
             const hasControlChars = [...keyData].some((ch) => {
@@ -1003,8 +1037,7 @@ export class TreeSelectorComponent extends Container {
         this.addChild(new Spacer(1));
         this.addChild(new DynamicBorder());
         this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
-        this.addChild(new TruncatedText(theme.fg("muted", "  ↑/↓: move. ←/→: page. ^←/^→ or Alt+←/Alt+→: fold/branch. Shift+L: label. ") +
-            theme.fg("muted", "^D/^T/^U/^L/^A: filters (^O/⇧^O cycle)"), 0, 0));
+        this.addChild(new TruncatedText(theme.fg("muted", `  ↑/↓: move. ←/→: page. ^←/^→ or Alt+←/Alt+→: fold/branch. ${keyText("app.tree.editLabel")}: label. ^D/^T/^U/^L/^A: filters (^O/⇧^O cycle). ${keyText("app.tree.toggleLabelTimestamp")}: label time`), 0, 0));
         this.addChild(new SearchLine(this.treeList));
         this.addChild(new DynamicBorder());
         this.addChild(new Spacer(1));

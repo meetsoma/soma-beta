@@ -1,12 +1,12 @@
 import { execFile, spawnSync } from "child_process";
-import { existsSync, readFileSync, statSync, watch } from "fs";
+import { existsSync, readFileSync, statSync, unwatchFile, watch, watchFile } from "fs";
 import { dirname, join, resolve } from "path";
 /**
  * Find git metadata paths by walking up from cwd.
  * Handles both regular git repos (.git is a directory) and worktrees (.git is a file).
  */
-function findGitPaths() {
-    let dir = process.cwd();
+function findGitPaths(cwd) {
+    let dir = cwd;
     while (true) {
         const gitPath = join(dir, ".git");
         if (existsSync(gitPath)) {
@@ -74,20 +74,24 @@ function resolveBranchWithGitAsync(repoDir) {
  * Token stats, model info available via ctx.sessionManager and ctx.model.
  */
 export class FooterDataProvider {
+    cwd;
     static WATCH_DEBOUNCE_MS = 500;
     extensionStatuses = new Map();
     cachedBranch = undefined;
     gitPaths = undefined;
     headWatcher = null;
     reftableWatcher = null;
+    reftableTablesListWatcher = null;
+    reftableTablesListPath = null;
     branchChangeCallbacks = new Set();
     availableProviderCount = 0;
     refreshTimer = null;
     refreshInFlight = false;
     refreshPending = false;
     disposed = false;
-    constructor() {
-        this.gitPaths = findGitPaths();
+    constructor(cwd = process.cwd()) {
+        this.cwd = cwd;
+        this.gitPaths = findGitPaths(cwd);
         this.setupGitWatcher();
     }
     /** Current git branch, null if not in repo, "detached" if detached HEAD */
@@ -127,6 +131,36 @@ export class FooterDataProvider {
     setAvailableProviderCount(count) {
         this.availableProviderCount = count;
     }
+    setCwd(cwd) {
+        if (this.cwd === cwd) {
+            return;
+        }
+        this.cwd = cwd;
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+            this.refreshTimer = null;
+        }
+        if (this.headWatcher) {
+            this.headWatcher.close();
+            this.headWatcher = null;
+        }
+        if (this.reftableWatcher) {
+            this.reftableWatcher.close();
+            this.reftableWatcher = null;
+        }
+        if (this.reftableTablesListWatcher) {
+            this.reftableTablesListWatcher.close();
+            this.reftableTablesListWatcher = null;
+        }
+        if (this.reftableTablesListPath) {
+            unwatchFile(this.reftableTablesListPath);
+            this.reftableTablesListPath = null;
+        }
+        this.cachedBranch = undefined;
+        this.gitPaths = findGitPaths(cwd);
+        this.setupGitWatcher();
+        this.notifyBranchChange();
+    }
     /** Internal: cleanup */
     dispose() {
         this.disposed = true;
@@ -142,6 +176,14 @@ export class FooterDataProvider {
             this.reftableWatcher.close();
             this.reftableWatcher = null;
         }
+        if (this.reftableTablesListWatcher) {
+            this.reftableTablesListWatcher.close();
+            this.reftableTablesListWatcher = null;
+        }
+        if (this.reftableTablesListPath) {
+            unwatchFile(this.reftableTablesListPath);
+            this.reftableTablesListPath = null;
+        }
         this.branchChangeCallbacks.clear();
     }
     notifyBranchChange() {
@@ -149,10 +191,11 @@ export class FooterDataProvider {
             cb();
     }
     scheduleRefresh() {
-        if (this.disposed)
+        if (this.disposed || this.refreshTimer)
             return;
-        if (this.refreshTimer) {
-            clearTimeout(this.refreshTimer);
+        if (this.refreshInFlight) {
+            this.refreshPending = true;
+            return;
         }
         this.refreshTimer = setTimeout(() => {
             this.refreshTimer = null;
@@ -245,6 +288,25 @@ export class FooterDataProvider {
             }
             catch {
                 // Silently fail if we can't watch
+            }
+            const tablesListPath = join(reftableDir, "tables.list");
+            if (existsSync(tablesListPath)) {
+                this.reftableTablesListPath = tablesListPath;
+                try {
+                    this.reftableTablesListWatcher = watch(tablesListPath, () => {
+                        this.scheduleRefresh();
+                    });
+                }
+                catch {
+                    // Silently fail if we can't watch
+                }
+                watchFile(tablesListPath, { interval: 250 }, (current, previous) => {
+                    if (current.mtimeMs !== previous.mtimeMs ||
+                        current.ctimeMs !== previous.ctimeMs ||
+                        current.size !== previous.size) {
+                        this.scheduleRefresh();
+                    }
+                });
             }
         }
     }

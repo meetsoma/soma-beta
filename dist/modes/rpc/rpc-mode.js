@@ -18,8 +18,10 @@ import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
-export async function runRpcMode(session) {
+export async function runRpcMode(runtimeHost) {
     takeOverStdout();
+    let session = runtimeHost.session;
+    let unsubscribe;
     const output = (obj) => {
         writeRawStdout(serializeJsonLine(obj));
     };
@@ -103,6 +105,9 @@ export async function runRpcMode(session) {
         },
         setWorkingMessage(_message) {
             // Working message not supported in RPC mode - requires TUI loader access
+        },
+        setHiddenThinkingLabel(_label) {
+            // Hidden thinking label not supported in RPC mode - requires TUI message rendering access
         },
         setWidget(key, content, options) {
             // Only support string arrays in RPC mode - factory functions are ignored
@@ -199,48 +204,59 @@ export async function runRpcMode(session) {
             // Tool expansion not supported in RPC mode - no TUI
         },
     });
-    // Set up extensions with RPC-based UI context
-    await session.bindExtensions({
-        uiContext: createExtensionUIContext(),
-        commandContextActions: {
-            waitForIdle: () => session.agent.waitForIdle(),
-            newSession: async (options) => {
-                // Delegate to AgentSession (handles setup + agent state sync)
-                const success = await session.newSession(options);
-                return { cancelled: !success };
+    const rebindSession = async () => {
+        session = runtimeHost.session;
+        await session.bindExtensions({
+            uiContext: createExtensionUIContext(),
+            commandContextActions: {
+                waitForIdle: () => session.agent.waitForIdle(),
+                newSession: async (options) => {
+                    const result = await runtimeHost.newSession(options);
+                    if (!result.cancelled) {
+                        await rebindSession();
+                    }
+                    return result;
+                },
+                fork: async (entryId) => {
+                    const result = await runtimeHost.fork(entryId);
+                    if (!result.cancelled) {
+                        await rebindSession();
+                    }
+                    return { cancelled: result.cancelled };
+                },
+                navigateTree: async (targetId, options) => {
+                    const result = await session.navigateTree(targetId, {
+                        summarize: options?.summarize,
+                        customInstructions: options?.customInstructions,
+                        replaceInstructions: options?.replaceInstructions,
+                        label: options?.label,
+                    });
+                    return { cancelled: result.cancelled };
+                },
+                switchSession: async (sessionPath) => {
+                    const result = await runtimeHost.switchSession(sessionPath);
+                    if (!result.cancelled) {
+                        await rebindSession();
+                    }
+                    return result;
+                },
+                reload: async () => {
+                    await session.reload();
+                },
             },
-            fork: async (entryId) => {
-                const result = await session.fork(entryId);
-                return { cancelled: result.cancelled };
+            shutdownHandler: () => {
+                shutdownRequested = true;
             },
-            navigateTree: async (targetId, options) => {
-                const result = await session.navigateTree(targetId, {
-                    summarize: options?.summarize,
-                    customInstructions: options?.customInstructions,
-                    replaceInstructions: options?.replaceInstructions,
-                    label: options?.label,
-                });
-                return { cancelled: result.cancelled };
+            onError: (err) => {
+                output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
             },
-            switchSession: async (sessionPath) => {
-                const success = await session.switchSession(sessionPath);
-                return { cancelled: !success };
-            },
-            reload: async () => {
-                await session.reload();
-            },
-        },
-        shutdownHandler: () => {
-            shutdownRequested = true;
-        },
-        onError: (err) => {
-            output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
-        },
-    });
-    // Output all agent events as JSON
-    session.subscribe((event) => {
-        output(event);
-    });
+        });
+        unsubscribe?.();
+        unsubscribe = session.subscribe((event) => {
+            output(event);
+        });
+    };
+    await rebindSession();
     // Handle a single command
     const handleCommand = async (command) => {
         const id = command.id;
@@ -275,8 +291,11 @@ export async function runRpcMode(session) {
             }
             case "new_session": {
                 const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
-                const cancelled = !(await session.newSession(options));
-                return success(id, "new_session", { cancelled });
+                const result = await runtimeHost.newSession(options);
+                if (!result.cancelled) {
+                    await rebindSession();
+                }
+                return success(id, "new_session", result);
             }
             // =================================================================
             // State
@@ -391,11 +410,17 @@ export async function runRpcMode(session) {
                 return success(id, "export_html", { path });
             }
             case "switch_session": {
-                const cancelled = !(await session.switchSession(command.sessionPath));
-                return success(id, "switch_session", { cancelled });
+                const result = await runtimeHost.switchSession(command.sessionPath);
+                if (!result.cancelled) {
+                    await rebindSession();
+                }
+                return success(id, "switch_session", result);
             }
             case "fork": {
-                const result = await session.fork(command.entryId);
+                const result = await runtimeHost.fork(command.entryId);
+                if (!result.cancelled) {
+                    await rebindSession();
+                }
                 return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled });
             }
             case "get_fork_messages": {
@@ -463,10 +488,8 @@ export async function runRpcMode(session) {
      */
     let detachInput = () => { };
     async function shutdown() {
-        const currentRunner = session.extensionRunner;
-        if (currentRunner?.hasHandlers("session_shutdown")) {
-            await currentRunner.emit({ type: "session_shutdown" });
-        }
+        unsubscribe?.();
+        await runtimeHost.dispose();
         detachInput();
         process.stdin.pause();
         process.exit(0);

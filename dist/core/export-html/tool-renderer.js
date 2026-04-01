@@ -12,7 +12,7 @@ import { ansiLinesToHtml } from "./ansi-to-html.js";
  * methods, converting the resulting TUI Component output (ANSI) to HTML.
  */
 export function createToolHtmlRenderer(deps) {
-    const { getToolDefinition, theme, width = 100 } = deps;
+    const { getToolDefinition, theme, cwd, width = 100 } = deps;
     const renderedCallComponents = new Map();
     const renderedResultComponents = new Map();
     const renderedStates = new Map();
@@ -32,7 +32,7 @@ export function createToolHtmlRenderer(deps) {
             invalidate: () => { },
             lastComponent,
             state: getState(toolCallId),
-            cwd: process.cwd(),
+            cwd,
             executionStarted: true,
             argsComplete: true,
             isPartial,

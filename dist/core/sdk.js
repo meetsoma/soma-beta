@@ -13,6 +13,8 @@ import { getDefaultSessionDir, SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import { time } from "./timings.js";
 import { allTools, bashTool, codingTools, createBashTool, createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, editTool, findTool, grepTool, lsTool, readOnlyTools, readTool, withFileMutationQueue, writeTool, } from "./tools/index.js";
+// Re-exports
+export { AgentSessionRuntimeHost, createAgentSessionRuntime, } from "./agent-session-runtime.js";
 export { 
 // Pre-built tools (use process.cwd())
 readTool, bashTool, editTool, writeTool, grepTool, findTool, lsTool, codingTools, readOnlyTools, allTools as allBuiltInTools, withFileMutationQueue, 
@@ -65,7 +67,7 @@ export async function createAgentSession(options = {}) {
     const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
     const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
     const authStorage = options.authStorage ?? AuthStorage.create(authPath);
-    const modelRegistry = options.modelRegistry ?? new ModelRegistry(authStorage, modelsPath);
+    const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
     const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
     const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
     if (!resourceLoader) {
@@ -199,7 +201,7 @@ export async function createAgentSession(options = {}) {
     });
     // Restore messages if session has existing data
     if (hasExistingSession) {
-        agent.replaceMessages(existingSession.messages);
+        agent.state.messages = existingSession.messages;
         if (!hasThinkingEntry) {
             sessionManager.appendThinkingLevelChange(thinkingLevel);
         }
@@ -222,6 +224,7 @@ export async function createAgentSession(options = {}) {
         modelRegistry,
         initialActiveToolNames,
         extensionRunnerRef,
+        sessionStartEvent: options.sessionStartEvent,
     });
     const extensionsResult = resourceLoader.getExtensions();
     return {

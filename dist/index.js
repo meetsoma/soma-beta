@@ -13,9 +13,9 @@ export { ModelRegistry } from "./core/model-registry.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
 export { DefaultResourceLoader } from "./core/resource-loader.js";
 // SDK for programmatic usage
-export { 
+export { AgentSessionRuntimeHost, 
 // Factory
-createAgentSession, createBashTool, 
+createAgentSession, createAgentSessionRuntime, createBashTool, 
 // Tool factories (for custom cwd)
 createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, 
 // Pre-built tools (use process.cwd())

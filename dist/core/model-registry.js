@@ -171,10 +171,16 @@ export class ModelRegistry {
     modelRequestHeaders = new Map();
     registeredProviders = new Map();
     loadError = undefined;
-    constructor(authStorage, modelsJsonPath = join(getAgentDir(), "models.json")) {
+    constructor(authStorage, modelsJsonPath) {
         this.authStorage = authStorage;
         this.modelsJsonPath = modelsJsonPath;
         this.loadModels();
+    }
+    static create(authStorage, modelsJsonPath = join(getAgentDir(), "models.json")) {
+        return new ModelRegistry(authStorage, modelsJsonPath);
+    }
+    static inMemory(authStorage) {
+        return new ModelRegistry(authStorage, undefined);
     }
     /**
      * Reload models from disk (built-in + custom from models.json).

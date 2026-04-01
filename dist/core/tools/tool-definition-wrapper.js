@@ -5,6 +5,7 @@ export function wrapToolDefinition(definition, ctxFactory) {
         label: definition.label,
         description: definition.description,
         parameters: definition.parameters,
+        prepareArguments: definition.prepareArguments,
         execute: (toolCallId, params, signal, onUpdate) => definition.execute(toolCallId, params, signal, onUpdate, ctxFactory?.()),
     };
 }
@@ -24,6 +25,7 @@ export function createToolDefinitionFromAgentTool(tool) {
         label: tool.label,
         description: tool.description,
         parameters: tool.parameters,
+        prepareArguments: tool.prepareArguments,
         execute: async (toolCallId, params, signal, onUpdate) => tool.execute(toolCallId, params, signal, onUpdate),
     };
 }

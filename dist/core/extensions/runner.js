@@ -61,6 +61,7 @@ const noOpUIContext = {
     onTerminalInput: () => () => { },
     setStatus: () => { },
     setWorkingMessage: () => { },
+    setHiddenThinkingLabel: () => { },
     setWidget: () => { },
     setFooter: () => { },
     setHeader: () => { },
@@ -90,6 +91,7 @@ export class ExtensionRunner {
     errorListeners = new Set();
     getModel = () => undefined;
     isIdleFn = () => true;
+    getSignalFn = () => undefined;
     waitForIdleFn = async () => { };
     abortFn = () => { };
     hasPendingMessagesFn = () => false;
@@ -131,6 +133,7 @@ export class ExtensionRunner {
         // Context actions (required)
         this.getModel = contextActions.getModel;
         this.isIdleFn = contextActions.isIdle;
+        this.getSignalFn = contextActions.getSignal;
         this.abortFn = contextActions.abort;
         this.hasPendingMessagesFn = contextActions.hasPendingMessages;
         this.shutdownHandler = contextActions.shutdown;
@@ -364,6 +367,7 @@ export class ExtensionRunner {
                 return getModel();
             },
             isIdle: () => this.isIdleFn(),
+            signal: this.getSignalFn(),
             abort: () => this.abortFn(),
             hasPendingMessages: () => this.hasPendingMessagesFn(),
             shutdown: () => this.shutdownHandler(),
