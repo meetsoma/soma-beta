@@ -89,10 +89,183 @@ if (args[0] === "--version" || args[0] === "-V" || args[0] === "-v") {
 	process.exit(0);
 }
 
-// Help flag — delegate to Pi's printHelp (gum removed in 0.61.0)
+// Help flag — Soma-branded help with our commands + Pi options
 if (args[0] === "--help" || args[0] === "-h") {
-	const { printHelp } = await import("./cli/args.js");
-	printHelp();
+	const { readFileSync: rf, existsSync: ex, readdirSync: rd } = await import("fs");
+	const { fileURLToPath } = await import("url");
+	const { dirname, join: j } = await import("path");
+	const __dirname = dirname(fileURLToPath(import.meta.url));
+	const pkg = JSON.parse(rf(j(__dirname, "..", "package.json"), "utf-8"));
+
+	const b = s => `\x1b[1m${s}\x1b[0m`;
+	const d = s => `\x1b[2m${s}\x1b[0m`;
+	const g = s => `\x1b[32m${s}\x1b[0m`;
+	const c = s => `\x1b[36m${s}\x1b[0m`;
+
+	const subHelp = args[1];
+
+	// ── soma --help scripts ──
+	if (subHelp === "scripts") {
+		const scriptDirs = [
+			j(process.cwd(), ".soma", "amps", "scripts"),
+			j(process.cwd(), ".soma", "scripts"),
+			j(process.env.HOME || "", ".soma", "amps", "scripts"),
+		];
+		const seen = new Set();
+		const scripts = [];
+		for (const dir of scriptDirs) {
+			if (!ex(dir)) continue;
+			for (const f of rd(dir)) {
+				if (!f.endsWith(".sh") || seen.has(f)) continue;
+				seen.add(f);
+				try {
+					const content = rf(j(dir, f), "utf-8");
+					// Extract description from script header comment
+					const descMatch = content.match(/^#\s*([a-z].*?\.)/im)
+						|| content.match(/^#\s+soma-\S+\s+[—–-]+\s*(.+)/m)
+						|| content.match(/^# USE WHEN:\s*(.+)/m);
+					const desc = descMatch ? descMatch[1].trim() : "";
+					scripts.push({ name: f, desc, dir });
+				} catch { scripts.push({ name: f, desc: "", dir }); }
+			}
+		}
+		// Also check commands/
+		const cmdDirs = [
+			j(process.cwd(), ".soma", "amps", "scripts", "commands"),
+			j(process.cwd(), ".soma", "scripts", "commands"),
+		];
+		const commands = [];
+		for (const dir of cmdDirs) {
+			if (!ex(dir)) continue;
+			for (const f of rd(dir)) {
+				if (!f.endsWith(".sh") || seen.has(f)) continue;
+				seen.add(f);
+				try {
+					const content = rf(j(dir, f), "utf-8");
+					const descMatch = content.match(/^#\s*([a-z].*?\.)/im)
+						|| content.match(/^description:\s*["']?(.+?)["']?$/m);
+					const desc = descMatch ? descMatch[1].trim() : "";
+					commands.push({ name: f.replace(/\.sh$/, ""), desc });
+				} catch { commands.push({ name: f.replace(/\.sh$/, ""), desc: "" }); }
+			}
+		}
+
+		console.log(``);
+		console.log(`  ${b("σ  Installed Scripts")}`);
+		console.log(``);
+		if (scripts.length === 0) {
+			console.log(`  ${d("No scripts found.")} Run ${g("soma init")} to seed bundled scripts.`);
+		} else {
+			for (const s of scripts) {
+				const desc = s.desc ? d(` — ${s.desc}`) : "";
+				console.log(`    ${g(s.name)}${desc}`);
+			}
+		}
+		if (commands.length > 0) {
+			console.log(``);
+			console.log(`  ${b("Drop-in Commands")} ${d("(/soma <name> inside TUI)")}`);
+			console.log(``);
+			for (const cmd of commands) {
+				const desc = cmd.desc ? d(` — ${cmd.desc}`) : "";
+				console.log(`    ${c("/soma " + cmd.name)}${desc}`);
+			}
+		}
+		console.log(``);
+		console.log(`  ${d("Install more:")} ${g("soma hub install script <name>")}`);
+		console.log(`  ${d("Browse available:")} ${g("/hub find script")} ${d("(inside TUI)")}`);
+		console.log(``);
+		process.exit(0);
+	}
+
+	// ── soma --help commands ──
+	if (subHelp === "commands") {
+		console.log(``);
+		console.log(`  ${b("σ  All Commands")}`);
+		console.log(``);
+		console.log(`  ${b("CLI")} ${d("(from your shell):")}`);
+		console.log(`    ${g("soma")}                     ${d("Fresh session")}`);
+		console.log(`    ${g("soma inhale")}             ${d("Fresh session + last preload")}`);
+		console.log(`    ${g("soma -c")}                 ${d("Continue last session")}`);
+		console.log(`    ${g("soma -r")}                 ${d("Pick a session to resume")}`);
+		console.log(`    ${g("soma focus <keyword>")}    ${d("Prime for a topic")}`);
+		console.log(`    ${g("soma map <name>")}         ${d("Boot with a MAP")}`);
+		console.log(`    ${g("soma doctor")}              ${d("Migration check")}`);
+		console.log(`    ${g("soma --help scripts")}     ${d("Show installed scripts")}`);
+		console.log(``);
+		console.log(`  ${b("Session")} ${d("(inside the TUI):")}`);
+		console.log(`    ${c("/exhale")}     ${d("Save state + write preload")}`);
+		console.log(`    ${c("/breathe")}    ${d("Save + rotate to fresh session")}`);
+		console.log(`    ${c("/inhale")}     ${d("Check preload status")}`);
+		console.log(`    ${c("/rest")}       ${d("Disable keepalive + exhale")}`);
+		console.log(`    ${c("/exit")}       ${d("Save + quit")}`);
+		console.log(``);
+		console.log(`  ${b("Heat")} ${d("(inside the TUI):")}`);
+		console.log(`    ${c("/pin <name>")}  ${d("Keep a muscle/protocol hot")}`);
+		console.log(`    ${c("/kill <name>")} ${d("Drop to cold")}`);
+		console.log(``);
+		console.log(`  ${b("Hub")} ${d("(inside the TUI):")}`);
+		console.log(`    ${c("/hub install <type> <name>")}  ${d("Install from hub")}`);
+		console.log(`    ${c("/hub find <keywords>")}        ${d("Search hub content")}`);
+		console.log(`    ${c("/hub list [type]")}             ${d("Show installed AMPS")}`);
+		console.log(`    ${c("/hub fork <type> <name>")}      ${d("Fork + install")}`);
+		console.log(`    ${c("/hub share <type> <name>")}     ${d("Share to hub")}`);
+		console.log(``);
+		console.log(`  ${b("Info")} ${d("(inside the TUI):")}`);
+		console.log(`    ${c("/soma")}       ${d("Status — identity, protocols, commands")}`);
+		console.log(`    ${c("/soma prompt")} ${d("Preview compiled system prompt")}`);
+		console.log(`    ${c("/body")}       ${d("Template inspector")}`);
+		console.log(`    ${c("/status")}     ${d("Context %, cache, turns, uptime")}`);
+		console.log(`    ${c("/scratch")}    ${d("Quick notes")}`);
+		console.log(`    ${c("/code")}       ${d("Codebase navigator (wraps soma-code.sh)")}`);
+		console.log(``);
+		process.exit(0);
+	}
+
+	console.log(``);
+	console.log(`  ${b("σ  Soma")} ${d(`v${pkg.version}`)} ${d("— AI coding agent with self-growing memory")}`);
+	console.log(``);
+	console.log(`  ${b("Usage:")}  soma ${d("[command] [options] [@files...] [messages...]")}`);
+	console.log(``);
+	console.log(`  ${b("Session Commands:")}`);
+	console.log(`    ${g("soma")}                     ${d("Fresh session — clean slate, no preload")}`);
+	console.log(`    ${g("soma inhale")}             ${d("Fresh session + auto-load last preload")}`);
+	console.log(`    ${g("soma inhale --list")}      ${d("Show available preloads with age")}`);
+	console.log(`    ${g("soma inhale <name>")}     ${d("Load a specific preload by name")}`);
+	console.log(`    ${g("soma -c")}                 ${d("Continue last session (full history)")}`);
+	console.log(`    ${g("soma -r")}                 ${d("Resume — pick from previous sessions")}`);
+	console.log(``);
+	console.log(`  ${b("Project Commands:")}`);
+	console.log(`    ${g("soma focus <keyword>")}    ${d("Prime next session for a topic")}`);
+	console.log(`    ${g("soma focus show|clear")}   ${d("Check or remove focus state")}`);
+	console.log(`    ${g("soma map <name>")}         ${d("Boot with a MAP workflow loaded")}`);
+	console.log(`    ${g("soma map --list")}         ${d("Show available MAPs")}`);
+	console.log(`    ${g("soma doctor")}              ${d("Check for pending migrations")}`);
+	console.log(``);
+	console.log(`  ${b("Options:")}`);
+	console.log(`    ${g("--model <pattern>")}        ${d("Start with a specific model (e.g. sonnet, gpt-4o)")}`);
+	console.log(`    ${g("--models <list>")}          ${d("Limit Ctrl+P cycling to these models")}`);
+	console.log(`    ${g("--provider <name>")}        ${d("Set the default provider")}`);
+	console.log(`    ${g("--thinking <level>")}       ${d("Thinking: off, minimal, low, medium, high, xhigh")}`);
+	console.log(`    ${g("--list-models [search]")}   ${d("List available models")}`);
+	console.log(`    ${g("--print, -p")}              ${d("Non-interactive: process prompt and exit")}`);
+	console.log(`    ${g("--no-session")}             ${d("Ephemeral session (not saved)")}`);
+	console.log(`    ${g("--tools <list>")}           ${d("Tools to enable (default: read,bash,edit,write)")}`);
+	console.log(`    ${g("--extension, -e <path>")}   ${d("Load an extension file")}`);
+	console.log(`    ${g("--skill <path>")}           ${d("Load a skill file or directory")}`);
+	console.log(`    ${g("--export [session.jsonl]")} ${d("Export session as HTML")}`);
+	console.log(``);
+	console.log(`  ${b("Session Slash Commands")} ${d("(inside the TUI):")}`);
+	console.log(`    ${c("/exhale")}    ${d("Save state + write preload — ends session")}`);
+	console.log(`    ${c("/breathe")}   ${d("Save state + rotate into fresh session")}`);
+	console.log(`    ${c("/inhale")}    ${d("Check preload status (not the same as")} ${g("soma inhale")}${d("!)")}`);
+	console.log(`    ${c("/rest")}      ${d("Disable keepalive + exhale — for end of day")}`);
+	console.log(`    ${c("/pin")}       ${d("Keep a muscle/protocol hot across sessions")}`);
+	console.log(`    ${c("/kill")}      ${d("Drop a muscle/protocol to cold")}`);
+	console.log(`    ${c("/hub")}       ${d("Install, find, share community content")}`);
+	console.log(`    ${c("/soma")}      ${d("Status, init, prompt, debug, drop-in commands")}`);
+	console.log(``);
+	console.log(`  ${d("Docs: https://soma.gravicity.ai/docs")}`);
+	console.log(``);
 	process.exit(0);
 }
 
@@ -161,7 +334,7 @@ if (args[0] === "focus") {
 		// If focus was set (not show/clear), start a session
 		if (focusArgs.length > 0 && focusArgs[0] !== "show" && focusArgs[0] !== "clear" && focusArgs[0] !== "--help") {
 			console.log("\nStarting focused session...\n");
-			main([]);
+			await main([]);
 		}
 	} catch (err) {
 		process.exit(1);
