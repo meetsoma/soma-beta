@@ -5,10 +5,18 @@ description: Preload format — what the agent writes at exhale to brief the nex
 created: 2026-03-23
 updated: 2026-03-30
 ---
+**Step 1.5: Update living docs** — before the preload, update the sources it points to.
+The preload points to these — if they're stale, the preload is misleading.
+- Check off completed kanban items, add new ones discovered this session
+- Update STATE.md if branches, versions, or known bugs changed
+- Commit project changes before writing memory files
+
 **Step 2:** {{logVerb}} session log `{{logPath}}` — one file per session (unique filename).
 ⚠️ **Never overwrite existing session logs or preloads** — the filename contains a unique session ID (`{{sessionId}}`).
 Include frontmatter with `session-id: {{sessionId}}`.
 Include: what shipped (commits), gaps & recoveries, observations about patterns noticed.
+Include: corrections received (as close to verbatim as possible) — these are the most
+valuable things to record. What was wrong, what was right, why it matters.
 
 **Step 3:** {{preloadVerb}} `{{target}}` — this is the LAST file you write.
 
@@ -58,6 +66,12 @@ tags: []
 ## Orient From
 <!-- Files to read if Next Session isn't enough. Include [line-ranges].
      Example: `core/utils.ts` [39-91] — shared helpers -->
+
+## Before You Start
+<!-- Conditional loading: "Read X BEFORE doing Y."
+     Front-load the right context for the planned task.
+     Example: "Read migrations.ts BEFORE touching doctor."
+     Example: "Run soma-verify.sh drift BEFORE syncing content." -->
 
 ## Do NOT Re-Read
 <!-- Files fully understood this session. Brief reason why. -->

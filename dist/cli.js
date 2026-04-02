@@ -80,12 +80,19 @@ const args = process.argv.slice(2);
 
 // Version flag
 if (args[0] === "--version" || args[0] === "-V" || args[0] === "-v") {
-	const { readFileSync: rf } = await import("fs");
-	const { fileURLToPath } = await import("url");
-	const { dirname, join: j } = await import("path");
-	const __dirname = dirname(fileURLToPath(import.meta.url));
-	const pkg = JSON.parse(rf(j(__dirname, "..", "package.json"), "utf-8"));
-	console.log(`soma v${pkg.version}`);
+	// Delegate to thin-cli which shows both agent + CLI versions
+	const { dirname: dn } = await import("path");
+	const { fileURLToPath: fu } = await import("url");
+	const thisDir = dn(fu(import.meta.url));
+	const thinCli = join(thisDir, "thin-cli.js");
+	if (existsSync(thinCli)) {
+		try { execFileSync(process.execPath, [thinCli, "--version"], { stdio: "inherit" }); }
+		catch {}
+	} else {
+		const { readFileSync: rf } = await import("fs");
+		const pkg = JSON.parse(rf(join(thisDir, "..", "package.json"), "utf-8"));
+		console.log(`soma v${pkg.version}`);
+	}
 	process.exit(0);
 }
 
@@ -189,7 +196,8 @@ if (args[0] === "--help" || args[0] === "-h") {
 		console.log(`    ${g("soma -r")}                 ${d("Pick a session to resume")}`);
 		console.log(`    ${g("soma focus <keyword>")}    ${d("Prime for a topic")}`);
 		console.log(`    ${g("soma map <name>")}         ${d("Boot with a MAP")}`);
-		console.log(`    ${g("soma doctor")}              ${d("Migration check")}`);
+		console.log(`    ${g("soma doctor")}              ${d("Project health + migration")}`);
+		console.log(`    ${g("soma status")}              ${d("Infrastructure health check")}`);
 		console.log(`    ${g("soma --help scripts")}     ${d("Show installed scripts")}`);
 		console.log(``);
 		console.log(`  ${b("Session")} ${d("(inside the TUI):")}`);
@@ -222,7 +230,7 @@ if (args[0] === "--help" || args[0] === "-h") {
 	}
 
 	console.log(``);
-	console.log(`  ${b("σ  Soma")} ${d(`v${pkg.version}`)} ${d("— AI coding agent with self-growing memory")}`);
+	console.log(`  ${b("σ  Soma")} ${d(`CLI v${pkg.version}`)} ${d("— AI coding agent with self-growing memory")}`);
 	console.log(``);
 	console.log(`  ${b("Usage:")}  soma ${d("[command] [options] [@files...] [messages...]")}`);
 	console.log(``);
@@ -239,7 +247,8 @@ if (args[0] === "--help" || args[0] === "-h") {
 	console.log(`    ${g("soma focus show|clear")}   ${d("Check or remove focus state")}`);
 	console.log(`    ${g("soma map <name>")}         ${d("Boot with a MAP workflow loaded")}`);
 	console.log(`    ${g("soma map --list")}         ${d("Show available MAPs")}`);
-	console.log(`    ${g("soma doctor")}              ${d("Check for pending migrations")}`);
+	console.log(`    ${g("soma doctor")}              ${d("Project health + migration")}`);
+	console.log(`    ${g("soma status")}              ${d("Infrastructure health check")}`);
 	console.log(``);
 	console.log(`  ${b("Options:")}`);
 	console.log(`    ${g("--model <pattern>")}        ${d("Start with a specific model (e.g. sonnet, gpt-4o)")}`);
@@ -517,6 +526,23 @@ if (args[0] === "map") {
 		process.env.SOMA_INHALE = "1";
 		main([]);
 	}
+} else if (args[0] === "doctor" || args[0] === "status" || args[0] === "health" || args[0] === "update") {
+	// Route to thin-cli which handles these commands
+	// thin-cli has the doctor logic, version checking, health check
+	const { dirname: dn } = await import("path");
+	const { fileURLToPath: fu } = await import("url");
+	const thisDir = dn(fu(import.meta.url));
+	const thinCli = join(thisDir, "thin-cli.js");
+	if (existsSync(thinCli)) {
+		try {
+			execFileSync(process.execPath, [thinCli, ...args], { stdio: "inherit" });
+		} catch (err) {
+			if (err.status) process.exit(err.status);
+		}
+	} else {
+		console.log(`\n  ${dim("Command not available — try")} ${green("soma init")}\n`);
+	}
+	process.exit(0);
 } else {
 	// soma (no subcommand) — fresh session, NO preload
 	main(args);

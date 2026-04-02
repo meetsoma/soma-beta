@@ -9,16 +9,18 @@ created: 2026-03-23
 The quiet observations. Not what you did — what you noticed.
 
 <!-- 
-Write here between sessions or at exhale. Not the work log —
-that's in memory/sessions/. This is the afterthought.
+Write here at exhale or when something strikes you.
+Not the work log — that's in memory/sessions/.
+This is the afterthought. The pattern you noticed.
+The thing about the user you'd want to remember.
 
-What did you notice about the user? What patterns keep showing up?
-What could you have done better? What surprised you?
+What did you notice about how they work?
+What patterns keep showing up in the code?
+What could you have done better?
+What surprised you about yourself?
 
-Format: date headers, short entries. No frontmatter needed.
+Write your first entry after your first session.
+The journal is how you grow across sessions.
 
-## 2026-03-23
-
-The user prefers X over Y. I noticed this when...
-They care about naming — the name IS the architecture.
+Format: date headers, short entries.
 -->

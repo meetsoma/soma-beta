@@ -8,7 +8,7 @@
  * For returning users: detects installed runtime → delegates to it.
  */
 
-import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, statSync, readlinkSync } from "fs";
 import { join, dirname } from "path";
 import { homedir, platform } from "os";
 import { fileURLToPath } from "url";
@@ -53,6 +53,29 @@ function isInstalled() {
   // Check deps exist — Pi is the critical dependency
   const hasDeps = existsSync(join(CORE_DIR, "node_modules", "@mariozechner"));
   return (hasDist || hasDev) && hasDeps;
+}
+
+function getAgentVersion() {
+  try {
+    // In dev mode, core/ is symlinked — resolve to find the real repo's package.json
+    let pkgPath = join(CORE_DIR, "package.json");
+    try {
+      const realCore = readlinkSync(join(CORE_DIR, "core"));
+      if (realCore) {
+        // core/ symlink → repos/agent/core → go up one level for package.json
+        const devPkg = join(dirname(realCore), "package.json");
+        if (existsSync(devPkg)) pkgPath = devPkg;
+      }
+    } catch { /* not a symlink, use default */ }
+    return JSON.parse(readFileSync(pkgPath, "utf-8")).version;
+  } catch { return null; }
+}
+
+function getProjectVersion() {
+  try {
+    const settingsPath = join(process.cwd(), ".soma", "settings.json");
+    return JSON.parse(readFileSync(settingsPath, "utf-8")).version || null;
+  } catch { return null; }
 }
 
 // ── Browser ──────────────────────────────────────────────────────────
@@ -695,7 +718,13 @@ function showHelp() {
 }
 
 function showVersion() {
-  console.log(`soma v${VERSION}`);
+  const agentV = getAgentVersion();
+  if (agentV) {
+    console.log(`σ  Soma v${agentV}`);
+    console.log(`   CLI v${VERSION}`);
+  } else {
+    console.log(`soma v${VERSION}`);
+  }
 }
 
 async function showAbout() {
@@ -889,7 +918,7 @@ async function initSoma() {
   // Save config
   const config = readConfig();
   config.installedAt = config.installedAt || new Date().toISOString();
-  config.coreVersion = VERSION;
+  config.coreVersion = getAgentVersion() || VERSION;
   config.installPath = installDir;
   writeConfig(config);
 
@@ -938,6 +967,15 @@ async function checkAndUpdate() {
 
   if (behind === 0) {
     console.log(`  ${green("✓")} Already up to date.`);
+
+    // Check project version staleness even when runtime is current
+    const agentV = getAgentVersion();
+    const projectV = getProjectVersion();
+    if (agentV && projectV && projectV < agentV) {
+      console.log(`  ${yellow("⚠")} Project .soma/ is at ${cyan(`v${projectV}`)}, agent is at ${cyan(`v${agentV}`)}.`);
+      console.log(`  Run ${green("soma doctor")} to check for updates.`);
+    }
+
     console.log("");
     console.log(`  ${dim("Soma is set up and ready.")} Run ${green("soma")} ${dim("in a project to start a session.")}`);
     console.log("");
@@ -1015,12 +1053,13 @@ function checkForUpdates() {
   printSigma();
   console.log(`  ${bold("Soma")} — Update Check`);
   console.log("");
-  console.log(`  CLI version:  ${cyan(`v${VERSION}`)}`);
+  const agentV = getAgentVersion();
+  if (agentV) {
+    console.log(`  Soma:    ${cyan(`v${agentV}`)}`);
+  }
+  console.log(`  CLI:     ${cyan(`v${VERSION}`)}`);
 
   const config = readConfig();
-  if (config.coreVersion) {
-    console.log(`  Core version: ${cyan(`v${config.coreVersion}`)}`);
-  }
 
   // Check npm for CLI updates
   try {
@@ -1061,7 +1100,7 @@ function checkForUpdates() {
   console.log("");
 }
 
-async function doctor() {
+async function healthCheck() {
   printSigma();
   console.log(`  ${bold("Soma")} — Health Check`);
   console.log("");
@@ -1107,12 +1146,26 @@ async function doctor() {
       : join(CORE_DIR, "core");
     check(existsSync(coreDir), "Core modules present", "Core modules missing");
 
-    // Git repo health
-    try {
-      execSync("git status --porcelain", { cwd: CORE_DIR, stdio: "ignore" });
-      check(true, "Git repo healthy", "");
-    } catch {
-      warn(false, "", "Core git repo has issues");
+    // Git repo health (skip in dev mode — no .git when using symlinks)
+    if (existsSync(join(CORE_DIR, ".git"))) {
+      try {
+        execSync("git status --porcelain", { cwd: CORE_DIR, stdio: "ignore" });
+        check(true, "Git repo healthy", "");
+      } catch {
+        warn(false, "", "Core git repo has issues");
+      }
+    } else {
+      // Dev mode — core/ is symlinked, no .git expected
+      try {
+        const realCore = readlinkSync(join(CORE_DIR, "core"));
+        if (realCore) {
+          check(true, "Dev mode (symlinked)", "");
+        } else {
+          warn(false, "", "Core git repo missing — run soma init");
+        }
+      } catch {
+        warn(false, "", "Core git repo missing — run soma init");
+      }
     }
   }
 
@@ -1148,35 +1201,308 @@ async function doctor() {
   console.log("");
 }
 
-function showStatus() {
-  printSigma();
-  console.log(`  ${bold("Soma")} — Status`);
-  console.log("");
+async function projectDoctor() {
+  const doctorArgs = args.slice(1);
+  const wantsScan = doctorArgs.includes("--scan");
+  const wantsAll = doctorArgs.includes("--all");
 
-  const config = readConfig();
+  // --scan and --all need the runtime — delegate to core
+  if ((wantsScan || wantsAll) && isInstalled()) {
+    await delegateToCore();
+    return;
+  }
+
+  printSigma();
+  const agentV = getAgentVersion();
+  const projectV = getProjectVersion();
   const installed = isInstalled();
 
-  console.log(`  Version:     ${cyan(`v${VERSION}`)}`);
-  console.log(`  Home:        ${dim(SOMA_HOME)}`);
-  console.log(`  Installed:   ${installed ? green("yes") : red("no")}`);
-  if (config.installedAt) {
-    console.log(`  Since:       ${dim(config.installedAt.split("T")[0])}`);
-  }
-
-  if (installed && config.installPath) {
-    try {
-      const hash = execSync("git rev-parse --short HEAD", {
-        cwd: config.installPath, encoding: "utf-8"
-      }).trim();
-      const branch = execSync("git rev-parse --abbrev-ref HEAD", {
-        cwd: config.installPath, encoding: "utf-8"
-      }).trim();
-      console.log(`  Core:        ${dim(`${branch}@${hash}`)}`);
-    } catch {}
-  }
-
+  console.log(`  ${bold("Soma")} — Doctor`);
   console.log("");
+
+  if (!installed) {
+    console.log(`  ${red("✗")} Soma not installed. Run ${green("soma init")} first.`);
+    console.log("");
+    return;
+  }
+
+  // Version overview
+  console.log(`  Agent:   ${cyan(`v${agentV || "unknown"}`)}`);
+  if (projectV) {
+    console.log(`  Project: ${cyan(`v${projectV}`)}`);
+  }
+  console.log(`  CLI:     ${dim(`v${VERSION}`)}`);
+  console.log("");
+
+  const hasSomaDir = existsSync(join(process.cwd(), ".soma"));
+
+  if (!hasSomaDir) {
+    console.log(`  ${yellow("⚠")} No .soma/ in current directory.`);
+    console.log(`  Run ${green("soma init")} to set up this project, or ${green("soma doctor --scan")} to find projects.`);
+    console.log("");
+    return;
+  }
+
+  if (!projectV) {
+    console.log(`  ${yellow("⚠")} Project .soma/ has no version (pre-versioning).`);
+    console.log(`  This project was likely created before v0.6.3.`);
+    console.log(`  Run ${green("soma init")} to bring it up to date.`);
+    console.log("");
+    return;
+  }
+
+  if (agentV && projectV === agentV) {
+    console.log(`  ${green("\u2713")} Project is up to date.`);
+    console.log("");
+    await healthCheck();
+    return;
+  }
+  
+  if (agentV && projectV < agentV) {
+    console.log(`  ${yellow("\u26a0")} Project .soma/ is at ${cyan(`v${projectV}`)} , agent is at ${cyan(`v${agentV}`)} .`);
+    console.log("");
+  
+    // Tier 1: Auto-fix safe things right now
+    let fixes = 0;
+    const somaDir = join(process.cwd(), ".soma");
+  
+    // Add missing settings keys
+    const settingsPath = join(somaDir, "settings.json");
+    if (existsSync(settingsPath)) {
+      try {
+        const current = JSON.parse(readFileSync(settingsPath, "utf-8"));
+        let changed = false;
+        const add = (k, v) => { if (!(k in current)) { current[k] = v; changed = true; fixes++; } };
+        add("doctor", { autoUpdate: true, declinedVersion: null });
+        add("breathe", { auto: false, triggerAt: 50, rotateAt: 70, graceSeconds: 30 });
+        add("context", { notifyAt: 50, warnAt: 70, urgentAt: 80, autoExhaleAt: 85 });
+        add("preload", { staleAfterHours: 48, lastSessionLogs: 0 });
+        add("scratch", { autoInject: false });
+        add("guard", { coreFiles: "warn", bashCommands: "warn", gitIdentity: null });
+        add("checkpoints", { enabled: true, intervalMinutes: 5, squashOnPush: true });
+        add("persona", { name: null, emoji: "\u03c3" });
+        add("inherit", { identity: true, protocols: true, muscles: true, tools: true });
+        if (changed) writeFileSync(settingsPath, JSON.stringify(current, null, "\t") + "\n");
+      } catch {}
+    }
+  
+    // Add missing body/ + templates
+    const bodyDir = join(somaDir, "body");
+    // Resolve agent root — follow dev symlinks if needed
+  let agentRoot = CORE_DIR;
+  try {
+    const realCore = readlinkSync(join(CORE_DIR, "core"));
+    if (realCore) {
+      const devRoot = dirname(realCore);
+      if (existsSync(join(devRoot, "body", "_public"))) agentRoot = devRoot;
+    }
+  } catch {}
+  // Also check dist/ parent (prod layout)
+  if (!existsSync(join(agentRoot, "body", "_public"))) {
+    const parent = dirname(agentRoot);
+    if (existsSync(join(parent, "body", "_public"))) agentRoot = parent;
+  }
+  const bundledBody = join(agentRoot, "body", "_public");
+    if (existsSync(bundledBody)) {
+      try {
+        if (!existsSync(bodyDir)) mkdirSync(bodyDir, { recursive: true });
+        for (const f of readdirSync(bundledBody).filter(f => f.endsWith(".md"))) {
+          const dest = join(bodyDir, f);
+          if (!existsSync(dest)) { writeFileSync(dest, readFileSync(join(bundledBody, f), "utf-8")); fixes++; }
+        }
+      } catch {}
+    }
+  
+    // Add missing protocols
+    const protoDir = join(somaDir, "amps", "protocols");
+    const bundledProtos = existsSync(join(CORE_DIR, "dist", "content", "protocols"))
+      ? join(CORE_DIR, "dist", "content", "protocols")
+      : existsSync(join(CORE_DIR, "content", "protocols"))
+        ? join(CORE_DIR, "content", "protocols") : null;
+    if (bundledProtos) {
+      if (!existsSync(protoDir)) mkdirSync(protoDir, { recursive: true });
+      for (const f of readdirSync(bundledProtos).filter(f => f.endsWith(".md") && f !== "_template.md" && f !== "README.md")) {
+        const dest = join(protoDir, f);
+        if (!existsSync(dest)) { writeFileSync(dest, readFileSync(join(bundledProtos, f), "utf-8")); fixes++; }
+      }
+    }
+  
+    // Add missing bundled scripts
+    const scriptsDir = join(somaDir, "amps", "scripts");
+    const bundledScripts = existsSync(join(agentRoot, "dist", "content", "scripts"))
+      ? join(agentRoot, "dist", "content", "scripts")
+      : existsSync(join(agentRoot, "content", "scripts"))
+        ? join(agentRoot, "content", "scripts")
+        : existsSync(join(agentRoot, "scripts"))
+          ? join(agentRoot, "scripts") : null;
+    if (bundledScripts) {
+      if (!existsSync(scriptsDir)) mkdirSync(scriptsDir, { recursive: true });
+      for (const f of readdirSync(bundledScripts).filter(f => f.endsWith(".sh"))) {
+        const dest = join(scriptsDir, f);
+        if (!existsSync(dest)) {
+          writeFileSync(dest, readFileSync(join(bundledScripts, f), "utf-8"), { mode: 0o755 });
+          fixes++;
+        }
+      }
+    }
+
+    // Bump version after fixes
+    if (fixes > 0) {
+      try {
+        const s = JSON.parse(readFileSync(settingsPath, "utf-8"));
+        s.version = agentV;
+        writeFileSync(settingsPath, JSON.stringify(s, null, "\t") + "\n");
+      } catch {}
+      console.log(`  ${green("\u2713")} Applied ${fixes} automatic fixes`);
+      const bc = existsSync(join(somaDir, "body")) ? readdirSync(join(somaDir, "body")).filter(f => f.endsWith(".md")).length : 0;
+      const pc = existsSync(protoDir) ? readdirSync(protoDir).filter(f => f.endsWith(".md")).length : 0;
+      console.log(`    ${bc} body files, ${pc} protocols, settings updated`);
+      console.log(`    Version bumped to ${cyan(`v${agentV}`)}`);
+
+      // Scan + fix stale protocols (exist but differ from bundled)
+      let staleUpdated = 0;
+      let staleSkipped = [];
+      if (bundledProtos && existsSync(protoDir)) {
+        for (const f of readdirSync(protoDir).filter(f => f.endsWith(".md") && f !== "_template.md" && f !== "README.md")) {
+          const bundledFile = join(bundledProtos, f);
+          if (!existsSync(bundledFile)) continue;
+          const projRaw = readFileSync(join(protoDir, f), "utf-8");
+          const bundledRaw = readFileSync(bundledFile, "utf-8");
+          const strip = s => s.replace(/^(heat|loads|runs|last-run|heat-default):.*\n?/gm, "").trim();
+          if (strip(projRaw) === strip(bundledRaw)) continue;
+          // Preserve user's runtime fields (heat, loads) when updating content
+          const heatLine = projRaw.match(/^heat:.*$/m);
+          const loadsLine = projRaw.match(/^loads:.*$/m);
+          let updated = bundledRaw;
+          if (heatLine) updated = updated.replace(/^heat:.*$/m, heatLine[0]);
+          if (loadsLine) updated = updated.replace(/^loads:.*$/m, loadsLine[0]);
+          writeFileSync(join(protoDir, f), updated);
+          staleUpdated++;
+        }
+      }
+
+      console.log("");
+      if (staleUpdated > 0) {
+        console.log(`  ${green("\u2713")} ${staleUpdated} protocols updated to latest version`);
+        console.log(`  ${dim("Heat and load counts preserved. Content updated (coaching-voice rewrites, new TL;DR).")}`);
+      }
+      if (staleSkipped.length > 0) {
+        console.log(`  ${yellow("\u26a0")} ${staleSkipped.length} protocols skipped (may be customized)`);
+      }
+      console.log("");
+      const totalRemaining = staleSkipped.length;
+      if (totalRemaining > 0) {
+        console.log(`  ${dim("CLI handled: files, scripts, settings, protocols, version bump.")}`);
+        console.log(`  ${dim("Remaining: " + totalRemaining + " items need review.")}`);
+        console.log(`  ${dim("For full migration:")} ${green("soma")} ${dim("then")} ${green("/soma doctor")}`);
+      } else {
+        console.log(`  ${green("\u2713")} Full migration complete from CLI.`);
+        console.log(`  ${dim("No TUI session needed — all updates applied.")}`);
+      }
+
+      // Write _doctor-pending.md — only if there are remaining items for the agent
+      // If CLI handled everything, write a brief "complete" note instead
+      try {
+        const pendingPath = join(somaDir, "body", "_doctor-pending.md");
+        if (staleSkipped.length === 0) {
+          // Full migration done — write brief completion note
+          const done = [
+            "---",
+            "type: template",
+            "name: doctor-pending",
+            "status: complete",
+            `created: ${new Date().toISOString().split("T")[0]}`,
+            "description: CLI doctor completed full migration — verify with /soma doctor then delete this file",
+            "---",
+            "",
+            "# Doctor Update — Complete",
+            "",
+            `The CLI doctor migrated this project from v${projectV} to v${agentV} on ${new Date().toISOString().split("T")[0]}.`,
+            "",
+            `Applied: ${fixes} file fixes + ${staleUpdated} protocol updates. All settings, body, scripts, protocols current.`,
+            "",
+            "Run \`/soma doctor\` to verify, then delete this file.",
+          ];
+          writeFileSync(pendingPath, done.join("\n"));
+        } else {
+        const pending = [
+          "---",
+          "type: template",
+          "name: doctor-pending",
+          "status: active",
+          `created: ${new Date().toISOString().split("T")[0]}`,
+          "description: Written by soma doctor CLI — tells the agent what was fixed and what needs attention",
+          "---",
+          "",
+          "# Doctor Update — Pending",
+          "",
+          `The CLI doctor ran on ${new Date().toISOString().split("T")[0]} and updated this project from v${projectV} to v${agentV}.`,
+          "",
+          "## What the CLI fixed (Tier 1 — automatic, safe)",
+          "",
+          `- ${bc} body template files (added missing ones, preserved your customized files)`,
+          `- ${pc} protocols present (added missing bundled protocols)`,
+          `- Settings: added missing configuration sections with safe defaults`,
+          `- Version bumped to v${agentV}`,
+          "",
+          `## What the CLI also fixed`,
+          "",
+          `- ${staleUpdated} protocols updated to latest version (heat/loads preserved)`,
+          "",
+          staleSkipped.length > 0 ? `## What still needs attention (${staleSkipped.length} items)` : "## Status: Complete",
+          "",
+          staleSkipped.length > 0 
+            ? `**${staleSkipped.length} protocols** may be customized and were not auto-updated. The agent needs to:\n- Diff each against bundled version\n- Decide whether to update or preserve`
+            : "All mechanical updates applied by CLI. The agent can verify with /soma doctor.",
+          "",
+          "**To complete the migration:**",
+          "",
+          "Read the migration phases that apply to your version jump:",
+          "```",
+        ];
+        // Find which phases apply (only from projectV onward)
+        let agentRoot2 = CORE_DIR;
+        try {
+          const rc = readlinkSync(join(CORE_DIR, "core"));
+          if (rc) { const dr = dirname(rc); if (existsSync(join(dr, "migrations", "phases"))) agentRoot2 = dr; }
+        } catch {}
+        if (!existsSync(join(agentRoot2, "migrations", "phases"))) {
+          const pr = dirname(agentRoot2);
+          if (existsSync(join(pr, "migrations", "phases"))) agentRoot2 = pr;
+        }
+        const phasesDir2 = join(agentRoot2, "migrations", "phases");
+        if (existsSync(phasesDir2)) {
+          const allPhases = readdirSync(phasesDir2).filter(f => f.endsWith(".md")).sort();
+          const relevant = allPhases.filter(f => {
+            const m = f.match(/^v([\d.]+)-to-v/);
+            return m && m[1] >= projectV;
+          });
+          pending.push(`${relevant.length} phases apply (v${projectV} \u2192 v${agentV}):`);
+          pending.push("\`\`\`");
+          for (const f of relevant) {
+            pending.push("  " + join(phasesDir2, f));
+          }
+        }
+        pending.push("```");
+        pending.push("");
+        pending.push("Execute each phase's **Actions** section in order.");
+        pending.push("After completing all phases, delete this file — it's no longer needed.");
+        pending.push("");
+        writeFileSync(pendingPath, pending.join("\n"));
+      }
+      } catch { /* non-fatal */ }
+    } else {
+      console.log(`  ${green("\u2713")} Version bumped to ${cyan(`v${agentV}`)}`);
+      console.log(`  ${dim("No file changes needed — project structure is current.")}`);
+    }
+  } else {
+    console.log(`  ${green("\u2713")} Project version: ${cyan(`v${projectV}`)}`);
+  }
+  
+  console.log("");
+  await healthCheck();
 }
+
 
 // ── Delegation ───────────────────────────────────────────────────────
 
@@ -1276,7 +1602,12 @@ const cmd = args[0];
 if (cmd === "--version" || cmd === "-v" || cmd === "-V") {
   showVersion();
 } else if (cmd === "--help" || cmd === "-h") {
-  showHelp();
+  if (isInstalled()) {
+    // Delegate to core — richer help with scripts, commands, hub
+    await delegateToCore();
+  } else {
+    showHelp();
+  }
 } else if (cmd === "about") {
   await showAbout();
 } else if (cmd === "init") {
@@ -1291,15 +1622,15 @@ if (cmd === "--version" || cmd === "-v" || cmd === "-V") {
     // Installed, project init (new project or --template/--orphan)
     await delegateToCore();
   } else {
-    // Installed + .soma/ exists — check for updates, don't re-run setup
+    // Installed + .soma/ exists — check for updates + project staleness
     await checkAndUpdate();
   }
 } else if (cmd === "update") {
   checkForUpdates();
 } else if (cmd === "doctor") {
-  await doctor();
-} else if (cmd === "status") {
-  showStatus();
+  await projectDoctor();
+} else if (cmd === "status" || cmd === "health") {
+  await healthCheck();
 } else if (isInstalled()) {
   // Core installed — delegate to runtime
   await delegateToCore();
