@@ -28,6 +28,8 @@ updated: 2026-03-29
 ## What I've Learned
 {{muscle_digests}}
 
+{{scripts_table}}
+
 ## My Tools
 {{tools_section}}
 

@@ -74,7 +74,7 @@ Non-empty diff = customized = skip and report.
 
 ## Bundled Sources
 
-- Body templates: `~/.soma/agent/body/_public/`
+- Body templates: `~/.soma/agent/body/public/`
 - Protocols: `~/.soma/agent/content/protocols/` (or `dist/content/protocols/`)
 - Scripts: `~/.soma/agent/content/scripts/` (or `dist/content/scripts/`)
 - Settings defaults: `core/settings.ts`

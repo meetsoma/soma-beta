@@ -8,6 +8,8 @@ description: Boot followUp message — what the agent sees on session start. Cus
 
 {{git_context}}
 
+{{inbox_summary}}
+
 {{preload}}
 
 {{greeting}}
