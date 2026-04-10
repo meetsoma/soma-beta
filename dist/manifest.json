@@ -1,7 +1,7 @@
 {
   "version": "0.10.0",
-  "buildId": "55c326aa52ec4c76",
-  "buildDate": "2026-04-10T18:20:09.375Z",
+  "buildId": "a0155a6cb29e4f3d",
+  "buildDate": "2026-04-10T18:17:24.281Z",
   "piVersion": "0.66.1",
   "fileCount": 166,
   "files": {
@@ -49,9 +49,9 @@
     "core/event-bus.js": "f96a9a13071b2832955608387bf2482bcaf5310ce667f32f85a0d5bca44f08e3",
     "core/exec.js": "6aed92abe5273445a9bddcd92d4178264d0a23890b54b175a0efc73b20cdf53f",
     "core/export-html/ansi-to-html.js": "a0fd569725e8079e056a24ce631c934ace4fc8e02da46adfa92a4e2c1e402424",
-    "core/export-html/index.js": "f9821fc80ae17fd25f19af82da45236355c2575db61e1a63646e92aea6e5dc8a",
+    "core/export-html/index.js": "a181fd5e102a74b33d01c9a517431ef96bab8a0ca7b976fbf7704f021aaa2238",
     "core/export-html/template.js": "ddd7dbf036191cea8b6e4aae589f543005b82deb1de6be072d61eafca57fdd1d",
-    "core/export-html/tool-renderer.js": "f30c826cc65c8fd218a0930872938082504e364ecc111c409fd63bf5b27fabd3",
+    "core/export-html/tool-renderer.js": "b3831ab867afbe86ec54fc678d31ffd18ddd5cecd8a493701bcd3599fc4b9478",
     "core/export-html/vendor/highlight.min.js": "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846",
     "core/export-html/vendor/marked.min.js": "74c9f2e02c180c3e6caa09881a0b24032c86473af90acb1c87b6dc7255d491dd",
     "core/extensions/index.js": "9d99fe7b4a350909e9a2986bdd36e14e7c9b1adbbf797d23c26facedcb69c11c",
