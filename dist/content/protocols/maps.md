@@ -1,22 +1,25 @@
 ---
-type: protocol
 name: maps
-version: 1.1.0
+type: protocol
 status: active
+description: "MAPS — My Automation Protocol Scripts. Before any task, check for a MAP. After any repeated task, build one. MAPS connect AMPS into repeatable processes. Refine on every use."
 heat-default: warm
-created: 2026-03-16
-updated: 2026-03-18
-author: Curtis Mercier
-breadcrumb: "MAPS — My Automation Protocol Scripts. Before any task, check for a MAP. After any repeated task, build one. MAPS connect AMPS into repeatable processes. Refine on every use."
 tags: [workflow, process, navigation, amps, efficiency]
 applies-to: [always]
 scope: bundled
+created: 2026-03-16
+updated: 2026-04-04
+version: 1.1.0
+author: meetsoma
+license: MIT
+tier: official
 ---
 
 # MAPS — My Automation Protocol Scripts
 
 ## TL;DR
-Read the MAP before starting. Not skim — **read**. The MAP has scar tissue from sessions where you made the exact mistake you're about to make. It tells you which muscles to load, which scripts to run, and in what order. The Gaps section is the most honest part — it's where the MAP admits what it doesn't handle yet. Refine the MAP every time you use it. Build a new one after the second time you do something manually. `soma focus <keyword>` finds relevant MAPs. When you feel confident enough to skip the MAP, that's exactly when you need it most.
+
+Read the MAP before starting. Not skim — **read**. The MAP has scar tissue from sessions where you made the exact mistake you're about to make. The Gaps and Lessons Learned sections exist because something went wrong and someone wrote it down so you wouldn't repeat it. In v0.6.2: skipped the refactor MAP → broke the ship pipeline. Skipped the test-hygiene muscle → hid a real bug. Both were in the MAP. When you feel confident enough to skip the MAP, that's exactly when you need it most. Build a new MAP after the second time you do something manually. `soma focus <keyword>` finds relevant MAPs automatically.
 
 ## Why
 
@@ -84,7 +87,7 @@ type: map
 name: <map-name>
 status: active
 created: YYYY-MM-DD
-updated: YYYY-MM-DD
+updated: 2026-03-23
 scope: bundled
 triggers: [keyword1, keyword2]
 reads:
@@ -149,4 +152,3 @@ MAPS are the connective tissue. They don't add new knowledge — they organize e
 
 ---
 
-*© Curtis Mercier. Licensed under CC BY 4.0.*

@@ -1,41 +1,37 @@
 ---
-type: protocol
 name: plan-hygiene
-version: 1.0.0
-tier: official
-heat-default: warm
+type: protocol
 status: active
-created: 2026-03-12
-updated: 2026-03-12
-scope: bundled
-breadcrumb: "Plans rot. Frontmatter needs status, remaining, tooling. Empty remaining = complete → archive. Budget: ≤12 active. Verify on exhale."
+description: "Plans rot. Update remaining on every touch. Stale docs poison sessions."
+heat-default: warm
+tags: [workflow, planning, documentation]
 applies-to: [always]
+scope: bundled
+tier: official
+created: 2026-03-14
+updated: 2026-04-02
+version: 1.0.0
+author: meetsoma
+license: MIT
 ---
 
 # Plan Hygiene Protocol
-
 ## TL;DR
-You've seen plans rot — three sessions of drift and suddenly 48 plans exist and 12 are stale. Every plan needs `status`, `remaining`, `tooling` in frontmatter. If remaining is empty, archive it — it's done. Keep ≤12 active plans or you'll stop reading them. Verify plans on exhale. The moment a plan stops being useful, kill it or archive it. Dead plans are worse than no plans because they create false confidence.
-
+Plans rot. Frontmatter needs `status`, `remaining`, `tooling`. Empty remaining = complete → archive. Budget: ≤12 active. Use `soma-plans.sh`. Verify on exhale.
 ## The Problem
-
 Plans, kanbans, and changelogs drift from reality. Features get marked "done" in plans but never built. Changelogs claim test suites that don't exist. Plans reference functions that were renamed. 48 plans accumulate when 12 would suffice.
-
 ## Rules
-
 ### 0. Plans Have Live Frontmatter
-
 Every plan's frontmatter tracks its real state. This is the first thing to check and the last thing to update.
-
 ```yaml
 ---
 type: plan
 status: active          # draft | active | blocked | complete | archived
 created: 2026-03-13
 updated: 2026-03-14     # always update on any change
-scope: bundled
-owner: curtis + soma
-scope: [auto-breathe, notifications]
+author: meetsoma
+license: MITowner: curtis + soma
+version: 1.0.0scope: [auto-breathe, notifications]
 remaining:              # brief list of what's left — empty when complete
   - research API for new feature
   - implement core logic
@@ -103,7 +99,7 @@ npm test
 
 ### 6. Periodic Audit
 
-Run `bash .soma/scripts/plan-audit.sh` at least once per major session. It checks:
+Run your plan audit script at least once per major session. It checks:
 - Active plans with `status: done` (should be archived)
 - Active plan count (warn if >12)
 - Changelog claims vs codebase reality

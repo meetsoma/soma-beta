@@ -1,18 +1,18 @@
 ---
-type: protocol
 name: hub-sharing
+type: protocol
 status: active
-version: 1.0.0
+description: "How Soma handles /hub share. This behavior is built into the hub extension — this protocol helps you understand what's happening. Not loaded into the system prompt."
 heat-default: warm
+tags: [hub, share, privacy, community, public]
 applies-to: [always]
 scope: core
-breadcrumb: "How Soma handles /hub share. This behavior is built into the hub extension — this protocol helps you understand what's happening. Not loaded into the system prompt."
+tier: core
+created: 2026-03-22
+updated: 2026-04-02
+version: 1.0.0
 author: Curtis Mercier
 license: MIT
-tier: core
-tags: [hub, share, privacy, community, public]
-created: 2026-03-22
-updated: 2026-03-22
 ---
 
 # Hub Sharing
@@ -20,7 +20,8 @@ updated: 2026-03-22
 > **This is documentation, not a behavioral rule.** The sharing behavior is built into `soma-hub.ts` — editing this file won't change how sharing works. This protocol exists so you can understand the process and know what to expect.
 
 ## TL;DR
-When you share content to the hub, Soma never touches your original file. It creates a clean copy in `_public/` with private data stripped, paths fixed, and quality checked. If secrets are detected, sharing is blocked entirely — no exceptions. Quality issues get surfaced so you can fix them before submitting. The flow: `/hub share` → privacy scan → quality check → `_public/` copy → PR to community repo.
+
+How Soma manages the `/hub share` flow. Your original content stays untouched — Soma creates a clean `public/` copy with private data stripped, and that's what gets submitted to the community hub. Secrets block sharing entirely. Paths are auto-fixed. Quality issues are surfaced so Soma can help you improve before submitting.
 
 ## How It Works
 
@@ -31,18 +32,18 @@ User's original (project-specific, may have private paths)
   amps/muscles/my-pattern.md          ← stays untouched
 
 Public copy (cleaned, generalized)
-  amps/muscles/_public/my-pattern.md  ← submitted to hub
+  amps/muscles/public/my-pattern.md  ← submitted to hub
 ```
 
 When `/hub share` runs:
 
-1. **Find the file** — check the main directory first, then `_public/`
-2. **If the file passes all checks** — submit directly, no `_public/` copy needed
+1. **Find the file** — check the main directory first, then `public/`
+2. **If the file passes all checks** — submit directly, no `public/` copy needed
 3. **If privacy issues are found:**
-   - Create `_public/` copy with issues stripped
+   - Create `public/` copy with issues stripped
    - Show the user what was removed and why
-   - The agent can help improve the `_public/` version
-   - Submit the `_public/` version
+   - The agent can help improve the `public/` version
+   - Submit the `public/` version
 4. **If quality is low** — show issues to the agent, let it help the user improve before submitting
 
 ### What Gets Stripped
@@ -78,7 +79,7 @@ When the mechanical checks pass but quality is low, the agent should:
 ## When to Apply
 
 - When the user runs `/hub share`
-- When the agent notices content in `_public/` that differs from the original (drift detection)
+- When the agent notices content in `public/` that differs from the original (drift detection)
 - When helping a user prepare content for sharing
 
 ## When NOT to Apply

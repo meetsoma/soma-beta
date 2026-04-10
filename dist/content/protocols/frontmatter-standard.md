@@ -2,14 +2,14 @@
 name: frontmatter-standard
 type: protocol
 status: active
-description: "Every .md file needs frontmatter: type, status, created, updated. Protocols get TL;DR; muscles get digest."
+description: "Every .md file needs frontmatter: type, status, created, updated. All AMPS get `## TL;DR` for warm-tier loading."
 heat-default: warm
 tags: [structure, metadata, organization]
 applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-09
-updated: 2026-03-10
+updated: 2026-04-04
 version: 1.1.0
 author: Curtis Mercier
 license: CC BY 4.0
@@ -21,7 +21,7 @@ spec-ref: curtismercier/protocols/atlas (v0.1)
 # Frontmatter Standard Protocol
 
 ## TL;DR
-Frontmatter is how Soma discovers and classifies your content. Every `.md` file needs at minimum: `type`, `status`, `created`, `updated`. Without it, the file is invisible to heat tracking, boot discovery, and the hub. Protocols get a `## TL;DR` section (that's what loads into the prompt). Muscles get `<!-- digest:start/end -->` blocks (compact summary for warm loading). Skip this and your content silently disappears from the system.
+Every `.md` file needs YAML frontmatter: `type`, `status`, `created`, `updated`. All AMPS content (protocols, muscles, automations) uses `## TL;DR` for warm-tier loading.
 
 ## Rule
 

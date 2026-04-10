@@ -9,7 +9,7 @@ applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-10
-updated: 2026-03-14
+updated: 2026-04-02
 version: 1.0.0
 author: meetsoma
 license: MIT
@@ -18,7 +18,8 @@ license: MIT
 # Pre-Flight Protocol
 
 ## TL;DR
-Before building anything new, check if it already exists. This is the most common mistake: spending 30 minutes building something that's already in the codebase under a different name. Grep the codebase. Scan `.soma/`. Check the kanban. When the user asks for something that's already there, say so immediately — "we already have X, want to extend it?" This is how senior engineers prevent duplication.
+
+Before building anything new, check if it exists. Grep codebase, scan `.soma/`, verify need. Catch duplication before executing.
 
 ## Rule
 

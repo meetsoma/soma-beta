@@ -9,7 +9,7 @@ applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-12
-updated: 2026-03-14
+updated: 2026-04-02
 version: 1.0.0
 author: Curtis Mercier
 license: CC BY 4.0
@@ -18,7 +18,7 @@ license: CC BY 4.0
 # Detection Triggers
 
 ## TL;DR
-Not everything the user says is worth remembering. Capture corrections (they're telling you what you got wrong), preferences (they're telling you who they are), and patterns that repeat 3+ times (that's a signal, not noise). Skip one-off instructions — those are for this session, not your identity. When something sticks, bubble it up: session log first, then muscle if it recurs, then protocol if it's fundamental.
+Capture on: corrections, preferences, 3+ repeated patterns, knowledge gaps. Skip one-time instructions. Bubble-up: session log → muscle → protocol → core.
 
 ## Capture Triggers
 

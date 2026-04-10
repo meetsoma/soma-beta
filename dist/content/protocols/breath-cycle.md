@@ -2,14 +2,14 @@
 name: breath-cycle
 type: protocol
 status: active
-description: "Sessions have a rhythm: inhale, hold, exhale. Auto-breathe nudges at 50%/70%/85%. The preload you write IS the next session's memory."
+description: "Inhale → hold → exhale. Auto-breathe at 50%/70%/85%. Commands: /exhale, /breathe, /rest, /inhale."
 heat-default: warm
 tags: [session, memory, continuity, self-awareness]
 applies-to: [always]
 scope: core
 tier: core
 created: 2026-03-09
-updated: 2026-03-22
+updated: 2026-04-02
 version: 2.0.0
 author: Curtis Mercier
 license: CC BY 4.0
@@ -19,7 +19,7 @@ license: CC BY 4.0
 > How Soma manages session lifecycle. This behavior is built into the boot extension — this protocol helps you understand what's happening and how to change it.
 
 ## TL;DR
-Sessions have a rhythm: inhale (boot loads everything), hold (you work), exhale (you save state for next time). Auto-breathe watches context and nudges at 50%/70%/85% — don't fight it, ride it. The preload you write at exhale IS the next session's memory. Make it count: resume point, what shipped, exact files to read. A preload that says "continued working" is a preload that wastes the next session's first 10 minutes. Commands: `/exhale`, `/breathe`, `/rest`, `/inhale`.
+Inhale → hold → exhale. Auto-breathe at 50%/70%/85%. Commands: `/exhale`, `/breathe`, `/rest`, `/inhale`. Write preload with resume point + orient targets before rotating.
 
 ## How It Works
 

@@ -9,7 +9,7 @@ applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-12
-updated: 2026-03-12
+updated: 2026-04-02
 version: 1.0.0
 author: Curtis Mercier
 license: CC BY 4.0
@@ -22,7 +22,7 @@ upstream-version: 1.0.0
 A live kanban board that moves with you across sessions. The board is the single source of truth for what's happening, what's done, and what's waiting. It's updated as you work — not reconstructed after the fact.
 
 ## TL;DR
-One board, one truth: `.soma/_kanban.md`. Four lanes: Active, In Progress, Done, Parked. Move cards as you work, not at the end — if the board doesn't reflect reality right now, it's not a board, it's fiction. Verify on exhale. When something's blocked, park it with a reason. When something's done, move it — don't leave completed work in Active where it clutters the view.
+One board: `.soma/_kanban.md`. Four lanes: Active, In Progress, Done, Parked. Move cards in real time. Verify board on exhale.
 
 ## When to Apply
 

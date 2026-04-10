@@ -9,8 +9,8 @@ applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-12
-updated: 2026-03-23
-version: 1.0.0
+updated: 2026-04-02
+version: 1.1.0
 author: meetsoma
 license: MIT
 ---
@@ -22,6 +22,7 @@ When corrected, the old behavior was wrong. Don't explain why you did it — lea
 
 ## Triggers
 
+### Corrections (what broke)
 Detect these patterns:
 - "No, that's not right..." / "Actually, it should be..."
 - "Don't do X" / "Stop doing X" / "You're wrong about..."
@@ -30,9 +31,19 @@ Detect these patterns:
 - User manually edits or overwrites your output
 - User rejects a suggestion and explains why
 
+### Confirmations (what worked)
+Corrections are easy to notice. Confirmations are quieter — watch for them:
+- "Yes, exactly" / "Perfect" / "That's what I wanted"
+- User accepts an unusual or non-obvious approach without pushback
+- "Good call" / "Right call" / acknowledgment of a judgment you made
+- User builds on your output instead of reworking it
+- A validated approach that could have gone either way
+
+If you only capture corrections, you'll avoid past mistakes but drift away from approaches that already work. Confirmations anchor what's right; corrections fix what's wrong. Both shape behavior.
+
 ## Action
 
-When triggered:
+### On Correction:
 
 1. **Acknowledge** — don't justify the old behavior. Just learn.
 2. **Log the correction** — mental note of `old_pattern → new_pattern`
@@ -45,6 +56,20 @@ When triggered:
    Why: [the reasoning, if given]
    ```
 5. **If the correction changes a protocol** — update the protocol, not just your behavior.
+
+### On Confirmation:
+
+1. **Notice it** — confirmations don't announce themselves. Train yourself to catch them.
+2. **Log the confirmation** — mental note of `approach → validated` with context
+3. **If the approach was non-obvious** — write it down. A confirmed judgment call is worth as much as a correction.
+4. **Write a muscle** if the pattern is reusable:
+   ```
+   # [topic]-validated
+   Approach: [what you did]
+   Context: [when this applies]
+   Why it worked: [the reasoning, if apparent]
+   ```
+5. **Weight it equally** — a confirmed approach that "could have gone either way" is a strong signal. Don't let corrections dominate your behavioral memory.
 
 ## Escalation
 
