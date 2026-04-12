@@ -79,7 +79,7 @@ process.exit = function somaRotationExit(code) {
 const args = process.argv.slice(2);
 
 // Version flag
-if (args[0] === "--version" || args[0] === "-V" || args[0] === "-v") {
+if (args[0] === "--version" || args[0] === "-V" || args[0] === "-v" || args[0] === "version") {
 	// Delegate to thin-cli which shows both agent + CLI versions
 	const { dirname: dn } = await import("path");
 	const { fileURLToPath: fu } = await import("url");
@@ -97,7 +97,7 @@ if (args[0] === "--version" || args[0] === "-V" || args[0] === "-v") {
 }
 
 // Help flag — Soma-branded help with our commands + Pi options
-if (args[0] === "--help" || args[0] === "-h") {
+if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
 	const { readFileSync: rf, existsSync: ex, readdirSync: rd } = await import("fs");
 	const { fileURLToPath } = await import("url");
 	const { dirname, join: j } = await import("path");
@@ -249,6 +249,13 @@ if (args[0] === "--help" || args[0] === "-h") {
 	console.log(`    ${g("soma map --list")}         ${d("Show available MAPs")}`);
 	console.log(`    ${g("soma doctor")}              ${d("Project health + migration")}`);
 	console.log(`    ${g("soma status")}              ${d("Infrastructure health check")}`);
+	console.log(``);
+	console.log(`  ${b("Script Commands")} ${d("(discovered from scripts/):")}`);  
+	console.log(`    ${g("soma code <cmd>")}          ${d("Codebase navigator — find, map, refs, blast")}`);  
+	console.log(`    ${g("soma verify")}              ${d("Project health checks")}`);  
+	console.log(`    ${g("soma refactor <cmd>")}      ${d("Dependency graph, blast radius")}`);  
+	console.log(`    ${g("soma <name> [args]")}       ${d("Any soma-<name>.sh in scripts/ or .soma/")}`);  
+	console.log(`    ${g("soma --help scripts")}      ${d("Show all installed scripts")}`);  
 	console.log(``);
 	console.log(`  ${b("Options:")}`);
 	console.log(`    ${g("--model <pattern>")}        ${d("Start with a specific model (e.g. sonnet, gpt-4o)")}`);
@@ -426,7 +433,7 @@ if (args[0] === "map") {
 	const contentArgs = args[0] === "content" ? args.slice(1) : args;
 	let handled = false;
 	// Try compiled core (co-located with node_modules for package resolution)
-	const agentDir = join(process.env.HOME || "", ".soma", "agent");
+	const agentDir = process.env.SOMA_CODING_AGENT_DIR || join(process.env.HOME || "", ".soma", "agent");
 	const compiledCore = join(agentDir, "core-compiled.js");
 	try {
 		if (existsSync(compiledCore)) {
@@ -439,6 +446,17 @@ if (args[0] === "map") {
 		// compiled core not available or failed
 	}
 	if (handled) process.exit(0);
+	// If "soma init" and .soma/ already exists, route to doctor instead of TUI
+	if (args[0] === "init" && existsSync(join(process.cwd(), ".soma"))) {
+		const { dirname: dn2 } = await import("path");
+		const { fileURLToPath: fu2 } = await import("url");
+		const thinCli = join(dn2(fu2(import.meta.url)), "thin-cli.js");
+		if (existsSync(thinCli)) {
+			try { execFileSync(process.execPath, [thinCli, "doctor"], { stdio: "inherit" }); }
+			catch {}
+			process.exit(0);
+		}
+	}
 	// Fall through to main if not handled
 	main(args);
 } else if (args[0] === "inhale") {
@@ -544,7 +562,64 @@ if (args[0] === "map") {
 	}
 	process.exit(0);
 } else {
-	// soma (no subcommand) — fresh session, NO preload
+	// ── Script discovery: soma <name> → soma-<name>.sh ──────────────
+	// Before starting a session, check if the first arg matches a script.
+	// Chain: bundled (agent/scripts/) → project (.soma/) → global (~/.soma/)
+	// CWD-safe: only uses universal paths, no dev-specific assumptions.
+	const subcmd = args[0];
+	if (subcmd && !subcmd.startsWith("-") && !subcmd.startsWith("@")) {
+		const { homedir } = await import("os");
+		const scriptName = `soma-${subcmd}.sh`;
+		const home = homedir();
+
+		// For 'dev': route to _dev/soma-dev/ directory (has its own router)
+		const agentDir = process.env.SOMA_CODING_AGENT_DIR || join(home, ".soma", "agent");
+		// Resolve CORE_DIR: follow symlink if dev mode (core/ → repos/agent/core/)
+		const coreDir = existsSync(join(agentDir, "core"))
+			? (await import("fs")).realpathSync(join(agentDir, "core"))
+			: null;
+		const scriptsDir = coreDir ? join(coreDir, "..", "scripts") : null;
+
+		if (subcmd === "dev" && scriptsDir) {
+			const devIndex = join(scriptsDir, "_dev", "soma-dev", "index.sh");
+			if (existsSync(devIndex)) {
+				try {
+					execFileSync("bash", [devIndex, ...args.slice(1)], { stdio: "inherit" });
+				} catch (err) { if (err.status) process.exit(err.status); }
+				process.exit(0);
+			}
+		}
+
+		// General script discovery: bundled → project → global
+		// Checks both .sh (free, bash) and .js (pro, node) variants
+		const jsName = `soma-${subcmd}.js`;
+		const candidates = [
+			scriptsDir ? join(scriptsDir, scriptName) : null,              // bundled .sh
+			scriptsDir ? join(scriptsDir, jsName) : null,                  // bundled .js (pro)
+			join(process.cwd(), ".soma", "amps", "scripts", scriptName),  // project .sh
+			join(process.cwd(), ".soma", "amps", "scripts", jsName),      // project .js
+			join(home, ".soma", "amps", "scripts", scriptName),           // global .sh
+			join(home, ".soma", "amps", "scripts", jsName),               // global .js
+		].filter(Boolean);
+
+		const script = candidates.find(p => existsSync(p));
+		if (script) {
+			try {
+				if (script.endsWith(".js")) {
+					// Pro script: run with node (compiled .js module)
+					execFileSync(process.execPath, ["--input-type=module", "-e",
+						`import{run}from"${script}";const o=run(${JSON.stringify(args.slice(1))});if(o)process.stdout.write(o);`
+					], { stdio: "inherit" });
+				} else {
+					// Free script: run with bash
+					execFileSync("bash", [script, ...args.slice(1)], { stdio: "inherit" });
+				}
+			} catch (err) { if (err.status) process.exit(err.status); }
+			process.exit(0);
+		}
+	}
+
+	// soma (no subcommand match) — start session
 	main(args);
 }
 //# sourceMappingURL=cli.js.map
