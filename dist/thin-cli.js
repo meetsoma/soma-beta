@@ -29,6 +29,19 @@ import { showAbout } from "./welcome/about.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")).version;
 
+// Semver comparison: returns -1 (a<b), 0 (equal), 1 (a>b)
+function semverCmp(a, b) {
+  if (!a || !b) return 0;
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const va = pa[i] || 0, vb = pb[i] || 0;
+    if (va < vb) return -1;
+    if (va > vb) return 1;
+  }
+  return 0;
+}
+
 // ── Welcome / First Run ─────────────────────────────────────────────
 
 async function showWelcome() {
@@ -198,6 +211,20 @@ async function initSoma() {
       }
     }
 
+    // Preserve user-installed extensions (non-soma-* files)
+    const extDir = join(installDir, "extensions");
+    if (existsSync(extDir)) {
+      try {
+        for (const f of readdirSync(extDir).filter(f => !f.startsWith("soma-") && (f.endsWith(".ts") || f.endsWith(".js")))) {
+          const fp = join(extDir, f);
+          try {
+            preservedFiles[`extensions/${f}`] = readFileSync(fp, "utf-8");
+            console.log(`  ${dim("→")} Preserving extension: ${f}`);
+          } catch {}
+        }
+      } catch {}
+    }
+
     const hasGit = existsSync(join(installDir, ".git"));
     let repaired = false;
 
@@ -342,7 +369,7 @@ async function checkAndUpdate() {
 
     const agentV = getAgentVersion();
     const projectV = getProjectVersion();
-    if (agentV && projectV && projectV < agentV) {
+    if (agentV && projectV && semverCmp(projectV, agentV) < 0) {
       console.log(`  ${yellow("⚠")} Project .soma/ is at ${cyan(`v${projectV}`)}, agent is at ${cyan(`v${agentV}`)}.`);
       console.log(`  Run ${green("soma doctor")} to check for updates.`);
     }
@@ -612,14 +639,14 @@ async function projectDoctor() {
     return;
   }
 
-  if (agentV && projectV === agentV) {
+  if (agentV && semverCmp(projectV, agentV) === 0) {
     console.log(`  ${green("✓")} Project is up to date.`);
     console.log("");
     await healthCheck();
     return;
   }
   
-  if (agentV && projectV < agentV) {
+  if (agentV && semverCmp(projectV, agentV) < 0) {
     console.log(`  ${yellow("⚠")} Project .soma/ is at ${cyan(`v${projectV}`)} , agent is at ${cyan(`v${agentV}`)} .`);
     console.log("");
   
@@ -651,18 +678,19 @@ async function projectDoctor() {
       const realCore = readlinkSync(join(CORE_DIR, "core"));
       if (realCore) {
         const devRoot = dirname(realCore);
-        if (existsSync(join(devRoot, "body", "_public"))) agentRoot = devRoot;
+        if (existsSync(join(devRoot, "templates", "default")) || existsSync(join(devRoot, "body", "_public"))) agentRoot = devRoot;
       }
     } catch {}
-    if (!existsSync(join(agentRoot, "body", "_public"))) {
-      const parent = dirname(agentRoot);
-      if (existsSync(join(parent, "body", "_public"))) agentRoot = parent;
-    }
-    const bundledBody = join(agentRoot, "body", "_public");
-    if (existsSync(bundledBody)) {
+    // Resolve bundled body templates: templates/default/ (v0.11+) or body/_public/ (legacy)
+    const bundledBody = existsSync(join(agentRoot, "templates", "default"))
+      ? join(agentRoot, "templates", "default")
+      : existsSync(join(agentRoot, "body", "_public"))
+        ? join(agentRoot, "body", "_public")
+        : null;
+    if (bundledBody && existsSync(bundledBody)) {
       try {
         if (!existsSync(bodyDir)) mkdirSync(bodyDir, { recursive: true });
-        for (const f of readdirSync(bundledBody).filter(f => f.endsWith(".md"))) {
+        for (const f of readdirSync(bundledBody).filter(f => f.endsWith(".md") && !f.startsWith("_"))) {
           const dest = join(bodyDir, f);
           if (!existsSync(dest)) { writeFileSync(dest, readFileSync(join(bundledBody, f), "utf-8")); fixes++; }
         }
@@ -871,9 +899,9 @@ try {
   }
 } catch {}
 
-if (cmd === "--version" || cmd === "-v" || cmd === "-V") {
+if (cmd === "--version" || cmd === "-v" || cmd === "-V" || cmd === "version") {
   showVersion();
-} else if (cmd === "--help" || cmd === "-h") {
+} else if (cmd === "--help" || cmd === "-h" || cmd === "help") {
   if (isInstalled()) {
     await delegateToCore();
   } else {
@@ -899,6 +927,11 @@ if (cmd === "--version" || cmd === "-v" || cmd === "-V") {
   await projectDoctor();
 } else if (cmd === "status" || cmd === "health") {
   await healthCheck();
+} else if (cmd && cmd.startsWith("--") && !isInstalled()) {
+  // Unknown flag before install — show help
+  console.log(`  ${yellow("⚠")} Unknown option: ${cmd}`);
+  console.log(`  Run ${green("soma --help")} for usage.`);
+  console.log("");
 } else if (isInstalled()) {
   await delegateToCore();
 } else {

@@ -3,13 +3,13 @@ name: inter-agent-inbox
 type: protocol
 status: active
 description: "File-based messaging between AI agents. Drop a markdown file in the recipient's inbox directory. No automation needed — just files. Enables asynchronous collaboration across sessions and agent systems."
-heat-default: warm
+heat-default: cold
 tags: [communication, multi-agent, collaboration, inbox, async]
 applies-to: [multi-agent, teams, workspaces]
 scope: community
 tier: official
 created: 2026-03-26
-updated: 2026-04-04
+updated: 2026-04-12
 version: 1.0.0
 author: meetsoma
 license: MIT
@@ -149,11 +149,11 @@ subject: "{{scripts_table}} missing from default _mind.md"
 # Scripts Discovered But Never Rendered
 
 The boot step `scripts` discovers all scripts but `{{scripts_table}}`
-isn't in `body/_public/_mind.md`. Every project has invisible scripts.
+isn't in `templates/default/_mind.md`. Every project has invisible scripts.
 
 **Root cause:** Variable exists in body.ts but not in the template.
 **Fix:** Add `{{scripts_table}}` between `{{muscle_digests}}` and `{{tools_section}}`.
-**Files:** soma-boot.ts:502-575, body.ts:83, body/_public/_mind.md
+**Files:** soma-boot.ts:502-575, body.ts:83, templates/default/_mind.md
 ```
 
 ### FYI / Knowledge Share

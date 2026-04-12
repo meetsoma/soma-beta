@@ -3,13 +3,13 @@ name: deep-recall
 type: protocol
 status: active
 description: "Preloads are surface memory. On continued sessions, deepen context: soma-seam trace the work topic, soma-reflect for past patterns, scan recent session logs."
-heat-default: warm
+heat-default: cold
 tags: [memory, context, continuity, recall]
 applies-to: [always]
 scope: bundled
 tier: official
 created: 2026-03-15
-updated: 2026-04-03
+updated: 2026-04-12
 version: 1.1.0
 author: meetsoma
 license: MIT

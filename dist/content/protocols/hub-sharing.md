@@ -3,13 +3,13 @@ name: hub-sharing
 type: protocol
 status: active
 description: "How Soma handles /hub share. This behavior is built into the hub extension — this protocol helps you understand what's happening. Not loaded into the system prompt."
-heat-default: warm
+heat-default: cold
 tags: [hub, share, privacy, community, public]
 applies-to: [always]
 scope: core
 tier: core
 created: 2026-03-22
-updated: 2026-04-02
+updated: 2026-04-12
 version: 1.0.0
 author: Curtis Mercier
 license: MIT

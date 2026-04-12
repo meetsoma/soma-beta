@@ -3,12 +3,12 @@ name: maps
 type: protocol
 status: active
 description: "MAPS — My Automation Protocol Scripts. Before any task, check for a MAP. After any repeated task, build one. MAPS connect AMPS into repeatable processes. Refine on every use."
-heat-default: warm
+heat-default: cold
 tags: [workflow, process, navigation, amps, efficiency]
 applies-to: [always]
 scope: bundled
 created: 2026-03-16
-updated: 2026-04-04
+updated: 2026-04-12
 version: 1.1.0
 author: meetsoma
 license: MIT

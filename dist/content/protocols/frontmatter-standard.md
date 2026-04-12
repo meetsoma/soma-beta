@@ -3,13 +3,13 @@ name: frontmatter-standard
 type: protocol
 status: active
 description: "Every .md file needs frontmatter: type, status, created, updated. All AMPS get `## TL;DR` for warm-tier loading."
-heat-default: warm
+heat-default: cold
 tags: [structure, metadata, organization]
 applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-09
-updated: 2026-04-04
+updated: 2026-04-12
 version: 1.1.0
 author: Curtis Mercier
 license: CC BY 4.0

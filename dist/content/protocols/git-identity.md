@@ -2,7 +2,7 @@
 type: protocol
 name: git-identity
 status: active
-heat-default: warm
+heat-default: cold
 applies-to: [git]
 breadcrumb: "Soma's guard checks git identity on every commit. Configure expected email in settings.json — mismatches trigger warnings. This behavior is built into soma-guard.ts."
 description: "Git identity guard — configure expected email in settings, mismatches trigger warnings on commit."
@@ -13,7 +13,7 @@ tier: core
 scope: core
 tags: [git, attribution, identity, guard, settings]
 created: 2026-03-09
-updated: 2026-04-02
+updated: 2026-04-12
 ---
 
 # Git Identity

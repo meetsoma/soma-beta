@@ -13,6 +13,7 @@ import { parseSkillBlock } from "../../core/agent-session.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { sanitizeApiError } from "./error-sanitizer.js";
 import { findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
 import { SessionManager } from "../../core/session-manager.js";
@@ -2521,7 +2522,7 @@ export class InteractiveMode {
     }
     showError(errorMessage) {
         this.chatContainer.addChild(new Spacer(1));
-        this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
+        this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${sanitizeApiError(errorMessage)}`), 1, 0));
         this.ui.requestRender();
     }
     showWarning(warningMessage) {

@@ -3,13 +3,13 @@ name: correction-capture
 type: protocol
 status: active
 description: "When corrected, acknowledge without justifying, log old→new pattern, write a muscle if repeated. Third correction on same thing → escalate to protocol or identity."
-heat-default: warm
+heat-default: cold
 tags: [learning, self-improvement, memory, corrections]
 applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-12
-updated: 2026-04-02
+updated: 2026-04-12
 version: 1.1.0
 author: meetsoma
 license: MIT
@@ -75,7 +75,7 @@ If you only capture corrections, you'll avoid past mistakes but drift away from 
 
 - **First correction:** Acknowledge + adjust behavior this session
 - **Second correction (same thing):** Write a muscle
-- **Third correction (same thing):** The muscle isn't working. Escalate to a protocol or update identity.md.
+- **Third correction (same thing):** The muscle isn't working. Escalate to a protocol or update soul.md.
 
 ## Dignity
 

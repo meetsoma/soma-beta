@@ -3,13 +3,13 @@ name: quality-standards
 type: protocol
 status: active
 description: "Deletion is irreversible — move or archive. Tests cover NEW code, not just pass on old. Blast radius before editing — find every caller, test, and doc. Atomic commits — one concern each."
-heat-default: warm
+heat-default: cold
 tags: [quality, safety, git, workflow]
 applies-to: [always]
 scope: bundled
 tier: official
 created: 2026-03-10
-updated: 2026-04-02
+updated: 2026-04-12
 version: 1.0.0
 author: meetsoma
 license: MIT

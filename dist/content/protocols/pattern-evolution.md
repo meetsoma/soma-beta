@@ -3,13 +3,13 @@ name: pattern-evolution
 type: protocol
 status: active
 description: "Maturation: Skills → Muscles → Protocols → Automations. Born from gaps and repeated friction. Not every pattern climbs the full ladder."
-heat-default: warm
+heat-default: cold
 tags: [learning, patterns, growth]
 applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-09
-updated: 2026-04-02
+updated: 2026-04-12
 version: 1.4.0
 author: Curtis Mercier
 license: CC BY 4.0

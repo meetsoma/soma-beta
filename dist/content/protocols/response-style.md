@@ -2,7 +2,7 @@
 type: protocol
 name: response-style
 status: active
-heat-default: warm
+heat-default: cold
 scope: bundled
 tier: core
 author: meetsoma
@@ -13,7 +13,7 @@ breadcrumb: "Prefer prose over bullets. Minimum formatting for the content. One 
 description: "Prefer prose over bullets. Minimum formatting for the content. One question per response max. No hollow social scripts."
 tags: [communication, formatting, ux]
 created: 2026-03-15
-updated: 2026-04-02
+updated: 2026-04-12
 ---
 
 # Response Style

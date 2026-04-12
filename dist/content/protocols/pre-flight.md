@@ -3,13 +3,13 @@ name: pre-flight
 type: protocol
 status: active
 description: "Check what exists before creating. Verify assumptions before building."
-heat-default: warm
+heat-default: cold
 tags: [workflow, safety, verification]
 applies-to: [always]
 scope: bundled
 tier: core
 created: 2026-03-10
-updated: 2026-04-02
+updated: 2026-04-12
 version: 1.0.0
 author: meetsoma
 license: MIT

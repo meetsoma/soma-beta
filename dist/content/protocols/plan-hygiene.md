@@ -3,13 +3,13 @@ name: plan-hygiene
 type: protocol
 status: active
 description: "Plans rot. Update remaining on every touch. Stale docs poison sessions."
-heat-default: warm
+heat-default: cold
 tags: [workflow, planning, documentation]
 applies-to: [always]
 scope: bundled
 tier: official
 created: 2026-03-14
-updated: 2026-04-02
+updated: 2026-04-12
 version: 1.0.0
 author: meetsoma
 license: MIT
