@@ -12,6 +12,8 @@ process.title = "soma";
 // Soma has its own versioning — skip Pi's upstream version check
 // which compares Soma 0.1.0 against pi-coding-agent 0.57.1 on npm
 process.env.PI_SKIP_VERSION_CHECK = "1";
+// Disable Pi 0.67.1 install telemetry ping
+process.env.PI_TELEMETRY = "0";
 import { setBedrockProviderModule } from "@mariozechner/pi-ai";
 import { bedrockProviderModule } from "@mariozechner/pi-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
