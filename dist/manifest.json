@@ -1,7 +1,7 @@
 {
-  "version": "0.11.2",
-  "buildId": "237c6cb157d409eb",
-  "buildDate": "2026-04-14T16:24:14.904Z",
+  "version": "0.11.3",
+  "buildId": "22d1fc758d21b0dc",
+  "buildDate": "2026-04-14T19:56:12.838Z",
   "piVersion": "0.67.1",
   "fileCount": 173,
   "files": {
@@ -95,7 +95,7 @@
     "core/tools/tool-definition-wrapper.js": "8e7258146ccb1001b378b298255bba49f2054899512640838b24c369d4461bc5",
     "core/tools/truncate.js": "6889291aec57beee19fffb248222c33fe7f6e0ade7d392e3db60ccf7b457d4f5",
     "core/tools/write.js": "040fa95204d1eb8a26f9af141895508ac526c77d96368cd060ffa3b438905383",
-    "extensions/soma-boot.js": "3277197d74310e69bb41291976b68d5d73ba66d6599124df189942673434bdc7",
+    "extensions/soma-boot.js": "9808088897a90f9e69bfe3379674d908436e7273ee9a652791708d0cf4e67d8f",
     "extensions/soma-breathe.js": "a8e506f548ab6c0c767851d43b9e500d9ead3e62140c7c6c723c1d46e3c2ec92",
     "extensions/soma-guard.js": "7fe21266b6ee35d1532dae21a0c9d322e2d6a1ff4ce4b28c4bbe451f11d96f31",
     "extensions/soma-header.js": "715ae331fddb6962c66ce9988b3ead18cb9e7da7df0655ec648f647c1aa7b06f",
