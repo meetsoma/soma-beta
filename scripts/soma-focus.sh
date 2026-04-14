@@ -49,6 +49,20 @@ PROJECT_ROOT="$(find_project_root)"
 SOMA_DIR="$PROJECT_ROOT/.soma"
 BOOT_TARGET="$SOMA_DIR/.boot-target"
 
+# Handle --help before checking dependencies
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+  echo "soma-focus — Set focus before starting. Clear when done. Primes the next boot."
+  echo ""
+  echo "Usage:"
+  echo "  soma-focus <keyword>       Set focus, next boot uses it"
+  echo "  soma-focus show            Show current focus state"
+  echo "  soma-focus clear           Remove focus"
+  echo "  soma-focus dry-run <kw>    Show what would be focused without writing"
+  echo ""
+  echo "Requires: soma-seam.sh (trace engine)"
+  exit 0
+fi
+
 # soma-seam.sh should be alongside this script, or in the user's scripts dir
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SEAM_SCRIPT=""
