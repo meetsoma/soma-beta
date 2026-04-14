@@ -45,6 +45,7 @@ export class RpcClient {
         // Collect stderr for debugging
         this.process.stderr?.on("data", (data) => {
             this.stderr += data.toString();
+            process.stderr.write(data);
         });
         // Set up strict JSONL reader for stdout.
         this.stopReadingStdout = attachJsonlLineReader(this.process.stdout, (line) => {

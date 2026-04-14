@@ -99,6 +99,10 @@ export async function runPrintMode(runtimeHost, options) {
         }
         return exitCode;
     }
+    catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        return 1;
+    }
     finally {
         unsubscribe?.();
         await runtimeHost.dispose();

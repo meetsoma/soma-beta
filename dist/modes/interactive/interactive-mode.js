@@ -13,9 +13,9 @@ import { parseSkillBlock } from "../../core/agent-session.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
-import { sanitizeApiError } from "./error-sanitizer.js";
 import { findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
+import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
 import { SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
@@ -33,6 +33,7 @@ import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { DaxnutsComponent } from "./components/daxnuts.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
+import { EarendilAnnouncementComponent } from "./components/earendil-announcement.js";
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
@@ -49,9 +50,18 @@ import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { getAvailableThemes, getAvailableThemesWithPaths, getEditorTheme, getMarkdownTheme, getThemeByName, initTheme, onThemeChange, setRegisteredThemes, setTheme, setThemeInstance, Theme, theme, } from "./theme/theme.js";
+import { getAvailableThemes, getAvailableThemesWithPaths, getEditorTheme, getMarkdownTheme, getThemeByName, initTheme, onThemeChange, setRegisteredThemes, setTheme, setThemeInstance, stopThemeWatcher, Theme, theme, } from "./theme/theme.js";
 function isExpandable(obj) {
     return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
+}
+const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING = "Anthropic subscription auth is active. Third-party usage now draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
+function isAnthropicSubscriptionAuthKey(apiKey) {
+    return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
+}
+function isTruthyEnvFlag(value) {
+    if (!value)
+        return false;
+    return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 export class InteractiveMode {
     options;
@@ -80,6 +90,8 @@ export class InteractiveMode {
     lastSigintTime = 0;
     lastEscapeTime = 0;
     changelogMarkdown = undefined;
+    startupNoticesShown = false;
+    anthropicSubscriptionWarningShown = false;
     // Status line tracking (for mutating immediately-sequential status updates)
     lastStatusSpacer = undefined;
     lastStatusText = undefined;
@@ -281,6 +293,32 @@ export class InteractiveMode {
             this.editor.setAutocompleteProvider?.(this.autocompleteProvider);
         }
     }
+    showStartupNoticesIfNeeded() {
+        if (this.startupNoticesShown) {
+            return;
+        }
+        this.startupNoticesShown = true;
+        if (!this.changelogMarkdown) {
+            return;
+        }
+        if (this.chatContainer.children.length > 0) {
+            this.chatContainer.addChild(new Spacer(1));
+        }
+        this.chatContainer.addChild(new DynamicBorder());
+        if (this.settingsManager.getCollapseChangelog()) {
+            const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+            const latestVersion = versionMatch ? versionMatch[1] : this.version;
+            const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+            this.chatContainer.addChild(new Text(condensedText, 1, 0));
+        }
+        else {
+            this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+            this.chatContainer.addChild(new Spacer(1));
+            this.chatContainer.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()));
+            this.chatContainer.addChild(new Spacer(1));
+        }
+        this.chatContainer.addChild(new DynamicBorder());
+    }
     async init() {
         if (this.isInitialized)
             return;
@@ -324,36 +362,11 @@ export class InteractiveMode {
             this.headerContainer.addChild(new Spacer(1));
             this.headerContainer.addChild(this.builtInHeader);
             this.headerContainer.addChild(new Spacer(1));
-            // Add changelog if provided
-            if (this.changelogMarkdown) {
-                this.headerContainer.addChild(new DynamicBorder());
-                if (this.settingsManager.getCollapseChangelog()) {
-                    const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
-                    const latestVersion = versionMatch ? versionMatch[1] : this.version;
-                    const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-                    this.headerContainer.addChild(new Text(condensedText, 1, 0));
-                }
-                else {
-                    this.headerContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-                    this.headerContainer.addChild(new Spacer(1));
-                    this.headerContainer.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()));
-                    this.headerContainer.addChild(new Spacer(1));
-                }
-                this.headerContainer.addChild(new DynamicBorder());
-            }
         }
         else {
             // Minimal header when silenced
             this.builtInHeader = new Text("", 0, 0);
             this.headerContainer.addChild(this.builtInHeader);
-            if (this.changelogMarkdown) {
-                // Still show changelog notification even in silent mode
-                this.headerContainer.addChild(new Spacer(1));
-                const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
-                const latestVersion = versionMatch ? versionMatch[1] : this.version;
-                const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-                this.headerContainer.addChild(new Text(condensedText, 1, 0));
-            }
         }
         this.ui.addChild(this.chatContainer);
         this.ui.addChild(this.pendingMessagesContainer);
@@ -439,6 +452,7 @@ export class InteractiveMode {
         if (modelFallbackMessage) {
             this.showWarning(modelFallbackMessage);
         }
+        void this.maybeWarnAboutAnthropicSubscriptionAuth();
         // Process initial messages
         if (initialMessage) {
             try {
@@ -566,18 +580,33 @@ export class InteractiveMode {
         const changelogPath = getChangelogPath();
         const entries = parseChangelog(changelogPath);
         if (!lastVersion) {
-            // Fresh install - just record the version, don't show changelog
+            // Fresh install - record the version, send telemetry, don't show changelog
             this.settingsManager.setLastChangelogVersion(VERSION);
+            this.reportInstallTelemetry(VERSION);
             return undefined;
         }
-        else {
-            const newEntries = getNewEntries(entries, lastVersion);
-            if (newEntries.length > 0) {
-                this.settingsManager.setLastChangelogVersion(VERSION);
-                return newEntries.map((e) => e.content).join("\n\n");
-            }
+        const newEntries = getNewEntries(entries, lastVersion);
+        if (newEntries.length > 0) {
+            this.settingsManager.setLastChangelogVersion(VERSION);
+            this.reportInstallTelemetry(VERSION);
+            return newEntries.map((e) => e.content).join("\n\n");
         }
         return undefined;
+    }
+    reportInstallTelemetry(version) {
+        if (process.env.PI_OFFLINE) {
+            return;
+        }
+        const telemetryEnv = process.env.PI_TELEMETRY;
+        const telemetryEnabled = telemetryEnv !== undefined ? isTruthyEnvFlag(telemetryEnv) : this.settingsManager.getEnableInstallTelemetry();
+        if (!telemetryEnabled) {
+            return;
+        }
+        void fetch(`https://pi.dev/install?version=${encodeURIComponent(version)}`, {
+            signal: AbortSignal.timeout(5000),
+        })
+            .then(() => undefined)
+            .catch(() => undefined);
     }
     getMarkdownThemeWithSettings() {
         return {
@@ -901,23 +930,33 @@ export class InteractiveMode {
                         this.loadingAnimation = undefined;
                     }
                     this.statusContainer.clear();
-                    const result = await this.runtimeHost.newSession(options);
-                    if (!result.cancelled) {
-                        await this.handleRuntimeSessionChange();
-                        this.renderCurrentSessionState();
-                        this.ui.requestRender();
+                    try {
+                        const result = await this.runtimeHost.newSession(options);
+                        if (!result.cancelled) {
+                            await this.handleRuntimeSessionChange();
+                            this.renderCurrentSessionState();
+                            this.ui.requestRender();
+                        }
+                        return result;
                     }
-                    return result;
+                    catch (error) {
+                        return this.handleFatalRuntimeError("Failed to create session", error);
+                    }
                 },
                 fork: async (entryId) => {
-                    const result = await this.runtimeHost.fork(entryId);
-                    if (!result.cancelled) {
-                        await this.handleRuntimeSessionChange();
-                        this.renderCurrentSessionState();
-                        this.editor.setText(result.selectedText ?? "");
-                        this.showStatus("Forked to new session");
+                    try {
+                        const result = await this.runtimeHost.fork(entryId);
+                        if (!result.cancelled) {
+                            await this.handleRuntimeSessionChange();
+                            this.renderCurrentSessionState();
+                            this.editor.setText(result.selectedText ?? "");
+                            this.showStatus("Forked to new session");
+                        }
+                        return { cancelled: result.cancelled };
                     }
-                    return { cancelled: result.cancelled };
+                    catch (error) {
+                        return this.handleFatalRuntimeError("Failed to fork session", error);
+                    }
                 },
                 navigateTree: async (targetId, options) => {
                     const result = await this.session.navigateTree(targetId, {
@@ -935,6 +974,7 @@ export class InteractiveMode {
                         this.editor.setText(result.editorText);
                     }
                     this.showStatus("Navigated to selected point");
+                    void this.flushCompactionQueue({ willRetry: false });
                     return { cancelled: false };
                 },
                 switchSession: async (sessionPath) => {
@@ -960,10 +1000,12 @@ export class InteractiveMode {
         const extensionRunner = this.session.extensionRunner;
         if (!extensionRunner) {
             this.showLoadedResources({ extensions: [], force: false });
+            this.showStartupNoticesIfNeeded();
             return;
         }
         this.setupExtensionShortcuts(extensionRunner);
         this.showLoadedResources({ force: false });
+        this.showStartupNoticesIfNeeded();
     }
     applyRuntimeSettings() {
         this.footer.setSession(this.session);
@@ -991,6 +1033,13 @@ export class InteractiveMode {
         await this.updateAvailableProviderCount();
         this.updateEditorBorderColor();
         this.updateTerminalTitle();
+    }
+    async handleFatalRuntimeError(prefix, error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.showError(`${prefix}: ${message}`);
+        stopThemeWatcher();
+        this.stop();
+        process.exit(1);
     }
     renderCurrentSessionState() {
         this.chatContainer.clear();
@@ -1360,6 +1409,10 @@ export class InteractiveMode {
     async showExtensionConfirm(title, message, opts) {
         const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
         return result === "Yes";
+    }
+    async promptForMissingSessionCwd(error) {
+        const confirmed = await this.showExtensionConfirm("Session cwd not found", formatMissingSessionCwdPrompt(error.issue));
+        return confirmed ? error.issue.fallbackCwd : undefined;
     }
     /**
      * Show a text input for extensions.
@@ -1785,6 +1838,11 @@ export class InteractiveMode {
             }
             if (text === "/arminsayshi") {
                 this.handleArminSaysHi();
+                this.editor.setText("");
+                return;
+            }
+            if (text === "/dementedelves") {
+                this.handleDementedDelves();
                 this.editor.setText("");
                 return;
             }
@@ -2439,6 +2497,7 @@ export class InteractiveMode {
                 this.updateEditorBorderColor();
                 const thinkingStr = result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
                 this.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
+                void this.maybeWarnAboutAnthropicSubscriptionAuth(result.model);
             }
         }
         catch (error) {
@@ -2522,7 +2581,7 @@ export class InteractiveMode {
     }
     showError(errorMessage) {
         this.chatContainer.addChild(new Spacer(1));
-        this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${sanitizeApiError(errorMessage)}`), 1, 0));
+        this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
         this.ui.requestRender();
     }
     showWarning(warningMessage) {
@@ -2753,6 +2812,7 @@ export class InteractiveMode {
                 availableThemes: getAvailableThemes(),
                 hideThinkingBlock: this.hideThinkingBlock,
                 collapseChangelog: this.settingsManager.getCollapseChangelog(),
+                enableInstallTelemetry: this.settingsManager.getEnableInstallTelemetry(),
                 doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
                 treeFilterMode: this.settingsManager.getTreeFilterMode(),
                 showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
@@ -2827,6 +2887,9 @@ export class InteractiveMode {
                 onCollapseChangelogChange: (collapsed) => {
                     this.settingsManager.setCollapseChangelog(collapsed);
                 },
+                onEnableInstallTelemetryChange: (enabled) => {
+                    this.settingsManager.setEnableInstallTelemetry(enabled);
+                },
                 onQuietStartupChange: (enabled) => {
                     this.settingsManager.setQuietStartup(enabled);
                 },
@@ -2878,6 +2941,7 @@ export class InteractiveMode {
                 this.footer.invalidate();
                 this.updateEditorBorderColor();
                 this.showStatus(`Model: ${model.id}`);
+                void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
                 this.checkDaxnutsEasterEgg(model);
             }
             catch (error) {
@@ -2909,6 +2973,31 @@ export class InteractiveMode {
         const uniqueProviders = new Set(models.map((m) => m.provider));
         this.footerDataProvider.setAvailableProviderCount(uniqueProviders.size);
     }
+    async maybeWarnAboutAnthropicSubscriptionAuth(model = this.session.model) {
+        if (this.anthropicSubscriptionWarningShown) {
+            return;
+        }
+        if (!model || model.provider !== "anthropic") {
+            return;
+        }
+        const storedCredential = this.session.modelRegistry.authStorage.get("anthropic");
+        if (storedCredential?.type === "oauth") {
+            this.anthropicSubscriptionWarningShown = true;
+            this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
+            return;
+        }
+        try {
+            const apiKey = await this.session.modelRegistry.getApiKeyForProvider(model.provider);
+            if (!isAnthropicSubscriptionAuthKey(apiKey)) {
+                return;
+            }
+            this.anthropicSubscriptionWarningShown = true;
+            this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
+        }
+        catch {
+            // Ignore auth lookup failures for warning-only checks.
+        }
+    }
     showModelSelector(initialSearchInput) {
         this.showSelector((done) => {
             const selector = new ModelSelectorComponent(this.ui, this.session.model, this.settingsManager, this.session.modelRegistry, this.session.scopedModels, async (model) => {
@@ -2918,6 +3007,7 @@ export class InteractiveMode {
                     this.updateEditorBorderColor();
                     done();
                     this.showStatus(`Model: ${model.id}`);
+                    void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
                     this.checkDaxnutsEasterEgg(model);
                 }
                 catch (error) {
@@ -3145,6 +3235,7 @@ export class InteractiveMode {
                         this.editor.setText(result.editorText);
                     }
                     this.showStatus("Navigated to selected point");
+                    void this.flushCompactionQueue({ willRetry: false });
                 }
                 catch (error) {
                     this.showError(error instanceof Error ? error.message : String(error));
@@ -3196,13 +3287,33 @@ export class InteractiveMode {
             this.loadingAnimation = undefined;
         }
         this.statusContainer.clear();
-        const result = await this.runtimeHost.switchSession(sessionPath);
-        if (result.cancelled) {
-            return;
+        try {
+            const result = await this.runtimeHost.switchSession(sessionPath);
+            if (result.cancelled) {
+                return;
+            }
+            await this.handleRuntimeSessionChange();
+            this.renderCurrentSessionState();
+            this.showStatus("Resumed session");
         }
-        await this.handleRuntimeSessionChange();
-        this.renderCurrentSessionState();
-        this.showStatus("Resumed session");
+        catch (error) {
+            if (error instanceof MissingSessionCwdError) {
+                const selectedCwd = await this.promptForMissingSessionCwd(error);
+                if (!selectedCwd) {
+                    this.showStatus("Resume cancelled");
+                    return;
+                }
+                const result = await this.runtimeHost.switchSession(sessionPath, selectedCwd);
+                if (result.cancelled) {
+                    return;
+                }
+                await this.handleRuntimeSessionChange();
+                this.renderCurrentSessionState();
+                this.showStatus("Resumed session in current cwd");
+                return;
+            }
+            await this.handleFatalRuntimeError("Failed to resume session", error);
+        }
     }
     async showOAuthSelector(mode) {
         if (mode === "logout") {
@@ -3435,7 +3546,23 @@ export class InteractiveMode {
             this.showStatus(`Session imported from: ${inputPath}`);
         }
         catch (error) {
-            this.showError(`Failed to import session: ${error instanceof Error ? error.message : "Unknown error"}`);
+            if (error instanceof MissingSessionCwdError) {
+                const selectedCwd = await this.promptForMissingSessionCwd(error);
+                if (!selectedCwd) {
+                    this.showStatus("Import cancelled");
+                    return;
+                }
+                const result = await this.runtimeHost.importFromJsonl(inputPath, selectedCwd);
+                if (result.cancelled) {
+                    this.showStatus("Import cancelled");
+                    return;
+                }
+                await this.handleRuntimeSessionChange();
+                this.renderCurrentSessionState();
+                this.showStatus(`Session imported from: ${inputPath}`);
+                return;
+            }
+            await this.handleFatalRuntimeError("Failed to import session", error);
         }
     }
     async handleShareCommand() {
@@ -3750,15 +3877,20 @@ export class InteractiveMode {
             this.loadingAnimation = undefined;
         }
         this.statusContainer.clear();
-        const result = await this.runtimeHost.newSession();
-        if (result.cancelled) {
-            return;
+        try {
+            const result = await this.runtimeHost.newSession();
+            if (result.cancelled) {
+                return;
+            }
+            await this.handleRuntimeSessionChange();
+            this.renderCurrentSessionState();
+            this.chatContainer.addChild(new Spacer(1));
+            this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+            this.ui.requestRender();
         }
-        await this.handleRuntimeSessionChange();
-        this.renderCurrentSessionState();
-        this.chatContainer.addChild(new Spacer(1));
-        this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
-        this.ui.requestRender();
+        catch (error) {
+            await this.handleFatalRuntimeError("Failed to create session", error);
+        }
     }
     handleDebugCommand() {
         const width = this.ui.terminal.columns;
@@ -3790,6 +3922,11 @@ export class InteractiveMode {
     handleArminSaysHi() {
         this.chatContainer.addChild(new Spacer(1));
         this.chatContainer.addChild(new ArminComponent(this.ui));
+        this.ui.requestRender();
+    }
+    handleDementedDelves() {
+        this.chatContainer.addChild(new Spacer(1));
+        this.chatContainer.addChild(new EarendilAnnouncementComponent());
         this.ui.requestRender();
     }
     handleDaxnuts() {

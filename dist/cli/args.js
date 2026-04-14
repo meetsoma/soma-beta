@@ -8,11 +8,12 @@ const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh
 export function isValidThinkingLevel(level) {
     return VALID_THINKING_LEVELS.includes(level);
 }
-export function parseArgs(args, extensionFlags) {
+export function parseArgs(args) {
     const result = {
         messages: [],
         fileArgs: [],
         unknownFlags: new Map(),
+        diagnostics: [],
     };
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -75,7 +76,10 @@ export function parseArgs(args, extensionFlags) {
                     validTools.push(name);
                 }
                 else {
-                    console.error(chalk.yellow(`Warning: Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`));
+                    result.diagnostics.push({
+                        type: "warning",
+                        message: `Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`,
+                    });
                 }
             }
             result.tools = validTools;
@@ -86,7 +90,10 @@ export function parseArgs(args, extensionFlags) {
                 result.thinking = level;
             }
             else {
-                console.error(chalk.yellow(`Warning: Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`));
+                result.diagnostics.push({
+                    type: "warning",
+                    message: `Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`,
+                });
             }
         }
         else if (arg === "--print" || arg === "-p") {
@@ -141,19 +148,25 @@ export function parseArgs(args, extensionFlags) {
         else if (arg.startsWith("@")) {
             result.fileArgs.push(arg.slice(1)); // Remove @ prefix
         }
-        else if (arg.startsWith("--") && extensionFlags) {
-            // Check if it's an extension-registered flag
-            const flagName = arg.slice(2);
-            const extFlag = extensionFlags.get(flagName);
-            if (extFlag) {
-                if (extFlag.type === "boolean") {
+        else if (arg.startsWith("--")) {
+            const eqIndex = arg.indexOf("=");
+            if (eqIndex !== -1) {
+                result.unknownFlags.set(arg.slice(2, eqIndex), arg.slice(eqIndex + 1));
+            }
+            else {
+                const flagName = arg.slice(2);
+                const next = args[i + 1];
+                if (next !== undefined && !next.startsWith("-") && !next.startsWith("@")) {
+                    result.unknownFlags.set(flagName, next);
+                    i++;
+                }
+                else {
                     result.unknownFlags.set(flagName, true);
                 }
-                else if (extFlag.type === "string" && i + 1 < args.length) {
-                    result.unknownFlags.set(flagName, args[++i]);
-                }
             }
-            // Unknown flags without extensionFlags are silently ignored (first pass)
+        }
+        else if (arg.startsWith("-") && !arg.startsWith("--")) {
+            result.diagnostics.push({ type: "error", message: `Unknown option: ${arg}` });
         }
         else if (!arg.startsWith("-")) {
             result.messages.push(arg);
@@ -161,7 +174,16 @@ export function parseArgs(args, extensionFlags) {
     }
     return result;
 }
-export function printHelp() {
+export function printHelp(extensionFlags) {
+    const extensionFlagsText = extensionFlags && extensionFlags.length > 0
+        ? `\n${chalk.bold("Extension CLI Flags:")}\n${extensionFlags
+            .map((flag) => {
+            const value = flag.type === "string" ? " <value>" : "";
+            const description = flag.description ?? `Registered by ${flag.extensionPath}`;
+            return `  --${flag.name}${value}`.padEnd(30) + description;
+        })
+            .join("\n")}\n`
+        : "";
     console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with read, bash, edit, write tools
 
 ${chalk.bold("Usage:")}
@@ -211,7 +233,7 @@ ${chalk.bold("Options:")}
   --help, -h                     Show this help
   --version, -v                  Show version number
 
-Extensions can register additional flags (e.g., --plan from plan-mode extension).
+Extensions can register additional flags (e.g., --plan from plan-mode extension).${extensionFlagsText}
 
 ${chalk.bold("Examples:")}
   # Interactive mode
@@ -288,6 +310,7 @@ ${chalk.bold("Environment Variables:")}
   ${ENV_AGENT_DIR.padEnd(32)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
   PI_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
   PI_OFFLINE                       - Disable startup network operations when set to 1/true/yes
+  PI_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
   PI_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
   PI_AI_ANTIGRAVITY_VERSION        - Override Antigravity User-Agent version (e.g., 1.23.0)
 

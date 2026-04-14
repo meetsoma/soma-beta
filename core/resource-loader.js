@@ -17,6 +17,7 @@ import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { loadThemeFromPath } from "../modes/interactive/theme/theme.js";
+import { isLocalPath } from "../utils/paths.js";
 import { createEventBus } from "./event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
 import { DefaultPackageManager } from "./package-manager.js";
@@ -218,6 +219,7 @@ export class DefaultResourceLoader {
         }
     }
     async reload() {
+        await this.settingsManager.reload();
         const resolvedPaths = await this.packageManager.resolve();
         const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
             temporary: true,
@@ -291,23 +293,43 @@ export class DefaultResourceLoader {
         for (const conflict of conflicts) {
             extensionsResult.errors.push({ path: conflict.path, error: conflict.message });
         }
+        for (const p of this.additionalExtensionPaths) {
+            if (isLocalPath(p) && !existsSync(p)) {
+                extensionsResult.errors.push({ path: p, error: `Extension path does not exist: ${p}` });
+            }
+        }
         this.extensionsResult = this.extensionsOverride ? this.extensionsOverride(extensionsResult) : extensionsResult;
         this.applyExtensionSourceInfo(this.extensionsResult.extensions, metadataByPath);
         const skillPaths = this.noSkills
             ? this.mergePaths(cliEnabledSkills, this.additionalSkillPaths)
-            : this.mergePaths([...enabledSkills, ...cliEnabledSkills], this.additionalSkillPaths);
+            : this.mergePaths([...cliEnabledSkills, ...enabledSkills], this.additionalSkillPaths);
         this.lastSkillPaths = skillPaths;
         this.updateSkillsFromPaths(skillPaths, metadataByPath);
+        for (const p of this.additionalSkillPaths) {
+            if (isLocalPath(p) && !existsSync(p) && !this.skillDiagnostics.some((d) => d.path === p)) {
+                this.skillDiagnostics.push({ type: "error", message: "Skill path does not exist", path: p });
+            }
+        }
         const promptPaths = this.noPromptTemplates
             ? this.mergePaths(cliEnabledPrompts, this.additionalPromptTemplatePaths)
-            : this.mergePaths([...enabledPrompts, ...cliEnabledPrompts], this.additionalPromptTemplatePaths);
+            : this.mergePaths([...cliEnabledPrompts, ...enabledPrompts], this.additionalPromptTemplatePaths);
         this.lastPromptPaths = promptPaths;
         this.updatePromptsFromPaths(promptPaths, metadataByPath);
+        for (const p of this.additionalPromptTemplatePaths) {
+            if (isLocalPath(p) && !existsSync(p) && !this.promptDiagnostics.some((d) => d.path === p)) {
+                this.promptDiagnostics.push({ type: "error", message: "Prompt template path does not exist", path: p });
+            }
+        }
         const themePaths = this.noThemes
             ? this.mergePaths(cliEnabledThemes, this.additionalThemePaths)
-            : this.mergePaths([...enabledThemes, ...cliEnabledThemes], this.additionalThemePaths);
+            : this.mergePaths([...cliEnabledThemes, ...enabledThemes], this.additionalThemePaths);
         this.lastThemePaths = themePaths;
         this.updateThemesFromPaths(themePaths, metadataByPath);
+        for (const p of this.additionalThemePaths) {
+            if (!existsSync(p) && !this.themeDiagnostics.some((d) => d.path === p)) {
+                this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: p });
+            }
+        }
         const agentsFiles = { agentsFiles: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }) };
         const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
         this.agentsFiles = resolvedAgentsFiles.agentsFiles;

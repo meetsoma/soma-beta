@@ -218,7 +218,8 @@ export class SettingsManager {
     getProjectSettings() {
         return structuredClone(this.projectSettings);
     }
-    reload() {
+    async reload() {
+        await this.writeQueue;
         const globalLoad = SettingsManager.tryLoadFromStorage(this.storage, "global");
         if (!globalLoad.error) {
             this.globalSettings = globalLoad.settings;
@@ -527,6 +528,14 @@ export class SettingsManager {
     setCollapseChangelog(collapse) {
         this.globalSettings.collapseChangelog = collapse;
         this.markModified("collapseChangelog");
+        this.save();
+    }
+    getEnableInstallTelemetry() {
+        return this.settings.enableInstallTelemetry ?? true;
+    }
+    setEnableInstallTelemetry(enabled) {
+        this.globalSettings.enableInstallTelemetry = enabled;
+        this.markModified("enableInstallTelemetry");
         this.save();
     }
     getPackages() {

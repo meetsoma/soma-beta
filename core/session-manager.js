@@ -984,12 +984,13 @@ export class SessionManager {
      * Open a specific session file.
      * @param path Path to session file
      * @param sessionDir Optional session directory for /new or /branch. If omitted, derives from file's parent.
+     * @param cwdOverride Optional cwd override instead of the session header cwd.
      */
-    static open(path, sessionDir) {
+    static open(path, sessionDir, cwdOverride) {
         // Extract cwd from session header if possible, otherwise use process.cwd()
         const entries = loadEntriesFromFile(path);
         const header = entries.find((e) => e.type === "session");
-        const cwd = header?.cwd ?? process.cwd();
+        const cwd = cwdOverride ?? header?.cwd ?? process.cwd();
         // If no sessionDir provided, derive from file's parent directory
         const dir = sessionDir ?? resolve(path, "..");
         return new SessionManager(cwd, dir, path, true);

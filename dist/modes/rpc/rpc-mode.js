@@ -500,27 +500,35 @@ export async function runRpcMode(runtimeHost) {
         await shutdown();
     }
     const handleInputLine = async (line) => {
+        let parsed;
         try {
-            const parsed = JSON.parse(line);
-            // Handle extension UI responses
-            if (parsed.type === "extension_ui_response") {
-                const response = parsed;
-                const pending = pendingExtensionRequests.get(response.id);
-                if (pending) {
-                    pendingExtensionRequests.delete(response.id);
-                    pending.resolve(response);
-                }
-                return;
+            parsed = JSON.parse(line);
+        }
+        catch (parseError) {
+            output(error(undefined, "parse", `Failed to parse command: ${parseError instanceof Error ? parseError.message : String(parseError)}`));
+            return;
+        }
+        // Handle extension UI responses
+        if (typeof parsed === "object" &&
+            parsed !== null &&
+            "type" in parsed &&
+            parsed.type === "extension_ui_response") {
+            const response = parsed;
+            const pending = pendingExtensionRequests.get(response.id);
+            if (pending) {
+                pendingExtensionRequests.delete(response.id);
+                pending.resolve(response);
             }
-            // Handle regular commands
-            const command = parsed;
+            return;
+        }
+        const command = parsed;
+        try {
             const response = await handleCommand(command);
             output(response);
-            // Check for deferred shutdown request (idle between commands)
             await checkShutdownRequested();
         }
-        catch (e) {
-            output(error(undefined, "parse", `Failed to parse command: ${e.message}`));
+        catch (commandError) {
+            output(error(command.id, command.type, commandError instanceof Error ? commandError.message : String(commandError)));
         }
     };
     const onInputEnd = () => {

@@ -27,7 +27,7 @@ import { SettingsManager } from "./settings-manager.js";
 import { time } from "./timings.js";
 import { allTools, bashTool, codingTools, createBashTool, createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, editTool, findTool, grepTool, lsTool, readOnlyTools, readTool, withFileMutationQueue, writeTool, } from "./tools/index.js";
 // Re-exports
-export { AgentSessionRuntimeHost, createAgentSessionRuntime, } from "./agent-session-runtime.js";
+export * from "./agent-session-runtime.js";
 export { 
 // Pre-built tools (use process.cwd())
 readTool, bashTool, editTool, writeTool, grepTool, findTool, lsTool, codingTools, readOnlyTools, allTools as allBuiltInTools, withFileMutationQueue, 
