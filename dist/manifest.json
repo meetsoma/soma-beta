@@ -1,7 +1,7 @@
 {
   "version": "0.11.2",
-  "buildId": "afa8117f28aceae5",
-  "buildDate": "2026-04-14T14:10:04.038Z",
+  "buildId": "945365549fbde5a8",
+  "buildDate": "2026-04-14T14:21:25.492Z",
   "piVersion": "0.67.1",
   "fileCount": 173,
   "files": {
@@ -102,7 +102,7 @@
     "extensions/soma-hub.js": "00df40f9cf80eecb61a66b54e14ea4336e729991f7394facae934f5cd4adc04b",
     "extensions/soma-route.js": "62602f422de1629aa42b10994460336a3d9fe6cd0a880fad784590b5761bd387",
     "extensions/soma-scratch.js": "d5a3c0edcbe391214faff258dd2a7467ecd25c839b7b82e95b340c0680c4a4a9",
-    "extensions/soma-statusline.js": "c3e1744d1957b4789c616e722234193306f57c75b45a33c23629aa50c30ecf48",
+    "extensions/soma-statusline.js": "9f385603ef9df74f87d8e2d40713f049c7259c226ae0f655c68dfd352a135ba0",
     "index.js": "cfc0fc4c3e5f2648fc856b5b46c7b741dbb4d0e7cfcabf1582d0d3f973ed37ee",
     "lib/config.js": "5af1923504d23a6f6c33970d9bad7212aea9bc26f5b0c1343014bb1261c9d82e",
     "lib/detect.js": "311d5224346896db46fef91990c63e6eb2c74cb681549013b72e539b15ef157a",
@@ -146,7 +146,7 @@
     "modes/interactive/components/user-message-selector.js": "007b9710615569e041eda28d55ff03ec079fa46989423435f0fcef71112f6eff",
     "modes/interactive/components/user-message.js": "793b1c05eb8a7ff60d851a45a3ea4f878e1b64ae2c68840de317f24d9de4959f",
     "modes/interactive/components/visual-truncate.js": "da62b451dc0259d62e4aac24ce17d31f9046e6a4d617a8953b6c52cfc6077bf0",
-    "modes/interactive/error-sanitizer.js": "0051560dd153f21e6efc2c4326b983c3c40a2c4c4124c5eac4b0e75d3b3580c2",
+    "modes/interactive/error-sanitizer.js": "9b8f0e58d28fcbff9471c4a780f31db8029d42f3c6622fff4fc2627003cf7ab4",
     "modes/interactive/interactive-mode.js": "d60893a23ecf03997ee7d9f2442083db5bc8abc37b30988444fa126d9201a8a7",
     "modes/interactive/theme/theme.js": "08f1e27d8facbfd7ce09d4e58e5d7beafcc4aed79e6e8bc49267637412fc3cd3",
     "modes/print-mode.js": "0f4004f3132dda998b1a327a7a3543ef058f291d9e9b4d9d04bf61fb0a1304af",

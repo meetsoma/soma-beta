@@ -58,14 +58,17 @@ function getFriendlyMessage(message, statusCode) {
 
     // Third-party billing change (Claude API)
     if (lower.includes("third-party apps") && lower.includes("extra usage")) {
-        return "API billing change: third-party apps now use separate usage credits. " +
-               "Visit claude.ai/settings/usage to set up billing, then retry.";
+        return "Anthropic now bills third-party runtimes (including Soma/Pi) from extra usage, " +
+               "not your plan limits. For predictable billing, use an API key instead of OAuth. " +
+               "Manage credits at claude.ai/settings/usage";
     }
 
-    // Out of extra usage (subscription plan limits)
+    // Out of extra usage — Anthropic reclassifies non-Claude-Code runtimes
+    // as "third-party" apps that bill from "extra usage" instead of plan limits.
+    // Users on Max/Pro plans hit this even with unused plan capacity.
     if (lower.includes("out of extra usage") || lower.includes("out of usage")) {
-        return "You've used your available API credits. " +
-               "Add more at claude.ai/settings/usage or wait for your usage to reset.";
+        return "Extra usage credits exhausted. Anthropic bills Soma separately from your plan limits. " +
+               "Add credits at claude.ai/settings/usage or use an API key for direct billing.";
     }
 
     // Credit / billing exhausted
