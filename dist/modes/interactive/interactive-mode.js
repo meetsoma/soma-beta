@@ -50,6 +50,7 @@ import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
+import { sanitizeApiError } from "./error-sanitizer.js";
 import { getAvailableThemes, getAvailableThemesWithPaths, getEditorTheme, getMarkdownTheme, getThemeByName, initTheme, onThemeChange, setRegisteredThemes, setTheme, setThemeInstance, stopThemeWatcher, Theme, theme, } from "./theme/theme.js";
 function isExpandable(obj) {
     return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
@@ -2005,7 +2006,7 @@ export class InteractiveMode {
                     this.streamingComponent.updateContent(this.streamingMessage);
                     if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
                         if (!errorMessage) {
-                            errorMessage = this.streamingMessage.errorMessage || "Error";
+                            errorMessage = sanitizeApiError(this.streamingMessage.errorMessage) || "Error";
                         }
                         for (const [, component] of this.pendingTools.entries()) {
                             component.updateResult({
