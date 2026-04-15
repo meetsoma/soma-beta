@@ -1,7 +1,7 @@
 {
   "version": "0.12.0",
-  "buildId": "72bff89d0b7a25ff",
-  "buildDate": "2026-04-15T04:12:01.593Z",
+  "buildId": "e396251bc49cc4dc",
+  "buildDate": "2026-04-15T04:19:23.623Z",
   "piVersion": "0.67.1",
   "fileCount": 173,
   "files": {
@@ -62,7 +62,7 @@
     "core/extensions/types.js": "4efa889bdadef76e7c451f985c9f3587421cc4173be4db7c071be2e03aef0976",
     "core/extensions/wrapper.js": "6ebd795ff5d2fc24c02920600a64cdc345ceaa1b2996fde72f528e5f57e76be9",
     "core/footer-data-provider.js": "e19778a785f7e03835515a3892cef219b16bc10ccb2b1507fa2fbe9e55bb26e9",
-    "core/index.js": "5723162418ec256cda82f5aa33b29d5e78cb80f624acd5e216dc708f2afd5bd4",
+    "core/index.js": "84d2bd5301a5a23436ed7eb54c88eae9a54007e30f3b7427659bfb5433342135",
     "core/keybindings.js": "bffa71d9437dcbce448a639b503adc7b7ff321440f036cf765d08618e8b60dfc",
     "core/messages.js": "a4e4865e343bf87f8078f75ff179a2a77cd7c2700cf8473476bd4dc5ed36adb6",
     "core/model-registry.js": "8d89a6d26ba26a4d9acfd763436762708921bd0ca2f7f7d34293d14248637ebc",

@@ -30,6 +30,9 @@ a secure relay. Data stays on your machine. The shard is just the pipe.
 - Hub proxy: Bearer device_key + JWT cookie auth on every request
 - CORS: restricted to somaverse.ai, somaverse.space, dev.somaverse.ai
 
+### Fixed
+- **Breathe stale warning** — disabled by default. Was firing every turn in long sessions ("28 tool calls since preload"). Now fires at most once, configurable via `breathe.preloadStaleThreshold` in settings.
+
 ---
 
 ## [0.11.4] — 2026-04-14
