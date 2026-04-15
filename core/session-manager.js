@@ -1,16 +1,3 @@
-/**
- * Soma Agent — © 2026 Curtis Mercier
- * Licensed under BSL 1.1 (Business Source License)
- *
- * You may view, use personally, and contribute to this software.
- * You may NOT use it for competing commercial products or services.
- * Converts to MIT license on 2027-09-18.
- *
- * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
- * Source available to contributors: https://soma.gravicity.ai/beta
- * Contact for commercial licensing: meetsoma@gravicity.ai
- */
-
 import { randomUUID } from "crypto";
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync, } from "fs";
 import { readdir, readFile, stat } from "fs/promises";
@@ -984,13 +971,12 @@ export class SessionManager {
      * Open a specific session file.
      * @param path Path to session file
      * @param sessionDir Optional session directory for /new or /branch. If omitted, derives from file's parent.
-     * @param cwdOverride Optional cwd override instead of the session header cwd.
      */
-    static open(path, sessionDir, cwdOverride) {
+    static open(path, sessionDir) {
         // Extract cwd from session header if possible, otherwise use process.cwd()
         const entries = loadEntriesFromFile(path);
         const header = entries.find((e) => e.type === "session");
-        const cwd = cwdOverride ?? header?.cwd ?? process.cwd();
+        const cwd = header?.cwd ?? process.cwd();
         // If no sessionDir provided, derive from file's parent directory
         const dir = sessionDir ?? resolve(path, "..");
         return new SessionManager(cwd, dir, path, true);

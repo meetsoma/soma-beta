@@ -1,16 +1,3 @@
-/**
- * Soma Agent — © 2026 Curtis Mercier
- * Licensed under BSL 1.1 (Business Source License)
- *
- * You may view, use personally, and contribute to this software.
- * You may NOT use it for competing commercial products or services.
- * Converts to MIT license on 2027-09-18.
- *
- * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
- * Source available to contributors: https://soma.gravicity.ai/beta
- * Contact for commercial licensing: meetsoma@gravicity.ai
- */
-
 import{existsSync as A,readFileSync as L,writeFileSync as I,mkdirSync as D,chmodSync as H}from"fs";import{join as p,basename as q}from"path";import{execSync as w}from"child_process";import{installItem as N,listLocal as M}from"../core/index.js";var U="meetsoma/community",F="main",O=`https://raw.githubusercontent.com/${U}/${F}`,P=`${O}/hub-index.json`,S=["protocol","muscle","skill","template","script","automation"];function C(h){return{protocol:"protocols",muscle:"muscles",skill:"skills",template:"templates",script:"scripts",automation:"automations"}[h]||h+"s"}function B(){return globalThis.e??null}function Y(){return B()?.get("soma:dir")?.()??null}function G(h,g){let e=p(process.env.HOME||"",".soma");return g?h.path===e?{error:"No project .soma/ found. -p requires a project-level .soma/ \u2014 run /soma init first, or use -g for global."}:{target:h,location:"project"}:A(e)?{target:{path:e,projectDir:process.env.HOME||""},location:"global"}:{target:h,location:"project"}}function V(){try{return w("gh auth status",{encoding:"utf-8",stdio:"pipe"}),{ok:!0,username:w("gh api user --jq '.login'",{encoding:"utf-8",stdio:"pipe"}).trim()}}catch{try{return w("which gh",{encoding:"utf-8",stdio:"pipe"}),{ok:!1,error:"gh CLI found but not authenticated. Run: gh auth login"}}catch{return{ok:!1,error:"gh CLI not installed. Install: brew install gh"}}}}function z(h){let g=h.match(/^# ---\n([\s\S]*?)\n# ---/m);if(!g)return{};let e={};for(let a of g[1].split(`
 `)){let m=a.match(/^# (\w[\w-]*)\s*:\s*(.+)$/);m&&(e[m[1]]=m[2].trim())}return e}function Q(h){let g=h.match(/^---\n([\s\S]*?)\n---/);if(!g)return{};let e={};for(let a of g[1].split(`
 `)){let m=a.match(/^(\w[\w-]*)\s*:\s*(.+)$/);m&&(e[m[1]]=m[2].trim())}return e}function Z(h){h.registerCommand("hub",{description:"Community hub. Usage: /hub [install|fork|share|find|list|status] <name> [-g|-p]",getArgumentCompletions:g=>["install","fork","share","list","status",...S].filter(e=>e.startsWith(g)).map(e=>({value:e,label:e})),handler:async(g,e)=>{let a=Y();if(!a){e.ui.notify("No .soma/ found. Run /soma init first.","error");return}let m=g.trim().split(/\s+/),k=m[0]||"status",l=m.slice(1);switch(k){case"install":case"i":{let d=l.includes("--force"),t=l.includes("-g"),n=l.includes("-p"),r=l.filter(i=>!i.startsWith("-"));if(r.length<2){e.ui.notify(`Usage: /hub install <type> <name> [-g|-p] [--force]

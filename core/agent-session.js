@@ -1,17 +1,4 @@
 /**
- * Soma Agent — © 2026 Curtis Mercier
- * Licensed under BSL 1.1 (Business Source License)
- *
- * You may view, use personally, and contribute to this software.
- * You may NOT use it for competing commercial products or services.
- * Converts to MIT license on 2027-09-18.
- *
- * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
- * Source available to contributors: https://soma.gravicity.ai/beta
- * Contact for commercial licensing: meetsoma@gravicity.ai
- */
-
-/**
  * AgentSession - Core abstraction for agent lifecycle and session management.
  *
  * This class is shared between all run modes (interactive, print, rpc).
@@ -1893,7 +1880,7 @@ export class AgentSession {
     async reload() {
         const previousFlagValues = this._extensionRunner?.getFlagValues();
         await this._extensionRunner?.emit({ type: "session_shutdown" });
-        await this.settingsManager.reload();
+        this.settingsManager.reload();
         resetApiProviders();
         await this._resourceLoader.reload();
         this._buildRuntime({
@@ -1925,8 +1912,8 @@ export class AgentSession {
         if (isContextOverflow(message, contextWindow))
             return false;
         const err = message.errorMessage;
-        // Match: overloaded_error, provider returned error, rate limit, 429, 500, 502, 503, 504, service unavailable, network/connection errors, fetch failed, request ended without sending chunks, terminated, retry delay exceeded
-        return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|timed? out|timeout|terminated|retry delay/i.test(err);
+        // Match: overloaded_error, provider returned error, rate limit, 429, 500, 502, 503, 504, service unavailable, network/connection errors, fetch failed, terminated, retry delay exceeded
+        return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|timed? out|timeout|terminated|retry delay/i.test(err);
     }
     /**
      * Handle retryable errors with exponential backoff.

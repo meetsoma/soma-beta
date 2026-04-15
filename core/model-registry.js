@@ -1,17 +1,4 @@
 /**
- * Soma Agent — © 2026 Curtis Mercier
- * Licensed under BSL 1.1 (Business Source License)
- *
- * You may view, use personally, and contribute to this software.
- * You may NOT use it for competing commercial products or services.
- * Converts to MIT license on 2027-09-18.
- *
- * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
- * Source available to contributors: https://soma.gravicity.ai/beta
- * Contact for commercial licensing: meetsoma@gravicity.ai
- */
-
-/**
  * Model registry - manages built-in and custom models, provides API key resolution.
  */
 import { getModels, getProviders, registerApiProvider, resetApiProviders, } from "@mariozechner/pi-ai";
@@ -25,38 +12,9 @@ import { clearConfigValueCache, resolveConfigValueOrThrow, resolveConfigValueUnc
 const Ajv = AjvModule.default || AjvModule;
 const ajv = new Ajv();
 // Schema for OpenRouter routing preferences
-const PercentileCutoffsSchema = Type.Object({
-    p50: Type.Optional(Type.Number()),
-    p75: Type.Optional(Type.Number()),
-    p90: Type.Optional(Type.Number()),
-    p99: Type.Optional(Type.Number()),
-});
 const OpenRouterRoutingSchema = Type.Object({
-    allow_fallbacks: Type.Optional(Type.Boolean()),
-    require_parameters: Type.Optional(Type.Boolean()),
-    data_collection: Type.Optional(Type.Union([Type.Literal("deny"), Type.Literal("allow")])),
-    zdr: Type.Optional(Type.Boolean()),
-    enforce_distillable_text: Type.Optional(Type.Boolean()),
-    order: Type.Optional(Type.Array(Type.String())),
     only: Type.Optional(Type.Array(Type.String())),
-    ignore: Type.Optional(Type.Array(Type.String())),
-    quantizations: Type.Optional(Type.Array(Type.String())),
-    sort: Type.Optional(Type.Union([
-        Type.String(),
-        Type.Object({
-            by: Type.Optional(Type.String()),
-            partition: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-        }),
-    ])),
-    max_price: Type.Optional(Type.Object({
-        prompt: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-        completion: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-        image: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-        audio: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-        request: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-    })),
-    preferred_min_throughput: Type.Optional(Type.Union([Type.Number(), PercentileCutoffsSchema])),
-    preferred_max_latency: Type.Optional(Type.Union([Type.Number(), PercentileCutoffsSchema])),
+    order: Type.Optional(Type.Array(Type.String())),
 });
 // Schema for Vercel AI Gateway routing preferences
 const VercelGatewayRoutingSchema = Type.Object({

@@ -12,54 +12,27 @@ import { ansiLinesToHtml } from "./ansi-to-html.js";
  * methods, converting the resulting TUI Component output (ANSI) to HTML.
  */
 export function createToolHtmlRenderer(deps) {
-    const { getToolDefinition, theme, cwd, width = 100 } = deps;
-    const renderedCallComponents = new Map();
-    const renderedResultComponents = new Map();
-    const renderedStates = new Map();
-    const renderedArgs = new Map();
-    const getState = (toolCallId) => {
-        let state = renderedStates.get(toolCallId);
-        if (!state) {
-            state = {};
-            renderedStates.set(toolCallId, state);
-        }
-        return state;
-    };
-    const createRenderContext = (toolCallId, lastComponent, expanded, isPartial, isError) => {
-        return {
-            args: renderedArgs.get(toolCallId),
-            toolCallId,
-            invalidate: () => { },
-            lastComponent,
-            state: getState(toolCallId),
-            cwd,
-            executionStarted: true,
-            argsComplete: true,
-            isPartial,
-            expanded,
-            showImages: false,
-            isError,
-        };
-    };
+    const { getToolDefinition, theme, width = 100 } = deps;
     return {
-        renderCall(toolCallId, toolName, args) {
+        renderCall(toolName, args) {
             try {
-                renderedArgs.set(toolCallId, args);
                 const toolDef = getToolDefinition(toolName);
                 if (!toolDef?.renderCall) {
                     return undefined;
                 }
-                const component = toolDef.renderCall(args, theme, createRenderContext(toolCallId, renderedCallComponents.get(toolCallId), false, true, false));
-                renderedCallComponents.set(toolCallId, component);
+                const component = toolDef.renderCall(args, theme);
+                if (!component) {
+                    return undefined;
+                }
                 const lines = component.render(width);
                 return ansiLinesToHtml(lines);
             }
             catch {
-                // On error, return undefined so HTML export can fall back to structured result rendering
+                // On error, return undefined to trigger JSON fallback
                 return undefined;
             }
         },
-        renderResult(toolCallId, toolName, result, details, isError) {
+        renderResult(toolName, result, details, isError) {
             try {
                 const toolDef = getToolDefinition(toolName);
                 if (!toolDef?.renderResult) {
@@ -73,20 +46,22 @@ export function createToolHtmlRenderer(deps) {
                     isError,
                 };
                 // Render collapsed
-                const collapsedComponent = toolDef.renderResult(agentToolResult, { expanded: false, isPartial: false }, theme, createRenderContext(toolCallId, renderedResultComponents.get(toolCallId), false, false, isError));
-                renderedResultComponents.set(toolCallId, collapsedComponent);
-                const collapsed = ansiLinesToHtml(collapsedComponent.render(width));
+                const collapsedComponent = toolDef.renderResult(agentToolResult, { expanded: false, isPartial: false }, theme);
+                const collapsed = collapsedComponent ? ansiLinesToHtml(collapsedComponent.render(width)) : undefined;
                 // Render expanded
-                const expandedComponent = toolDef.renderResult(agentToolResult, { expanded: true, isPartial: false }, theme, createRenderContext(toolCallId, renderedResultComponents.get(toolCallId), true, false, isError));
-                renderedResultComponents.set(toolCallId, expandedComponent);
-                const expanded = ansiLinesToHtml(expandedComponent.render(width));
+                const expandedComponent = toolDef.renderResult(agentToolResult, { expanded: true, isPartial: false }, theme);
+                const expanded = expandedComponent ? ansiLinesToHtml(expandedComponent.render(width)) : undefined;
+                // Return collapsed only if it exists and differs from expanded
+                if (!expanded) {
+                    return undefined;
+                }
                 return {
                     ...(collapsed && collapsed !== expanded ? { collapsed } : {}),
                     expanded,
                 };
             }
             catch {
-                // On error, return undefined so HTML export can fall back to structured result rendering
+                // On error, return undefined to trigger JSON fallback
                 return undefined;
             }
         },
