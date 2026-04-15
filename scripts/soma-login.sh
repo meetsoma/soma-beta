@@ -49,8 +49,9 @@ echo "   If it doesn't open, go to: $HUB_URL"
 echo "   Enter the code in the 'Connect your agent' step."
 echo ""
 
-# 2. Open browser
-open "$HUB_URL" 2>/dev/null || xdg-open "$HUB_URL" 2>/dev/null || echo "   (couldn't open browser automatically)"
+# 2. Open browser with code param (walkthrough auto-fills the code input)
+PAIR_URL="$HUB_URL?flow=onboarding&code=$CODE"
+open "$PAIR_URL" 2>/dev/null || xdg-open "$PAIR_URL" 2>/dev/null || echo "   (couldn't open browser automatically)"
 
 # 3. Poll for pairing completion
 echo "   Waiting for pairing..."
