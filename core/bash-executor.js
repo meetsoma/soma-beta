@@ -1,4 +1,17 @@
 /**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
+/**
  * Bash command execution with streaming support and cancellation.
  *
  * This module provides a unified bash execution implementation used by:
@@ -43,19 +56,25 @@ export async function executeBashWithOperations(command, cwd, operations, option
     let tempFilePath;
     let tempFileStream;
     let totalBytes = 0;
+    const ensureTempFile = () => {
+        if (tempFilePath) {
+            return;
+        }
+        const id = randomBytes(8).toString("hex");
+        tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+        tempFileStream = createWriteStream(tempFilePath);
+        for (const chunk of outputChunks) {
+            tempFileStream.write(chunk);
+        }
+    };
     const decoder = new TextDecoder();
     const onData = (data) => {
         totalBytes += data.length;
         // Sanitize: strip ANSI, replace binary garbage, normalize newlines
         const text = sanitizeBinaryOutput(stripAnsi(decoder.decode(data, { stream: true }))).replace(/\r/g, "");
         // Start writing to temp file if exceeds threshold
-        if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
-            const id = randomBytes(8).toString("hex");
-            tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
-            tempFileStream = createWriteStream(tempFilePath);
-            for (const chunk of outputChunks) {
-                tempFileStream.write(chunk);
-            }
+        if (totalBytes > DEFAULT_MAX_BYTES) {
+            ensureTempFile();
         }
         if (tempFileStream) {
             tempFileStream.write(text);
@@ -82,6 +101,9 @@ export async function executeBashWithOperations(command, cwd, operations, option
         }
         const fullOutput = outputChunks.join("");
         const truncationResult = truncateTail(fullOutput);
+        if (truncationResult.truncated) {
+            ensureTempFile();
+        }
         const cancelled = options?.signal?.aborted ?? false;
         return {
             output: truncationResult.truncated ? truncationResult.content : fullOutput,
@@ -99,6 +121,9 @@ export async function executeBashWithOperations(command, cwd, operations, option
         if (options?.signal?.aborted) {
             const fullOutput = outputChunks.join("");
             const truncationResult = truncateTail(fullOutput);
+            if (truncationResult.truncated) {
+                ensureTempFile();
+            }
             return {
                 output: truncationResult.truncated ? truncationResult.content : fullOutput,
                 exitCode: undefined,

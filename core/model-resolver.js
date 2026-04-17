@@ -1,4 +1,17 @@
 /**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
+/**
  * Model resolution, scoping, and initial selection
  */
 import { modelsAreEqual } from "@mariozechner/pi-ai";
@@ -30,7 +43,7 @@ export const defaultModelPerProvider = {
     huggingface: "moonshotai/Kimi-K2.5",
     opencode: "claude-opus-4-6",
     "opencode-go": "kimi-k2.5",
-    "kimi-coding": "kimi-k2-thinking",
+    "kimi-coding": "kimi-for-coding",
 };
 /**
  * Helper to check if a model ID looks like an alias (no date suffix)

@@ -1,9 +1,23 @@
+/**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { loadThemeFromPath } from "../modes/interactive/theme/theme.js";
+import { isLocalPath } from "../utils/paths.js";
 import { createEventBus } from "./event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
 import { DefaultPackageManager } from "./package-manager.js";
@@ -44,7 +58,7 @@ function loadContextFileFromDir(dir) {
     }
     return null;
 }
-function loadProjectContextFiles(options = {}) {
+export function loadProjectContextFiles(options = {}) {
     const resolvedCwd = options.cwd ?? process.cwd();
     const resolvedAgentDir = options.agentDir ?? getAgentDir();
     const contextFiles = [];
@@ -88,6 +102,7 @@ export class DefaultResourceLoader {
     noSkills;
     noPromptTemplates;
     noThemes;
+    noContextFiles;
     systemPromptSource;
     appendSystemPromptSource;
     extensionsOverride;
@@ -132,6 +147,7 @@ export class DefaultResourceLoader {
         this.noSkills = options.noSkills ?? false;
         this.noPromptTemplates = options.noPromptTemplates ?? false;
         this.noThemes = options.noThemes ?? false;
+        this.noContextFiles = options.noContextFiles ?? false;
         this.systemPromptSource = options.systemPrompt;
         this.appendSystemPromptSource = options.appendSystemPrompt;
         this.extensionsOverride = options.extensionsOverride;
@@ -205,6 +221,7 @@ export class DefaultResourceLoader {
         }
     }
     async reload() {
+        await this.settingsManager.reload();
         const resolvedPaths = await this.packageManager.resolve();
         const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
             temporary: true,
@@ -278,31 +295,55 @@ export class DefaultResourceLoader {
         for (const conflict of conflicts) {
             extensionsResult.errors.push({ path: conflict.path, error: conflict.message });
         }
+        for (const p of this.additionalExtensionPaths) {
+            if (isLocalPath(p) && !existsSync(p)) {
+                extensionsResult.errors.push({ path: p, error: `Extension path does not exist: ${p}` });
+            }
+        }
         this.extensionsResult = this.extensionsOverride ? this.extensionsOverride(extensionsResult) : extensionsResult;
         this.applyExtensionSourceInfo(this.extensionsResult.extensions, metadataByPath);
         const skillPaths = this.noSkills
             ? this.mergePaths(cliEnabledSkills, this.additionalSkillPaths)
-            : this.mergePaths([...enabledSkills, ...cliEnabledSkills], this.additionalSkillPaths);
+            : this.mergePaths([...cliEnabledSkills, ...enabledSkills], this.additionalSkillPaths);
         this.lastSkillPaths = skillPaths;
         this.updateSkillsFromPaths(skillPaths, metadataByPath);
+        for (const p of this.additionalSkillPaths) {
+            if (isLocalPath(p) && !existsSync(p) && !this.skillDiagnostics.some((d) => d.path === p)) {
+                this.skillDiagnostics.push({ type: "error", message: "Skill path does not exist", path: p });
+            }
+        }
         const promptPaths = this.noPromptTemplates
             ? this.mergePaths(cliEnabledPrompts, this.additionalPromptTemplatePaths)
-            : this.mergePaths([...enabledPrompts, ...cliEnabledPrompts], this.additionalPromptTemplatePaths);
+            : this.mergePaths([...cliEnabledPrompts, ...enabledPrompts], this.additionalPromptTemplatePaths);
         this.lastPromptPaths = promptPaths;
         this.updatePromptsFromPaths(promptPaths, metadataByPath);
+        for (const p of this.additionalPromptTemplatePaths) {
+            if (isLocalPath(p) && !existsSync(p) && !this.promptDiagnostics.some((d) => d.path === p)) {
+                this.promptDiagnostics.push({ type: "error", message: "Prompt template path does not exist", path: p });
+            }
+        }
         const themePaths = this.noThemes
             ? this.mergePaths(cliEnabledThemes, this.additionalThemePaths)
-            : this.mergePaths([...enabledThemes, ...cliEnabledThemes], this.additionalThemePaths);
+            : this.mergePaths([...cliEnabledThemes, ...enabledThemes], this.additionalThemePaths);
         this.lastThemePaths = themePaths;
         this.updateThemesFromPaths(themePaths, metadataByPath);
-        const agentsFiles = { agentsFiles: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }) };
+        for (const p of this.additionalThemePaths) {
+            if (!existsSync(p) && !this.themeDiagnostics.some((d) => d.path === p)) {
+                this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: p });
+            }
+        }
+        const agentsFiles = {
+            agentsFiles: this.noContextFiles ? [] : loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }),
+        };
         const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
         this.agentsFiles = resolvedAgentsFiles.agentsFiles;
         const baseSystemPrompt = resolvePromptInput(this.systemPromptSource ?? this.discoverSystemPromptFile(), "system prompt");
         this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;
-        const appendSource = this.appendSystemPromptSource ?? this.discoverAppendSystemPromptFile();
-        const resolvedAppend = resolvePromptInput(appendSource, "append system prompt");
-        const baseAppend = resolvedAppend ? [resolvedAppend] : [];
+        const appendSources = this.appendSystemPromptSource ??
+            (this.discoverAppendSystemPromptFile() ? [this.discoverAppendSystemPromptFile()] : []);
+        const baseAppend = appendSources
+            .map((s) => resolvePromptInput(s, "append system prompt"))
+            .filter((s) => s !== undefined);
         this.appendSystemPrompt = this.appendSystemPromptOverride
             ? this.appendSystemPromptOverride(baseAppend)
             : baseAppend;

@@ -207,8 +207,9 @@ export function createGrepToolDefinition(cwd, options) {
                                 matchCount++;
                                 const filePath = event.data?.path?.text;
                                 const lineNumber = event.data?.line_number;
+                                const lineText = event.data?.lines?.text;
                                 if (filePath && typeof lineNumber === "number")
-                                    matches.push({ filePath, lineNumber });
+                                    matches.push({ filePath, lineNumber, lineText });
                                 if (matchCount >= effectiveLimit) {
                                     matchLimitReached = true;
                                     stopChild(true);
@@ -236,8 +237,21 @@ export function createGrepToolDefinition(cwd, options) {
                             }
                             // Format matches after streaming finishes so custom readFile() backends can be async.
                             for (const match of matches) {
-                                const block = await formatBlock(match.filePath, match.lineNumber);
-                                outputLines.push(...block);
+                                if (contextValue === 0 && match.lineText !== undefined) {
+                                    const relativePath = formatPath(match.filePath);
+                                    const sanitized = match.lineText
+                                        .replace(/\r\n/g, "\n")
+                                        .replace(/\r/g, "")
+                                        .replace(/\n$/, "");
+                                    const { text: truncatedText, wasTruncated } = truncateLine(sanitized);
+                                    if (wasTruncated)
+                                        linesTruncated = true;
+                                    outputLines.push(`${relativePath}:${match.lineNumber}: ${truncatedText}`);
+                                }
+                                else {
+                                    const block = await formatBlock(match.filePath, match.lineNumber);
+                                    outputLines.push(...block);
+                                }
                             }
                             const rawOutput = outputLines.join("\n");
                             // Apply byte truncation. There is no line limit here because the match limit already capped rows.

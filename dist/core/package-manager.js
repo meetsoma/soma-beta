@@ -1,3 +1,16 @@
+/**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -1064,13 +1077,12 @@ export class DefaultPackageManager {
         }
     }
     async getLatestNpmVersion(packageName) {
-        const response = await fetch(`https://registry.npmjs.org/${packageName}/latest`, {
-            signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
-        });
-        if (!response.ok)
-            throw new Error(`Failed to fetch npm registry: ${response.status}`);
-        const data = (await response.json());
-        return data.version;
+        const npmCommand = this.getNpmCommand();
+        const stdout = await this.runCommandCapture(npmCommand.command, [...npmCommand.args, "view", packageName, "version", "--json"], { cwd: this.cwd, timeoutMs: NETWORK_TIMEOUT_MS });
+        const raw = stdout.trim();
+        if (!raw)
+            throw new Error("Empty response from npm view");
+        return JSON.parse(raw);
     }
     async gitHasAvailableUpdate(installedPath) {
         if (isOfflineModeEnabled()) {

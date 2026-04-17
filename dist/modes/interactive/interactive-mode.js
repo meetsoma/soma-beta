@@ -13,7 +13,7 @@ import { parseSkillBlock } from "../../core/agent-session.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
-import { findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
+import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
 import { SessionManager } from "../../core/session-manager.js";
@@ -22,6 +22,7 @@ import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/cha
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
+import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -29,6 +30,7 @@ import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
+import { CountdownTimer } from "./components/countdown-timer.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { DaxnutsComponent } from "./components/daxnuts.js";
@@ -55,6 +57,18 @@ import { getAvailableThemes, getAvailableThemesWithPaths, getEditorTheme, getMar
 function isExpandable(obj) {
     return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
 }
+class ExpandableText extends Text {
+    getCollapsedText;
+    getExpandedText;
+    constructor(getCollapsedText, getExpandedText, expanded = false, paddingX = 0, paddingY = 0) {
+        super(expanded ? getExpandedText() : getCollapsedText(), paddingX, paddingY);
+        this.getCollapsedText = getCollapsedText;
+        this.getExpandedText = getExpandedText;
+    }
+    setExpanded(expanded) {
+        this.setText(expanded ? this.getExpandedText() : this.getCollapsedText());
+    }
+}
 const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING = "Anthropic subscription auth is active. Third-party usage now draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
 function isAnthropicSubscriptionAuthKey(apiKey) {
     return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
@@ -63,6 +77,12 @@ function isTruthyEnvFlag(value) {
     if (!value)
         return false;
     return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
+function isUnknownModel(model) {
+    return !!model && model.provider === "unknown" && model.id === "unknown" && model.api === "unknown";
+}
+function hasDefaultModelProvider(providerId) {
+    return providerId in defaultModelPerProvider;
 }
 export class InteractiveMode {
     options;
@@ -109,6 +129,7 @@ export class InteractiveMode {
     skillCommands = new Map();
     // Agent subscription unsubscribe function
     unsubscribe;
+    signalCleanupHandlers = [];
     // Track if editor is in bash mode (text starts with !)
     isBashMode = false;
     // Track current bash execution component
@@ -120,6 +141,7 @@ export class InteractiveMode {
     autoCompactionEscapeHandler;
     // Auto-retry state
     retryLoader = undefined;
+    retryCountdown = undefined;
     retryEscapeHandler;
     // Messages queued while compaction is running
     compactionQueuedMessages = [];
@@ -266,6 +288,7 @@ export class InteractiveMode {
         const templateCommands = this.session.promptTemplates.map((cmd) => ({
             name: cmd.name,
             description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
+            ...(cmd.argumentHint && { argumentHint: cmd.argumentHint }),
         }));
         // Convert extension commands to SlashCommand format
         const builtinCommandNames = new Set(slashCommands.map((c) => c.name));
@@ -323,6 +346,7 @@ export class InteractiveMode {
     async init() {
         if (this.isInitialized)
             return;
+        this.registerSignalHandlers();
         // Load changelog (only show new entries, skip for resumed sessions)
         this.changelogMarkdown = this.getChangelogForDisplay();
         // Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
@@ -336,7 +360,7 @@ export class InteractiveMode {
             const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
             // Build startup instructions using keybinding hint helpers
             const hint = (keybinding, description) => keyHint(keybinding, description);
-            const instructions = [
+            const expandedInstructions = [
                 hint("app.interrupt", "to interrupt"),
                 hint("app.clear", "to clear"),
                 rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
@@ -357,8 +381,16 @@ export class InteractiveMode {
                 hint("app.clipboard.pasteImage", "to paste image"),
                 rawKeyHint("drop files", "to attach"),
             ].join("\n");
+            const compactInstructions = [
+                hint("app.interrupt", "interrupt"),
+                rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
+                rawKeyHint("/", "commands"),
+                rawKeyHint("!", "bash"),
+                hint("app.tools.expand", "more"),
+            ].join(theme.fg("muted", " · "));
+            const compactOnboarding = theme.fg("dim", `Press ${keyText("app.tools.expand")} to show full startup help and loaded resources.`);
             const onboarding = theme.fg("dim", `Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`);
-            this.builtInHeader = new Text(`${logo}\n${instructions}\n\n${onboarding}`, 1, 0);
+            this.builtInHeader = new ExpandableText(() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`, () => `${logo}\n${expandedInstructions}\n\n${onboarding}`, this.getStartupExpansionState(), 1, 0);
             // Setup UI layout
             this.headerContainer.addChild(new Spacer(1));
             this.headerContainer.addChild(this.builtInHeader);
@@ -627,6 +659,22 @@ export class InteractiveMode {
         }
         return result;
     }
+    formatContextPath(p) {
+        const cwd = path.resolve(this.sessionManager.getCwd());
+        const absolutePath = path.isAbsolute(p) ? path.resolve(p) : path.resolve(cwd, p);
+        const relativePath = path.relative(cwd, absolutePath);
+        const isInsideCwd = relativePath === "" ||
+            (!relativePath.startsWith("..") &&
+                !relativePath.startsWith(`..${path.sep}`) &&
+                !path.isAbsolute(relativePath));
+        if (isInsideCwd) {
+            return relativePath || ".";
+        }
+        return this.formatDisplayPath(absolutePath);
+    }
+    getStartupExpansionState() {
+        return this.options.verbose || this.toolOutputExpanded;
+    }
     /**
      * Get a short path relative to the package root for display.
      */
@@ -787,6 +835,27 @@ export class InteractiveMode {
             return;
         }
         const sectionHeader = (name, color = "mdHeading") => theme.fg(color, `[${name}]`);
+        const compactPath = (resourcePath, sourceInfo) => {
+            const shortPath = this.getShortPath(resourcePath, sourceInfo);
+            const normalizedPath = shortPath.replace(/\\/g, "/");
+            const segments = normalizedPath.split("/").filter((segment) => segment.length > 0 && segment !== "~");
+            if (segments.length > 0) {
+                return segments[segments.length - 1];
+            }
+            return shortPath;
+        };
+        const formatCompactList = (items, options) => {
+            const labels = items.map((item) => item.trim()).filter((item) => item.length > 0);
+            if (options?.sort !== false) {
+                labels.sort((a, b) => a.localeCompare(b));
+            }
+            return theme.fg("dim", `  ${labels.join(", ")}`);
+        };
+        const addLoadedSection = (name, collapsedBody, expandedBody = collapsedBody, color = "mdHeading") => {
+            const section = new ExpandableText(() => `${sectionHeader(name, color)}\n${collapsedBody}`, () => `${sectionHeader(name, color)}\n${expandedBody}`, this.getStartupExpansionState(), 0, 0);
+            this.chatContainer.addChild(section);
+            this.chatContainer.addChild(new Spacer(1));
+        };
         const skillsResult = this.session.resourceLoader.getSkills();
         const promptsResult = this.session.resourceLoader.getPrompts();
         const themesResult = this.session.resourceLoader.getThemes();
@@ -823,8 +892,8 @@ export class InteractiveMode {
                 const contextList = contextFiles
                     .map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
                     .join("\n");
-                this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                const contextCompactList = formatCompactList(contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)), { sort: false });
+                addLoadedSection("Context", contextCompactList, contextList);
             }
             const skills = skillsResult.skills;
             if (skills.length > 0) {
@@ -833,8 +902,8 @@ export class InteractiveMode {
                     formatPath: (item) => this.formatDisplayPath(item.path),
                     formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
                 });
-                this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                const skillCompactList = formatCompactList(skills.map((skill) => skill.name));
+                addLoadedSection("Skills", skillCompactList, skillList);
             }
             const templates = this.session.promptTemplates;
             if (templates.length > 0) {
@@ -850,8 +919,8 @@ export class InteractiveMode {
                         return template ? `/${template.name}` : this.formatDisplayPath(item.path);
                     },
                 });
-                this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                const promptCompactList = formatCompactList(templates.map((template) => `/${template.name}`));
+                addLoadedSection("Prompts", promptCompactList, templateList);
             }
             if (extensions.length > 0) {
                 const groups = this.buildScopeGroups(extensions);
@@ -859,8 +928,8 @@ export class InteractiveMode {
                     formatPath: (item) => this.formatDisplayPath(item.path),
                     formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
                 });
-                this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                const extensionCompactList = formatCompactList(extensions.map((extension) => compactPath(extension.path, extension.sourceInfo)));
+                addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");
             }
             // Show loaded themes (excluding built-in)
             const loadedThemes = themesResult.themes;
@@ -874,8 +943,8 @@ export class InteractiveMode {
                     formatPath: (item) => this.formatDisplayPath(item.path),
                     formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
                 });
-                this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                const themeCompactList = formatCompactList(customThemes.map((loadedTheme) => loadedTheme.name ?? compactPath(loadedTheme.sourcePath, loadedTheme.sourceInfo)));
+                addLoadedSection("Themes", themeCompactList, themeList);
             }
         }
         if (showDiagnostics) {
@@ -1273,6 +1342,9 @@ export class InteractiveMode {
         if (factory) {
             // Create and add custom header
             this.customHeader = factory(this.ui, theme);
+            if (isExpandable(this.customHeader)) {
+                this.customHeader.setExpanded(this.toolOutputExpanded);
+            }
             if (index !== -1) {
                 this.headerContainer.children[index] = this.customHeader;
             }
@@ -1284,6 +1356,9 @@ export class InteractiveMode {
         else {
             // Restore built-in header
             this.customHeader = undefined;
+            if (isExpandable(this.builtInHeader)) {
+                this.builtInHeader.setExpanded(this.toolOutputExpanded);
+            }
             if (index !== -1) {
                 this.headerContainer.children[index] = this.builtInHeader;
             }
@@ -1923,6 +1998,10 @@ export class InteractiveMode {
                     this.defaultEditor.onEscape = this.retryEscapeHandler;
                     this.retryEscapeHandler = undefined;
                 }
+                if (this.retryCountdown) {
+                    this.retryCountdown.dispose();
+                    this.retryCountdown = undefined;
+                }
                 if (this.retryLoader) {
                     this.retryLoader.stop();
                     this.retryLoader = undefined;
@@ -2135,8 +2214,14 @@ export class InteractiveMode {
                 };
                 // Show retry indicator
                 this.statusContainer.clear();
-                const delaySeconds = Math.round(event.delayMs / 1000);
-                this.retryLoader = new Loader(this.ui, (spinner) => theme.fg("warning", spinner), (text) => theme.fg("muted", text), `Retrying (${event.attempt}/${event.maxAttempts}) in ${delaySeconds}s... (${keyText("app.interrupt")} to cancel)`);
+                this.retryCountdown?.dispose();
+                const retryMessage = (seconds) => `Retrying (${event.attempt}/${event.maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
+                this.retryLoader = new Loader(this.ui, (spinner) => theme.fg("warning", spinner), (text) => theme.fg("muted", text), retryMessage(Math.ceil(event.delayMs / 1000)));
+                this.retryCountdown = new CountdownTimer(event.delayMs, this.ui, (seconds) => {
+                    this.retryLoader?.setMessage(retryMessage(seconds));
+                }, () => {
+                    this.retryCountdown = undefined;
+                });
                 this.statusContainer.addChild(this.retryLoader);
                 this.ui.requestRender();
                 break;
@@ -2146,6 +2231,10 @@ export class InteractiveMode {
                 if (this.retryEscapeHandler) {
                     this.defaultEditor.onEscape = this.retryEscapeHandler;
                     this.retryEscapeHandler = undefined;
+                }
+                if (this.retryCountdown) {
+                    this.retryCountdown.dispose();
+                    this.retryCountdown = undefined;
                 }
                 // Stop loader
                 if (this.retryLoader) {
@@ -2380,6 +2469,7 @@ export class InteractiveMode {
         if (this.isShuttingDown)
             return;
         this.isShuttingDown = true;
+        this.unregisterSignalHandlers();
         await this.runtimeHost.dispose();
         // Wait for any pending renders to complete
         // requestRender() uses process.nextTick(), so we wait one tick
@@ -2398,7 +2488,32 @@ export class InteractiveMode {
             return;
         await this.shutdown();
     }
+    registerSignalHandlers() {
+        this.unregisterSignalHandlers();
+        const signals = ["SIGTERM"];
+        if (process.platform !== "win32") {
+            signals.push("SIGHUP");
+        }
+        for (const signal of signals) {
+            const handler = () => {
+                killTrackedDetachedChildren();
+                void this.shutdown();
+            };
+            process.on(signal, handler);
+            this.signalCleanupHandlers.push(() => process.off(signal, handler));
+        }
+    }
+    unregisterSignalHandlers() {
+        for (const cleanup of this.signalCleanupHandlers) {
+            cleanup();
+        }
+        this.signalCleanupHandlers = [];
+    }
     handleCtrlZ() {
+        if (process.platform === "win32") {
+            this.showStatus("Suspend to background is not supported on Windows");
+            return;
+        }
         // Keep the event loop alive while suspended. Without this, stopping the TUI
         // can leave Node with no ref'ed handles, causing the process to exit on fg
         // before the SIGCONT handler gets a chance to restore the terminal.
@@ -2510,6 +2625,10 @@ export class InteractiveMode {
     }
     setToolsExpanded(expanded) {
         this.toolOutputExpanded = expanded;
+        const activeHeader = this.customHeader ?? this.builtInHeader;
+        if (isExpandable(activeHeader)) {
+            activeHeader.setExpanded(expanded);
+        }
         for (const child of this.chatContainer.children) {
             if (isExpandable(child)) {
                 child.setExpanded(expanded);
@@ -3034,33 +3153,24 @@ export class InteractiveMode {
         const sessionScopedModels = this.session.scopedModels;
         const hasSessionScope = sessionScopedModels.length > 0;
         // Build enabled model IDs from session state or settings
-        const enabledModelIds = new Set();
-        let hasFilter = false;
+        let currentEnabledIds = null;
         if (hasSessionScope) {
             // Use current session's scoped models
-            for (const sm of sessionScopedModels) {
-                enabledModelIds.add(`${sm.model.provider}/${sm.model.id}`);
-            }
-            hasFilter = true;
+            currentEnabledIds = sessionScopedModels.map((scoped) => `${scoped.model.provider}/${scoped.model.id}`);
         }
         else {
             // Fall back to settings
             const patterns = this.settingsManager.getEnabledModels();
             if (patterns !== undefined && patterns.length > 0) {
-                hasFilter = true;
                 const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
-                for (const sm of scopedModels) {
-                    enabledModelIds.add(`${sm.model.provider}/${sm.model.id}`);
-                }
+                currentEnabledIds = scopedModels.map((scoped) => `${scoped.model.provider}/${scoped.model.id}`);
             }
         }
-        // Track current enabled state (session-only until persisted)
-        const currentEnabledIds = new Set(enabledModelIds);
-        let currentHasFilter = hasFilter;
         // Helper to update session's scoped models (session-only, no persist)
         const updateSessionModels = async (enabledIds) => {
-            if (enabledIds.size > 0 && enabledIds.size < allModels.length) {
-                const newScopedModels = await resolveModelScope(Array.from(enabledIds), this.session.modelRegistry);
+            currentEnabledIds = enabledIds === null ? null : [...enabledIds];
+            if (enabledIds && enabledIds.length > 0 && enabledIds.length < allModels.length) {
+                const newScopedModels = await resolveModelScope(enabledIds, this.session.modelRegistry);
                 this.session.setScopedModels(newScopedModels.map((sm) => ({
                     model: sm.model,
                     thinkingLevel: sm.thinkingLevel,
@@ -3077,49 +3187,16 @@ export class InteractiveMode {
             const selector = new ScopedModelsSelectorComponent({
                 allModels,
                 enabledModelIds: currentEnabledIds,
-                hasEnabledModelsFilter: currentHasFilter,
             }, {
-                onModelToggle: async (modelId, enabled) => {
-                    if (enabled) {
-                        currentEnabledIds.add(modelId);
-                    }
-                    else {
-                        currentEnabledIds.delete(modelId);
-                    }
-                    currentHasFilter = true;
-                    await updateSessionModels(currentEnabledIds);
-                },
-                onEnableAll: async (allModelIds) => {
-                    currentEnabledIds.clear();
-                    for (const id of allModelIds) {
-                        currentEnabledIds.add(id);
-                    }
-                    currentHasFilter = false;
-                    await updateSessionModels(currentEnabledIds);
-                },
-                onClearAll: async () => {
-                    currentEnabledIds.clear();
-                    currentHasFilter = true;
-                    await updateSessionModels(currentEnabledIds);
-                },
-                onToggleProvider: async (_provider, modelIds, enabled) => {
-                    for (const id of modelIds) {
-                        if (enabled) {
-                            currentEnabledIds.add(id);
-                        }
-                        else {
-                            currentEnabledIds.delete(id);
-                        }
-                    }
-                    currentHasFilter = true;
-                    await updateSessionModels(currentEnabledIds);
+                onChange: async (enabledIds) => {
+                    await updateSessionModels(enabledIds);
                 },
                 onPersist: (enabledIds) => {
                     // Persist to settings
-                    const newPatterns = enabledIds.length === allModels.length
+                    const newPatterns = enabledIds === null || enabledIds.length === allModels.length
                         ? undefined // All enabled = clear filter
                         : enabledIds;
-                    this.settingsManager.setEnabledModels(newPatterns);
+                    this.settingsManager.setEnabledModels(newPatterns ? [...newPatterns] : undefined);
                     this.showStatus("Model selection saved to settings");
                 },
                 onCancel: () => {
@@ -3357,6 +3434,7 @@ export class InteractiveMode {
     async showLoginDialog(providerId) {
         const providerInfo = this.session.modelRegistry.authStorage.getOAuthProviders().find((p) => p.id === providerId);
         const providerName = providerInfo?.name || providerId;
+        const previousModel = this.session.model;
         // Providers that use callback servers (can paste redirect URL)
         const usesCallbackServer = providerInfo?.usesCallbackServer ?? false;
         // Create login dialog component
@@ -3421,8 +3499,52 @@ export class InteractiveMode {
             // Success
             restoreEditor();
             this.session.modelRegistry.refresh();
+            let selectedModel;
+            let selectionError;
+            if (isUnknownModel(previousModel)) {
+                const availableModels = this.session.modelRegistry.getAvailable();
+                const providerModels = availableModels.filter((model) => model.provider === providerId);
+                if (!hasDefaultModelProvider(providerId)) {
+                    selectionError = `Logged in to ${providerName}, but no default model is configured for provider "${providerId}". Use /model to select a model.`;
+                }
+                else if (providerModels.length === 0) {
+                    selectionError = `Logged in to ${providerName}, but no models are available for that provider. Use /model to select a model.`;
+                }
+                else {
+                    const defaultModelId = defaultModelPerProvider[providerId];
+                    selectedModel = providerModels.find((model) => model.id === defaultModelId);
+                    if (!selectedModel) {
+                        selectionError = `Logged in to ${providerName}, but its default model "${defaultModelId}" is not available. Use /model to select a model.`;
+                    }
+                    else {
+                        try {
+                            await this.session.setModel(selectedModel);
+                        }
+                        catch (error) {
+                            selectedModel = undefined;
+                            const errorMessage = error instanceof Error ? error.message : String(error);
+                            selectionError = `Logged in to ${providerName}, but selecting its default model failed: ${errorMessage}. Use /model to select a model.`;
+                        }
+                    }
+                }
+            }
             await this.updateAvailableProviderCount();
-            this.showStatus(`Logged in to ${providerName}. Credentials saved to ${getAuthPath()}`);
+            this.footer.invalidate();
+            this.updateEditorBorderColor();
+            if (selectedModel) {
+                this.showStatus(`Logged in to ${providerName}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
+                void this.maybeWarnAboutAnthropicSubscriptionAuth(selectedModel);
+                this.checkDaxnutsEasterEgg(selectedModel);
+            }
+            else {
+                this.showStatus(`Logged in to ${providerName}. Credentials saved to ${getAuthPath()}`);
+                if (selectionError) {
+                    this.showError(selectionError);
+                }
+                else {
+                    void this.maybeWarnAboutAnthropicSubscriptionAuth();
+                }
+            }
         }
         catch (error) {
             restoreEditor();
@@ -3445,16 +3567,20 @@ export class InteractiveMode {
             return;
         }
         this.resetExtensionUI();
-        const loader = new BorderedLoader(this.ui, theme, "Reloading keybindings, extensions, skills, prompts, themes...", {
-            cancellable: false,
-        });
+        const reloadBox = new Container();
+        const borderColor = (s) => theme.fg("border", s);
+        reloadBox.addChild(new DynamicBorder(borderColor));
+        reloadBox.addChild(new Spacer(1));
+        reloadBox.addChild(new Text(theme.fg("muted", "Reloading keybindings, extensions, skills, prompts, themes..."), 1, 0));
+        reloadBox.addChild(new Spacer(1));
+        reloadBox.addChild(new DynamicBorder(borderColor));
         const previousEditor = this.editor;
         this.editorContainer.clear();
-        this.editorContainer.addChild(loader);
-        this.ui.setFocus(loader);
-        this.ui.requestRender();
-        const dismissLoader = (editor) => {
-            loader.dispose();
+        this.editorContainer.addChild(reloadBox);
+        this.ui.setFocus(reloadBox);
+        this.ui.requestRender(true);
+        await new Promise((resolve) => process.nextTick(resolve));
+        const dismissReloadBox = (editor) => {
             this.editorContainer.clear();
             this.editorContainer.addChild(editor);
             this.ui.setFocus(editor);
@@ -3463,6 +3589,10 @@ export class InteractiveMode {
         try {
             await this.session.reload();
             this.keybindings.reload();
+            const activeHeader = this.customHeader ?? this.builtInHeader;
+            if (isExpandable(activeHeader)) {
+                activeHeader.setExpanded(this.toolOutputExpanded);
+            }
             setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
             this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
             const themeName = this.settingsManager.getTheme();
@@ -3486,7 +3616,7 @@ export class InteractiveMode {
                 this.setupExtensionShortcuts(runner);
             }
             this.rebuildChatFromMessages();
-            dismissLoader(this.editor);
+            dismissReloadBox(this.editor);
             this.showLoadedResources({
                 force: false,
                 showDiagnosticsWhenQuiet: true,
@@ -3498,7 +3628,7 @@ export class InteractiveMode {
             this.showStatus("Reloaded keybindings, extensions, skills, prompts, themes");
         }
         catch (error) {
-            dismissLoader(previousEditor);
+            dismissReloadBox(previousEditor);
             this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
@@ -4027,6 +4157,7 @@ export class InteractiveMode {
         }
     }
     stop() {
+        this.unregisterSignalHandlers();
         if (this.loadingAnimation) {
             this.loadingAnimation.stop();
             this.loadingAnimation = undefined;

@@ -9,7 +9,7 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { theme } from "../../modes/interactive/theme/theme.js";
 import { waitForChildProcess } from "../../utils/child-process.js";
-import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
+import { getShellConfig, getShellEnv, killProcessTree, trackDetachedChildPid, untrackDetachedChildPid, } from "../../utils/shell.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "./truncate.js";
@@ -45,6 +45,8 @@ export function createLocalBashOperations() {
                     env: env ?? getShellEnv(),
                     stdio: ["ignore", "pipe", "pipe"],
                 });
+                if (child.pid)
+                    trackDetachedChildPid(child.pid);
                 let timedOut = false;
                 let timeoutHandle;
                 // Set timeout if provided.
@@ -73,6 +75,8 @@ export function createLocalBashOperations() {
                 // on inherited stdio handles held by detached descendants.
                 waitForChildProcess(child)
                     .then((code) => {
+                    if (child.pid)
+                        untrackDetachedChildPid(child.pid);
                     if (timeoutHandle)
                         clearTimeout(timeoutHandle);
                     if (signal)
@@ -88,6 +92,8 @@ export function createLocalBashOperations() {
                     resolve({ exitCode: code });
                 })
                     .catch((err) => {
+                    if (child.pid)
+                        untrackDetachedChildPid(child.pid);
                     if (timeoutHandle)
                         clearTimeout(timeoutHandle);
                     if (signal)

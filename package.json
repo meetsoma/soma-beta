@@ -1,44 +1,17 @@
 {
-	"name": "meetsoma",
-	"version": "0.3.3",
-	"description": "Soma \u2014 the AI coding agent with self-growing memory",
-	"type": "module",
-	"bin": {
-		"soma": "thin-cli.js"
-	},
-	"files": [
-		"thin-cli.js",
-		"personality.js",
-		"postinstall.js",
-		"LICENSE",
-		"README.md",
-		"CHANGELOG.md"
-	],
-	"keywords": [
-		"soma",
-		"meetsoma",
-		"ai",
-		"agent",
-		"memory",
-		"coding-agent",
-		"identity",
-		"muscles",
-		"protocols",
-		"self-evolving",
-		"cli",
-		"llm"
-	],
-	"author": "Gravicity <hello@gravicity.ai>",
-	"license": "BSL-1.1",
-	"homepage": "https://soma.gravicity.ai",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/meetsoma/soma-agent.git"
-	},
-	"scripts": {
-		"postinstall": "node postinstall.js"
-	},
-	"engines": {
-		"node": ">=20.6.0"
-	}
+  "name": "soma-beta-runtime",
+  "version": "0.12.2",
+  "description": "Soma compiled runtime — the AI agent that remembers",
+  "private": true,
+  "type": "module",
+  "piConfig": {
+    "name": "soma",
+    "configDir": ".soma"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.67.6",
+    "@mariozechner/pi-ai": "^0.67.6",
+    "@mariozechner/pi-tui": "^0.67.6"
+  },
+  "license": "BSL-1.1"
 }

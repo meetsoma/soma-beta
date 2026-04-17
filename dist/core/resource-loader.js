@@ -1,3 +1,16 @@
+/**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -45,7 +58,7 @@ function loadContextFileFromDir(dir) {
     }
     return null;
 }
-function loadProjectContextFiles(options = {}) {
+export function loadProjectContextFiles(options = {}) {
     const resolvedCwd = options.cwd ?? process.cwd();
     const resolvedAgentDir = options.agentDir ?? getAgentDir();
     const contextFiles = [];
@@ -89,6 +102,7 @@ export class DefaultResourceLoader {
     noSkills;
     noPromptTemplates;
     noThemes;
+    noContextFiles;
     systemPromptSource;
     appendSystemPromptSource;
     extensionsOverride;
@@ -133,6 +147,7 @@ export class DefaultResourceLoader {
         this.noSkills = options.noSkills ?? false;
         this.noPromptTemplates = options.noPromptTemplates ?? false;
         this.noThemes = options.noThemes ?? false;
+        this.noContextFiles = options.noContextFiles ?? false;
         this.systemPromptSource = options.systemPrompt;
         this.appendSystemPromptSource = options.appendSystemPrompt;
         this.extensionsOverride = options.extensionsOverride;
@@ -317,14 +332,18 @@ export class DefaultResourceLoader {
                 this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: p });
             }
         }
-        const agentsFiles = { agentsFiles: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }) };
+        const agentsFiles = {
+            agentsFiles: this.noContextFiles ? [] : loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }),
+        };
         const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
         this.agentsFiles = resolvedAgentsFiles.agentsFiles;
         const baseSystemPrompt = resolvePromptInput(this.systemPromptSource ?? this.discoverSystemPromptFile(), "system prompt");
         this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;
-        const appendSource = this.appendSystemPromptSource ?? this.discoverAppendSystemPromptFile();
-        const resolvedAppend = resolvePromptInput(appendSource, "append system prompt");
-        const baseAppend = resolvedAppend ? [resolvedAppend] : [];
+        const appendSources = this.appendSystemPromptSource ??
+            (this.discoverAppendSystemPromptFile() ? [this.discoverAppendSystemPromptFile()] : []);
+        const baseAppend = appendSources
+            .map((s) => resolvePromptInput(s, "append system prompt"))
+            .filter((s) => s !== undefined);
         this.appendSystemPrompt = this.appendSystemPromptOverride
             ? this.appendSystemPromptOverride(baseAppend)
             : baseAppend;

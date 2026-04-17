@@ -152,6 +152,23 @@ export function sanitizeBinaryOutput(str) {
         .join("");
 }
 /**
+ * Detached child processes must be tracked so they can be killed on parent
+ * shutdown signals (SIGHUP/SIGTERM).
+ */
+const trackedDetachedChildPids = new Set();
+export function trackDetachedChildPid(pid) {
+    trackedDetachedChildPids.add(pid);
+}
+export function untrackDetachedChildPid(pid) {
+    trackedDetachedChildPids.delete(pid);
+}
+export function killTrackedDetachedChildren() {
+    for (const pid of trackedDetachedChildPids) {
+        killProcessTree(pid);
+    }
+    trackedDetachedChildPids.clear();
+}
+/**
  * Kill a process and all its children (cross-platform)
  */
 export function killProcessTree(pid) {

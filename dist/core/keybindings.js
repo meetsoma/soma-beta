@@ -1,3 +1,16 @@
+/**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
 import { TUI_KEYBINDINGS, KeybindingsManager as TuiKeybindingsManager, } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
@@ -7,7 +20,10 @@ export const KEYBINDINGS = {
     "app.interrupt": { defaultKeys: "escape", description: "Cancel or abort" },
     "app.clear": { defaultKeys: "ctrl+c", description: "Clear editor" },
     "app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
-    "app.suspend": { defaultKeys: "ctrl+z", description: "Suspend to background" },
+    "app.suspend": {
+        defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
+        description: "Suspend to background",
+    },
     "app.thinking.cycle": {
         defaultKeys: "shift+tab",
         description: "Cycle thinking level",

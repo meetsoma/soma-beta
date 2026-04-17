@@ -1,3 +1,16 @@
+/**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
 import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { streamSimple } from "@mariozechner/pi-ai";
@@ -14,7 +27,7 @@ import { SettingsManager } from "./settings-manager.js";
 import { time } from "./timings.js";
 import { allTools, bashTool, codingTools, createBashTool, createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, editTool, findTool, grepTool, lsTool, readOnlyTools, readTool, withFileMutationQueue, writeTool, } from "./tools/index.js";
 // Re-exports
-export { AgentSessionRuntimeHost, createAgentSessionRuntime, } from "./agent-session-runtime.js";
+export * from "./agent-session-runtime.js";
 export { 
 // Pre-built tools (use process.cwd())
 readTool, bashTool, editTool, writeTool, grepTool, findTool, lsTool, codingTools, readOnlyTools, allTools as allBuiltInTools, withFileMutationQueue, 
@@ -185,6 +198,17 @@ export async function createAgentSession(options = {}) {
                 return payload;
             }
             return runner.emitBeforeProviderRequest(payload);
+        },
+        onResponse: async (response, _model) => {
+            const runner = extensionRunnerRef.current;
+            if (!runner?.hasHandlers("after_provider_response")) {
+                return;
+            }
+            await runner.emit({
+                type: "after_provider_response",
+                status: response.status,
+                headers: response.headers,
+            });
         },
         sessionId: sessionManager.getSessionId(),
         transformContext: async (messages) => {

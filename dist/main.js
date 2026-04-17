@@ -321,7 +321,7 @@ async function promptForMissingSessionCwd(issue, settingsManager) {
         ui.start();
     });
 }
-export async function main(args) {
+export async function main(args, options) {
     resetTimings();
     const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
     if (offlineMode) {
@@ -422,8 +422,10 @@ export async function main(args) {
                 noSkills: parsed.noSkills,
                 noPromptTemplates: parsed.noPromptTemplates,
                 noThemes: parsed.noThemes,
+                noContextFiles: parsed.noContextFiles,
                 systemPrompt: parsed.systemPrompt,
                 appendSystemPrompt: parsed.appendSystemPrompt,
+                extensionFactories: options?.extensionFactories,
             },
         });
         const { settingsManager, modelRegistry, resourceLoader } = services;

@@ -12,6 +12,7 @@
  */
 import * as crypto from "node:crypto";
 import { takeOverStdout, writeRawStdout } from "../../core/output-guard.js";
+import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { theme } from "../interactive/theme/theme.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 /**
@@ -38,6 +39,8 @@ export async function runRpcMode(runtimeHost) {
     const pendingExtensionRequests = new Map();
     // Shutdown request flag
     let shutdownRequested = false;
+    let shuttingDown = false;
+    const signalCleanupHandlers = [];
     /** Helper for dialog methods with signal/timeout support */
     function createDialogPromise(opts, defaultValue, request, parseResponse) {
         if (opts?.signal?.aborted)
@@ -256,7 +259,22 @@ export async function runRpcMode(runtimeHost) {
             output(event);
         });
     };
+    const registerSignalHandlers = () => {
+        const signals = ["SIGTERM"];
+        if (process.platform !== "win32") {
+            signals.push("SIGHUP");
+        }
+        for (const signal of signals) {
+            const handler = () => {
+                killTrackedDetachedChildren();
+                void shutdown(signal === "SIGHUP" ? 129 : 143);
+            };
+            process.on(signal, handler);
+            signalCleanupHandlers.push(() => process.off(signal, handler));
+        }
+    };
     await rebindSession();
+    registerSignalHandlers();
     // Handle a single command
     const handleCommand = async (command) => {
         const id = command.id;
@@ -265,17 +283,27 @@ export async function runRpcMode(runtimeHost) {
             // Prompting
             // =================================================================
             case "prompt": {
-                // Don't await - events will stream
-                // Extension commands are executed immediately, file prompt templates are expanded
-                // If streaming and streamingBehavior specified, queues via steer/followUp
-                session
+                // Start prompt handling immediately, but emit the authoritative response only after
+                // prompt preflight succeeds. Queued and immediately handled prompts also count as success.
+                let preflightSucceeded = false;
+                void session
                     .prompt(command.message, {
                     images: command.images,
                     streamingBehavior: command.streamingBehavior,
                     source: "rpc",
+                    preflightResult: (didSucceed) => {
+                        if (didSucceed) {
+                            preflightSucceeded = true;
+                            output(success(id, "prompt"));
+                        }
+                    },
                 })
-                    .catch((e) => output(error(id, "prompt", e.message)));
-                return success(id, "prompt");
+                    .catch((e) => {
+                    if (!preflightSucceeded) {
+                        output(error(id, "prompt", e.message));
+                    }
+                });
+                return undefined;
             }
             case "steer": {
                 await session.steer(command.message, command.images);
@@ -487,12 +515,19 @@ export async function runRpcMode(runtimeHost) {
      * Called after handling each command when waiting for the next command.
      */
     let detachInput = () => { };
-    async function shutdown() {
+    async function shutdown(exitCode = 0) {
+        if (shuttingDown) {
+            process.exit(exitCode);
+        }
+        shuttingDown = true;
+        for (const cleanup of signalCleanupHandlers) {
+            cleanup();
+        }
         unsubscribe?.();
         await runtimeHost.dispose();
         detachInput();
         process.stdin.pause();
-        process.exit(0);
+        process.exit(exitCode);
     }
     async function checkShutdownRequested() {
         if (!shutdownRequested)
@@ -524,7 +559,9 @@ export async function runRpcMode(runtimeHost) {
         const command = parsed;
         try {
             const response = await handleCommand(command);
-            output(response);
+            if (response) {
+                output(response);
+            }
             await checkShutdownRequested();
         }
         catch (commandError) {

@@ -11,7 +11,7 @@ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, Extensio
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
-export { DefaultResourceLoader } from "./core/resource-loader.js";
+export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
 // SDK for programmatic usage
 export { AgentSessionRuntime, 
 // Factory

@@ -1,4 +1,17 @@
 /**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
+/**
  * AgentSession - Core abstraction for agent lifecycle and session management.
  *
  * This class is shared between all run modes (interactive, print, rpc).
@@ -666,112 +679,127 @@ export class AgentSession {
      */
     async prompt(text, options) {
         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
-        // Handle extension commands first (execute immediately, even during streaming)
-        // Extension commands manage their own LLM interaction via pi.sendMessage()
-        if (expandPromptTemplates && text.startsWith("/")) {
-            const handled = await this._tryExecuteExtensionCommand(text);
-            if (handled) {
-                // Extension command executed, no prompt to send
-                return;
-            }
-        }
-        // Emit input event for extension interception (before skill/template expansion)
-        let currentText = text;
-        let currentImages = options?.images;
-        if (this._extensionRunner?.hasHandlers("input")) {
-            const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, options?.source ?? "interactive");
-            if (inputResult.action === "handled") {
-                return;
-            }
-            if (inputResult.action === "transform") {
-                currentText = inputResult.text;
-                currentImages = inputResult.images ?? currentImages;
-            }
-        }
-        // Expand skill commands (/skill:name args) and prompt templates (/template args)
-        let expandedText = currentText;
-        if (expandPromptTemplates) {
-            expandedText = this._expandSkillCommand(expandedText);
-            expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
-        }
-        // If streaming, queue via steer() or followUp() based on option
-        if (this.isStreaming) {
-            if (!options?.streamingBehavior) {
-                throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
-            }
-            if (options.streamingBehavior === "followUp") {
-                await this._queueFollowUp(expandedText, currentImages);
-            }
-            else {
-                await this._queueSteer(expandedText, currentImages);
-            }
-            return;
-        }
-        // Flush any pending bash messages before the new prompt
-        this._flushPendingBashMessages();
-        // Validate model
-        if (!this.model) {
-            throw new Error("No model selected.\n\n" +
-                `Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}\n\n` +
-                "Then use /model to select a model.");
-        }
-        if (!this._modelRegistry.hasConfiguredAuth(this.model)) {
-            const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
-            if (isOAuth) {
-                throw new Error(`Authentication failed for "${this.model.provider}". ` +
-                    `Credentials may have expired or network is unavailable. ` +
-                    `Run '/login ${this.model.provider}' to re-authenticate.`);
-            }
-            throw new Error(`No API key found for ${this.model.provider}.\n\n` +
-                `Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}`);
-        }
-        // Check if we need to compact before sending (catches aborted responses)
-        const lastAssistant = this._findLastAssistantMessage();
-        if (lastAssistant) {
-            await this._checkCompaction(lastAssistant, false);
-        }
-        // Build messages array (custom message if any, then user message)
-        const messages = [];
-        // Add user message
-        const userContent = [{ type: "text", text: expandedText }];
-        if (currentImages) {
-            userContent.push(...currentImages);
-        }
-        messages.push({
-            role: "user",
-            content: userContent,
-            timestamp: Date.now(),
-        });
-        // Inject any pending "nextTurn" messages as context alongside the user message
-        for (const msg of this._pendingNextTurnMessages) {
-            messages.push(msg);
-        }
-        this._pendingNextTurnMessages = [];
-        // Emit before_agent_start extension event
-        if (this._extensionRunner) {
-            const result = await this._extensionRunner.emitBeforeAgentStart(expandedText, currentImages, this._baseSystemPrompt);
-            // Add all custom messages from extensions
-            if (result?.messages) {
-                for (const msg of result.messages) {
-                    messages.push({
-                        role: "custom",
-                        customType: msg.customType,
-                        content: msg.content,
-                        display: msg.display,
-                        details: msg.details,
-                        timestamp: Date.now(),
-                    });
+        const preflightResult = options?.preflightResult;
+        let messages;
+        try {
+            // Handle extension commands first (execute immediately, even during streaming)
+            // Extension commands manage their own LLM interaction via pi.sendMessage()
+            if (expandPromptTemplates && text.startsWith("/")) {
+                const handled = await this._tryExecuteExtensionCommand(text);
+                if (handled) {
+                    // Extension command executed, no prompt to send
+                    preflightResult?.(true);
+                    return;
                 }
             }
-            // Apply extension-modified system prompt, or reset to base
-            if (result?.systemPrompt) {
-                this.agent.state.systemPrompt = result.systemPrompt;
+            // Emit input event for extension interception (before skill/template expansion)
+            let currentText = text;
+            let currentImages = options?.images;
+            if (this._extensionRunner?.hasHandlers("input")) {
+                const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, options?.source ?? "interactive");
+                if (inputResult.action === "handled") {
+                    preflightResult?.(true);
+                    return;
+                }
+                if (inputResult.action === "transform") {
+                    currentText = inputResult.text;
+                    currentImages = inputResult.images ?? currentImages;
+                }
             }
-            else {
-                // Ensure we're using the base prompt (in case previous turn had modifications)
-                this.agent.state.systemPrompt = this._baseSystemPrompt;
+            // Expand skill commands (/skill:name args) and prompt templates (/template args)
+            let expandedText = currentText;
+            if (expandPromptTemplates) {
+                expandedText = this._expandSkillCommand(expandedText);
+                expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+            }
+            // If streaming, queue via steer() or followUp() based on option
+            if (this.isStreaming) {
+                if (!options?.streamingBehavior) {
+                    throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
+                }
+                if (options.streamingBehavior === "followUp") {
+                    await this._queueFollowUp(expandedText, currentImages);
+                }
+                else {
+                    await this._queueSteer(expandedText, currentImages);
+                }
+                preflightResult?.(true);
+                return;
+            }
+            // Flush any pending bash messages before the new prompt
+            this._flushPendingBashMessages();
+            // Validate model
+            if (!this.model) {
+                throw new Error("No model selected.\n\n" +
+                    `Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}\n\n` +
+                    "Then use /model to select a model.");
+            }
+            if (!this._modelRegistry.hasConfiguredAuth(this.model)) {
+                const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
+                if (isOAuth) {
+                    throw new Error(`Authentication failed for "${this.model.provider}". ` +
+                        `Credentials may have expired or network is unavailable. ` +
+                        `Run '/login ${this.model.provider}' to re-authenticate.`);
+                }
+                throw new Error(`No API key found for ${this.model.provider}.\n\n` +
+                    `Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}`);
+            }
+            // Check if we need to compact before sending (catches aborted responses)
+            const lastAssistant = this._findLastAssistantMessage();
+            if (lastAssistant) {
+                await this._checkCompaction(lastAssistant, false);
+            }
+            // Build messages array (custom message if any, then user message)
+            messages = [];
+            // Add user message
+            const userContent = [{ type: "text", text: expandedText }];
+            if (currentImages) {
+                userContent.push(...currentImages);
+            }
+            messages.push({
+                role: "user",
+                content: userContent,
+                timestamp: Date.now(),
+            });
+            // Inject any pending "nextTurn" messages as context alongside the user message
+            for (const msg of this._pendingNextTurnMessages) {
+                messages.push(msg);
+            }
+            this._pendingNextTurnMessages = [];
+            // Emit before_agent_start extension event
+            if (this._extensionRunner) {
+                const result = await this._extensionRunner.emitBeforeAgentStart(expandedText, currentImages, this._baseSystemPrompt);
+                // Add all custom messages from extensions
+                if (result?.messages) {
+                    for (const msg of result.messages) {
+                        messages.push({
+                            role: "custom",
+                            customType: msg.customType,
+                            content: msg.content,
+                            display: msg.display,
+                            details: msg.details,
+                            timestamp: Date.now(),
+                        });
+                    }
+                }
+                // Apply extension-modified system prompt, or reset to base
+                if (result?.systemPrompt) {
+                    this.agent.state.systemPrompt = result.systemPrompt;
+                }
+                else {
+                    // Ensure we're using the base prompt (in case previous turn had modifications)
+                    this.agent.state.systemPrompt = this._baseSystemPrompt;
+                }
             }
         }
+        catch (error) {
+            preflightResult?.(false);
+            throw error;
+        }
+        if (!messages) {
+            return;
+        }
+        preflightResult?.(true);
         await this.agent.prompt(messages);
         await this.waitForRetry();
     }
@@ -1880,7 +1908,7 @@ export class AgentSession {
     async reload() {
         const previousFlagValues = this._extensionRunner?.getFlagValues();
         await this._extensionRunner?.emit({ type: "session_shutdown" });
-        this.settingsManager.reload();
+        await this.settingsManager.reload();
         resetApiProviders();
         await this._resourceLoader.reload();
         this._buildRuntime({
@@ -1912,8 +1940,8 @@ export class AgentSession {
         if (isContextOverflow(message, contextWindow))
             return false;
         const err = message.errorMessage;
-        // Match: overloaded_error, provider returned error, rate limit, 429, 500, 502, 503, 504, service unavailable, network/connection errors, fetch failed, terminated, retry delay exceeded
-        return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|timed? out|timeout|terminated|retry delay/i.test(err);
+        // Match: overloaded_error, provider returned error, rate limit, 429, 500, 502, 503, 504, service unavailable, network/connection errors, fetch failed, request ended without sending chunks, terminated, retry delay exceeded
+        return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|timed? out|timeout|terminated|retry delay/i.test(err);
     }
     /**
      * Handle retryable errors with exponential backoff.

@@ -6,6 +6,7 @@
  * - `pi --mode json "prompt"` - JSON event stream
  */
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
+import { killTrackedDetachedChildren } from "../utils/shell.js";
 /**
  * Run in print (single-shot) mode.
  * Sends prompts to the agent and outputs the result.
@@ -15,6 +16,32 @@ export async function runPrintMode(runtimeHost, options) {
     let exitCode = 0;
     let session = runtimeHost.session;
     let unsubscribe;
+    let disposed = false;
+    const signalCleanupHandlers = [];
+    const disposeRuntime = async () => {
+        if (disposed)
+            return;
+        disposed = true;
+        unsubscribe?.();
+        await runtimeHost.dispose();
+    };
+    const registerSignalHandlers = () => {
+        const signals = ["SIGTERM"];
+        if (process.platform !== "win32") {
+            signals.push("SIGHUP");
+        }
+        for (const signal of signals) {
+            const handler = () => {
+                killTrackedDetachedChildren();
+                void disposeRuntime().finally(() => {
+                    process.exit(signal === "SIGHUP" ? 129 : 143);
+                });
+            };
+            process.on(signal, handler);
+            signalCleanupHandlers.push(() => process.off(signal, handler));
+        }
+    };
+    registerSignalHandlers();
     const rebindSession = async () => {
         session = runtimeHost.session;
         await session.bindExtensions({
@@ -104,8 +131,10 @@ export async function runPrintMode(runtimeHost, options) {
         return 1;
     }
     finally {
-        unsubscribe?.();
-        await runtimeHost.dispose();
+        for (const cleanup of signalCleanupHandlers) {
+            cleanup();
+        }
+        await disposeRuntime();
         await flushRawStdout();
     }
 }

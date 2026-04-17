@@ -1,3 +1,16 @@
+/**
+ * Soma Agent — © 2026 Curtis Mercier
+ * Licensed under BSL 1.1 (Business Source License)
+ *
+ * You may view, use personally, and contribute to this software.
+ * You may NOT use it for competing commercial products or services.
+ * Converts to MIT license on 2027-09-18.
+ *
+ * Full license: https://github.com/meetsoma/soma-beta/blob/main/LICENSE
+ * Source available to contributors: https://soma.gravicity.ai/beta
+ * Contact for commercial licensing: meetsoma@gravicity.ai
+ */
+
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
@@ -205,7 +218,8 @@ export class SettingsManager {
     getProjectSettings() {
         return structuredClone(this.projectSettings);
     }
-    reload() {
+    async reload() {
+        await this.writeQueue;
         const globalLoad = SettingsManager.tryLoadFromStorage(this.storage, "global");
         if (!globalLoad.error) {
             this.globalSettings = globalLoad.settings;
@@ -514,6 +528,14 @@ export class SettingsManager {
     setCollapseChangelog(collapse) {
         this.globalSettings.collapseChangelog = collapse;
         this.markModified("collapseChangelog");
+        this.save();
+    }
+    getEnableInstallTelemetry() {
+        return this.settings.enableInstallTelemetry ?? true;
+    }
+    setEnableInstallTelemetry(enabled) {
+        this.globalSettings.enableInstallTelemetry = enabled;
+        this.markModified("enableInstallTelemetry");
         this.save();
     }
     getPackages() {

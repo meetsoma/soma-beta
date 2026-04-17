@@ -9,7 +9,7 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { theme } from "../../modes/interactive/theme/theme.js";
 import { waitForChildProcess } from "../../utils/child-process.js";
-import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
+import { getShellConfig, getShellEnv, killProcessTree, trackDetachedChildPid, untrackDetachedChildPid, } from "../../utils/shell.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "./truncate.js";
@@ -45,6 +45,8 @@ export function createLocalBashOperations() {
                     env: env ?? getShellEnv(),
                     stdio: ["ignore", "pipe", "pipe"],
                 });
+                if (child.pid)
+                    trackDetachedChildPid(child.pid);
                 let timedOut = false;
                 let timeoutHandle;
                 // Set timeout if provided.
@@ -73,6 +75,8 @@ export function createLocalBashOperations() {
                 // on inherited stdio handles held by detached descendants.
                 waitForChildProcess(child)
                     .then((code) => {
+                    if (child.pid)
+                        untrackDetachedChildPid(child.pid);
                     if (timeoutHandle)
                         clearTimeout(timeoutHandle);
                     if (signal)
@@ -88,6 +92,8 @@ export function createLocalBashOperations() {
                     resolve({ exitCode: code });
                 })
                     .catch((err) => {
+                    if (child.pid)
+                        untrackDetachedChildPid(child.pid);
                     if (timeoutHandle)
                         clearTimeout(timeoutHandle);
                     if (signal)
@@ -202,15 +208,19 @@ export function createBashToolDefinition(cwd, options) {
                 const chunks = [];
                 let chunksBytes = 0;
                 const maxChunksBytes = DEFAULT_MAX_BYTES * 2;
+                const ensureTempFile = () => {
+                    if (tempFilePath)
+                        return;
+                    tempFilePath = getTempFilePath();
+                    tempFileStream = createWriteStream(tempFilePath);
+                    for (const chunk of chunks)
+                        tempFileStream.write(chunk);
+                };
                 const handleData = (data) => {
                     totalBytes += data.length;
                     // Start writing to a temp file once output exceeds the in-memory threshold.
-                    if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
-                        tempFilePath = getTempFilePath();
-                        tempFileStream = createWriteStream(tempFilePath);
-                        // Write all buffered chunks to the file.
-                        for (const chunk of chunks)
-                            tempFileStream.write(chunk);
+                    if (totalBytes > DEFAULT_MAX_BYTES) {
+                        ensureTempFile();
                     }
                     // Write to temp file if we have one.
                     if (tempFileStream)
@@ -228,6 +238,9 @@ export function createBashToolDefinition(cwd, options) {
                         const fullBuffer = Buffer.concat(chunks);
                         const fullText = fullBuffer.toString("utf-8");
                         const truncation = truncateTail(fullText);
+                        if (truncation.truncated) {
+                            ensureTempFile();
+                        }
                         onUpdate({
                             content: [{ type: "text", text: truncation.content || "" }],
                             details: {
@@ -244,14 +257,17 @@ export function createBashToolDefinition(cwd, options) {
                     env: spawnContext.env,
                 })
                     .then(({ exitCode }) => {
-                    // Close temp file stream before building the final result.
-                    if (tempFileStream)
-                        tempFileStream.end();
                     // Combine the rolling buffer chunks.
                     const fullBuffer = Buffer.concat(chunks);
                     const fullOutput = fullBuffer.toString("utf-8");
                     // Apply tail truncation for the final display payload.
                     const truncation = truncateTail(fullOutput);
+                    if (truncation.truncated) {
+                        ensureTempFile();
+                    }
+                    // Close temp file stream before building the final result.
+                    if (tempFileStream)
+                        tempFileStream.end();
                     let outputText = truncation.content || "(no output)";
                     let details;
                     if (truncation.truncated) {
