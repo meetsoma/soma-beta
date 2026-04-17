@@ -339,6 +339,90 @@ cmd_vars() {
   echo ""
 }
 
+cmd_tokens() {
+  soma_header "soma body tokens" "per-variable token cost audit"
+  
+  echo ""
+  
+  # Find _mind.md
+  local mind="$SOMA_DIR/body/_mind.md"
+  if [[ ! -f "$mind" ]]; then
+    soma_info "No _mind.md template — using built-in defaults"
+    return
+  fi
+  
+  # Walk chain to build body dirs (same order as body.ts)
+  local body_dirs=("$SOMA_DIR/body")
+  local dir="$(dirname "$(dirname "$SOMA_DIR")")"
+  while [[ "$dir" != "/" ]]; do
+    if [[ -d "$dir/.soma/body" && "$dir/.soma" != "$SOMA_DIR" ]]; then
+      body_dirs+=("$dir/.soma/body")
+    fi
+    dir="$(dirname "$dir")"
+  done
+  [[ -d "$HOME/.soma/body" ]] && body_dirs+=("$HOME/.soma/body")
+  
+  # Extract variables from _mind.md (strip frontmatter first)
+  local vars=($(sed '/^---$/,/^---$/d' "$mind" | grep -oE '\{\{[a-z_]+\}\}' 2>/dev/null | sort -u | tr -d '{}'))
+  
+  local total=0
+  local content_total=0
+  
+  echo -e "  ${SOMA_BOLD}Template: ${SOMA_NC}$(basename "$mind")"
+  echo -e "  ${SOMA_BOLD}Chain:${SOMA_NC} ${body_dirs[*]}"
+  echo ""
+  printf "  ${SOMA_BOLD}%-25s %8s %6s  %s${SOMA_NC}\n" "Variable" "Tokens" "Lines" "Source"
+  echo -e "  ${SOMA_DIM}$(printf '%.0s─' {1..70})${SOMA_NC}"
+  
+  local seen=()
+  for var in "${vars[@]}"; do
+    # Skip runtime-only variables
+    case "$var" in
+      core_rules|protocol_summaries|muscle_digests|scripts_table|tools_section|\
+      guard_section|docs_section|context_awareness|skills_block|date_time_cwd|\
+      inbox_summary|git_context|soma_changes|project_changes|greeting|\
+      session_id|session_files|preload)
+        printf "  %-25s %8s %6s  %s\n" "{{$var}}" "—" "—" "(runtime)"
+        continue
+        ;;
+    esac
+    
+    # Find file in chain (child wins)
+    local found=""
+    local fname="${var//_/-}.md"
+    local fname2="${var}.md"
+    for bd in "${body_dirs[@]}"; do
+      if [[ -f "$bd/$fname" ]]; then
+        found="$bd/$fname"; break
+      elif [[ -f "$bd/$fname2" ]]; then
+        found="$bd/$fname2"; break
+      fi
+    done
+    
+    if [[ -n "$found" ]]; then
+      local body=$(sed '/^---$/,/^---$/d' "$found")
+      local words=$(echo "$body" | wc -w | tr -d ' ')
+      local tokens=$((words * 4 / 3))
+      local lines=$(echo "$body" | wc -l | tr -d ' ')
+      content_total=$((content_total + tokens))
+      total=$((total + tokens))
+      
+      # Show relative path
+      local rel="${found/$HOME/~}"
+      printf "  %-25s %7d %6d  %s\n" "{{$var}}" "$tokens" "$lines" "$rel"
+    else
+      printf "  %-25s %8s %6s  %s\n" "{{$var}}" "⬜" "—" "(not found)"
+    fi
+  done
+  
+  echo -e "  ${SOMA_DIM}$(printf '%.0s─' {1..70})${SOMA_NC}"
+  printf "  ${SOMA_BOLD}%-25s %7d${SOMA_NC}\n" "Content files total" "$content_total"
+  echo ""
+  soma_info "Runtime variables (protocols, muscles, tools, etc.) add ~2-5K tokens"
+  soma_info "Full prompt: use /body render --send in TUI for exact count"
+  echo ""
+}
+
 # ── Main ──
 case "${1:-}" in
   check)    cmd_check ;;
@@ -347,6 +431,7 @@ case "${1:-}" in
   heat)     cmd_heat ;;
   patterns) cmd_patterns ;;
   vars)     cmd_vars ;;
+  tokens)   cmd_tokens ;;
   *)
     soma_header "soma body" "body file inspector"
     echo ""
@@ -356,6 +441,7 @@ case "${1:-}" in
     echo -e "  ${SOMA_GREEN}heat${SOMA_NC}      muscle + protocol heat state"
     echo -e "  ${SOMA_GREEN}patterns${SOMA_NC}  behavioral patterns from recent sessions"
     echo -e "  ${SOMA_GREEN}vars${SOMA_NC}      template variables and what they resolve to"
+    echo -e "  ${SOMA_GREEN}tokens${SOMA_NC}    per-variable token cost audit (walks chain)"
     echo ""
     echo -e "  ${SOMA_DIM}Runs outside the TUI. No API calls, no token cost.${SOMA_NC}"
     soma_seams "soma-body.sh"

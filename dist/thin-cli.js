@@ -439,6 +439,18 @@ async function checkAndUpdate() {
   const newHash = execSync("git rev-parse --short HEAD", {
     cwd: installPath, encoding: "utf-8"
   }).trim();
+
+  // Clear the "update available" flag set by soma-statusline.ts periodic check.
+  // Next `soma` boot won't print the notice until the next release.
+  try {
+    const cfg = readConfig();
+    if (cfg.updateAvailable) {
+      delete cfg.updateAvailable;
+      delete cfg.latestSummary;
+      writeConfig(cfg);
+    }
+  } catch {}
+
   console.log("");
   console.log(`  ${green("✓")} ${bold("Soma is up to date")} ${dim(`(${currentHash} → ${newHash})`)}`);
   console.log("");
@@ -554,6 +566,37 @@ async function healthCheck() {
       } catch {
         warn(false, "", "Core git repo missing — run soma init");
       }
+    }
+  }
+
+  // Pi runtime drift — declared version (package.json) vs installed (node_modules).
+  // Catches the exact class of bug where npm install hadn't been re-run after
+  // a package.json bump, so runtime Pi didn't match what the release tested.
+  // (shipping-integrity Layer 4, s01-054a4c — Curtis's opus-4-7 "missing" bug.)
+  if (installed) {
+    try {
+      const pkgPath = join(CORE_DIR, "package.json");
+      if (existsSync(pkgPath)) {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+        const declaredPi = (pkg.dependencies || {})["@mariozechner/pi-coding-agent"];
+        const piPkgPath = join(CORE_DIR, "node_modules", "@mariozechner", "pi-coding-agent", "package.json");
+        if (existsSync(piPkgPath)) {
+          const installedPi = JSON.parse(readFileSync(piPkgPath, "utf-8")).version;
+          const declaredClean = (declaredPi || "").replace(/^[\^~]/, "");
+          if (declaredClean && installedPi && declaredClean !== installedPi) {
+            console.log(`  ${yellow("⚠")} Pi runtime drift: declared ${cyan(declaredClean)}, installed ${cyan(installedPi)}`);
+            console.log(`    ${dim("Fix:")} ${green("soma update")}`);
+            warnings++;
+          } else if (installedPi) {
+            console.log(`  ${green("✓")} Pi runtime ${installedPi}`);
+          }
+        } else {
+          console.log(`  ${yellow("⚠")} Pi not installed — run ${green("soma update")}`);
+          warnings++;
+        }
+      }
+    } catch {
+      // Diagnostic only — don't fail health check on parse errors
     }
   }
 
@@ -910,18 +953,21 @@ if (cmd === "--version" || cmd === "-v" || cmd === "-V" || cmd === "version") {
 } else if (cmd === "about") {
   await showAbout();
 } else if (cmd === "init") {
-  const hasProjectArgs = args.includes("--template") || args.includes("--orphan") || args.includes("-o");
-  const runtimeInstalled = isInstalled();
-  const hasSomaDir = existsSync(join(process.cwd(), ".soma"));
-  
-  if (!runtimeInstalled) {
-    await initSoma();
-  } else if (hasProjectArgs || !hasSomaDir) {
-    await delegateToCore();
+  // soma init is for PROJECT init only. Runtime updates live on `soma update`.
+  // Prior behavior (fall-through to checkAndUpdate when .soma/ existed) was
+  // the confusing overload that hid the update flow — removed in shipping-
+  // integrity Layer 4 (s01-054a4c).
+  if (!isInstalled()) {
+    await initSoma();  // first-time runtime install
   } else {
-    await checkAndUpdate();
+    await delegateToCore();  // project init — core handles all cases gracefully
   }
 } else if (cmd === "update") {
+  // Actually perform the update (was checkAndUpdate — prior `soma update` only
+  // reported status and told user to run `soma init`).
+  await checkAndUpdate();
+} else if (cmd === "check-updates" || cmd === "updates") {
+  // Keep the old status-only behavior accessible but un-prime
   checkForUpdates();
 } else if (cmd === "doctor") {
   await projectDoctor();
@@ -933,6 +979,18 @@ if (cmd === "--version" || cmd === "-v" || cmd === "-V" || cmd === "version") {
   console.log(`  Run ${green("soma --help")} for usage.`);
   console.log("");
 } else if (isInstalled()) {
+  // Check cached update flag (set by soma-statusline.ts's periodic check).
+  // Zero network at boot — just reads ~/.soma/config.json.
+  // shipping-integrity Layer 4 Amendment 2 (s01-054a4c).
+  try {
+    const cfg = readConfig();
+    if (cfg.updateAvailable) {
+      const latest = cfg.latestSummary ? ` — ${dim(cfg.latestSummary)}` : "";
+      console.log(`  ${yellow("⬆")} Update available${latest}`);
+      console.log(`    ${dim("Run:")} ${green("soma update")}`);
+      console.log("");
+    }
+  } catch {}
   await delegateToCore();
 } else {
   const postInstallCmds = ["focus", "inhale", "content", "install", "list", "map", "--map", "--preload"];

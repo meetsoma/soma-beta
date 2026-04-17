@@ -3,7 +3,7 @@ type: template
 name: memory
 description: Preload format — what the agent writes at exhale to brief the next session
 created: 2026-03-23
-updated: 2026-03-30
+updated: 2026-04-14
 ---
 **Step 1.5: Update living docs** — before the preload, update the sources it points to.
 The preload points to these — if they're stale, the preload is misleading.
@@ -54,14 +54,20 @@ tags: []
 <!-- Numbered list. Description (`commit`). Dense. -->
 
 ## Next Session
-<!-- THE AMNESIA-PROOF SECTION. Exact file:line refs, commands to run,
-     steps numbered. Executable without reading anything else.
-     Your next self has ZERO context — write for them. -->
+<!-- THE AMNESIA-PROOF SECTION. What should the next self DO?
+     Not a menu of options — a prioritized sequence.
+     If there's a critical fix: say what it is AND what phase/plan to read first.
+     If there's an audit to finish: point to the plan file with the next phase.
+     Your next self will be tempted to jump to executing. Give them the
+     reading order BEFORE the action. -->
 
 ## Warnings
 <!-- Traps. What will trip you up if you don't know.
      "settings.json doesn't hot-reload — restart required."
-     "The router has 3 layers — don't audit only one." -->
+     "The router has 3 layers — don't audit only one."
+     TIE warnings to the tasks they affect. Don't list "pre-push hook broken"
+     separately from "ship breathe fix" — connect them:
+     "Breathe fix needs shipping, BUT pre-push hook is broken — debug that first." -->
 
 ## Orient From
 <!-- Files to read if Next Session isn't enough. Include [line-ranges].
@@ -71,7 +77,23 @@ tags: []
 <!-- Conditional loading: "Read X BEFORE doing Y."
      Front-load the right context for the planned task.
      Example: "Read migrations.ts BEFORE touching doctor."
-     Example: "Run soma-verify.sh drift BEFORE syncing content." -->
+     Example: "Run soma verify drift BEFORE syncing content." -->
+
+<!-- ALSO: Use inline phase breadcrumbs throughout the preload body.
+     Place HTML comments near task sections pointing to relevant MAPs/phases:
+     <!-- If not already loaded, read: amps/automations/maps/soma-dev/phases/3-verify.md -->
+     <!-- Before building: read Phase 6 version breadcrumbs -->
+     These are soft-load hints — don't force reads, just nudge when the
+     next self reaches that section and might not have the context. -->
+
+## Traps
+<!-- Forward-looking. What mistakes will the next self be tempted to make?
+     Not what YOU did wrong — what THEY will do wrong if not warned.
+     "You'll see the unmerged fix and want to ship it immediately.
+      Read Phase 6 first — the pre-push hook is broken."
+     "You'll want to stuff the audit into one file. Don't.
+      Findings, plan, and inventory are separate files."
+     These are behavioral coaching, not task instructions. -->
 
 ## Patterns
 <!-- What working habits did you follow this session? Frame as past behavior:

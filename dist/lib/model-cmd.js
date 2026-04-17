@@ -263,8 +263,30 @@ export async function handleModelCommand(args) {
 function setDefault(path, settings, model) {
   settings.defaultProvider = model.provider;
   settings.defaultModel = model.id;
+  
+  // Sync enabledModels — update matching provider entry or prepend
+  if (Array.isArray(settings.enabledModels) && settings.enabledModels.length > 0) {
+    const providerPrefix = model.provider + "/";
+    const idx = settings.enabledModels.findIndex(e => {
+      // Match by provider: "anthropic/claude-opus-4-6:medium" → provider is "anthropic"
+      const entry = e.split(":")[0]; // strip thinking level
+      return entry.startsWith(providerPrefix) || 
+             entry === model.id || 
+             entry.split(":")[0] === model.id;
+    });
+    // Build new entry preserving thinking level from old entry if it had one
+    const oldEntry = idx !== -1 ? settings.enabledModels[idx] : null;
+    const oldThinking = oldEntry && oldEntry.includes(":") ? ":" + oldEntry.split(":").pop() : "";
+    const newEntry = providerPrefix + model.id + oldThinking;
+    if (idx !== -1) {
+      settings.enabledModels[idx] = newEntry;
+    } else {
+      settings.enabledModels.unshift(newEntry);
+    }
+  }
+  
   writeSettings(path, settings);
   console.log(`\n  ${green("✓")} Default model set to ${bold(model.id)} (${model.provider})`);
   console.log(`  ${dim("Saved to:")} ${path}`);
-  console.log(`\n  ${dim("Start a session:")} ${green("soma")} ${dim("or")} ${green("soma inhale")}\n`);
+  console.log(`\n  ${dim("Applies to new sessions.")} ${dim("For this session:")} ${green(`soma --model ${model.id}`)}\n`);
 }
