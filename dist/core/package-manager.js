@@ -1330,7 +1330,7 @@ export class DefaultPackageManager {
         }
         const packageJsonPath = join(targetDir, "package.json");
         if (existsSync(packageJsonPath)) {
-            await this.runNpmCommand(["install"], { cwd: targetDir });
+            await this.runNpmCommand(["install", "--omit=dev"], { cwd: targetDir });
         }
     }
     async updateGit(source, scope) {
@@ -1358,7 +1358,7 @@ export class DefaultPackageManager {
         await this.runCommand("git", ["clean", "-fdx"], { cwd: targetDir });
         const packageJsonPath = join(targetDir, "package.json");
         if (existsSync(packageJsonPath)) {
-            await this.runNpmCommand(["install"], { cwd: targetDir });
+            await this.runNpmCommand(["install", "--omit=dev"], { cwd: targetDir });
         }
     }
     async refreshTemporaryGitSource(source, sourceStr) {
@@ -1765,14 +1765,24 @@ export class DefaultPackageManager {
             themes: toResolved(accumulator.themes),
         };
     }
+    spawnCommand(command, args, options) {
+        return spawn(command, args, {
+            cwd: options?.cwd,
+            stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
+            shell: process.platform === "win32",
+        });
+    }
+    spawnCaptureCommand(command, args, options) {
+        return spawn(command, args, {
+            cwd: options?.cwd,
+            stdio: ["ignore", "pipe", "pipe"],
+            shell: process.platform === "win32",
+            env: options?.env ? { ...process.env, ...options.env } : process.env,
+        });
+    }
     runCommandCapture(command, args, options) {
         return new Promise((resolvePromise, reject) => {
-            const child = spawn(command, args, {
-                cwd: options?.cwd,
-                stdio: ["ignore", "pipe", "pipe"],
-                shell: process.platform === "win32",
-                env: options?.env ? { ...process.env, ...options.env } : process.env,
-            });
+            const child = this.spawnCaptureCommand(command, args, options);
             let stdout = "";
             let stderr = "";
             let timedOut = false;
@@ -1788,12 +1798,12 @@ export class DefaultPackageManager {
             child.stderr?.on("data", (data) => {
                 stderr += data.toString();
             });
-            child.on("error", (error) => {
+            child.once("error", (error) => {
                 if (timeout)
                     clearTimeout(timeout);
                 reject(error);
             });
-            child.on("exit", (code) => {
+            child.once("close", (code, signal) => {
                 if (timeout)
                     clearTimeout(timeout);
                 if (timedOut) {
@@ -1804,17 +1814,14 @@ export class DefaultPackageManager {
                     resolvePromise(stdout.trim());
                     return;
                 }
-                reject(new Error(`${command} ${args.join(" ")} failed with code ${code}: ${stderr || stdout}`));
+                const exitStatus = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`;
+                reject(new Error(`${command} ${args.join(" ")} failed with ${exitStatus}: ${stderr || stdout}`));
             });
         });
     }
     runCommand(command, args, options) {
         return new Promise((resolvePromise, reject) => {
-            const child = spawn(command, args, {
-                cwd: options?.cwd,
-                stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
-                shell: process.platform === "win32",
-            });
+            const child = this.spawnCommand(command, args, options);
             child.on("error", reject);
             child.on("exit", (code) => {
                 if (code === 0) {

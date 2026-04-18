@@ -146,8 +146,9 @@ function showHelp() {
   console.log(`    ${green("soma map --list")}        Show available MAPs`);
   console.log("");
   console.log(`  ${bold("Maintenance")}`);
-  console.log(`    ${green("soma doctor")}            Verify installation health`);
-  console.log(`    ${green("soma update")}            Check for updates`);
+  console.log(`    ${green("soma doctor")}            Verify installation + project health`);
+  console.log(`    ${green("soma update")}            Update the Soma runtime`);
+  console.log(`    ${green("soma check-updates")}     Check for updates without installing`);
   console.log(`    ${green("soma status")}            Show installation status`);
   console.log("");
   console.log(`  ${bold("Options")}`);
@@ -329,8 +330,18 @@ async function initSoma() {
 // ── Update / Status ──────────────────────────────────────────────────
 
 async function checkAndUpdate() {
+  if (!isInstalled()) {
+    printSigma();
+    console.log(`  ${bold("Soma")} — Update`);
+    console.log("");
+    console.log(`  ${yellow("⚠")} Soma is not installed yet.`);
+    console.log(`  Run ${green("soma init")} to install, then ${green("soma update")} to update.`);
+    console.log("");
+    return;
+  }
+
   printSigma();
-  console.log(`  ${bold("Soma")} — Status`);
+  console.log(`  ${bold("Soma")} — Update`);
   console.log("");
 
   const config = readConfig();
@@ -402,7 +413,7 @@ async function checkAndUpdate() {
   const shouldUpdate = await confirmYN(`  ${dim("→")} Update now?`);
   if (!shouldUpdate) {
     console.log("");
-    console.log(`  ${dim("Skipped. Run")} ${green("soma init")} ${dim("anytime to update.")}`);
+    console.log(`  ${dim("Skipped. Run")} ${green("soma update")} ${dim("anytime to update.")}`);
     console.log("");
     return;
   }
@@ -457,6 +468,16 @@ async function checkAndUpdate() {
 }
 
 function checkForUpdates() {
+  if (!isInstalled()) {
+    printSigma();
+    console.log(`  ${bold("Soma")} — Update Check`);
+    console.log("");
+    console.log(`  ${yellow("⚠")} Soma is not installed yet.`);
+    console.log(`  Run ${green("soma init")} to install it first.`);
+    console.log("");
+    return;
+  }
+
   printSigma();
   console.log(`  ${bold("Soma")} — Update Check`);
   console.log("");
@@ -492,7 +513,7 @@ function checkForUpdates() {
         { cwd: config.installPath, encoding: "utf-8" }
       ).trim();
       if (behind && parseInt(behind) > 0) {
-        console.log(`  ${yellow("⬆")} Core: ${behind} commit${behind !== "1" ? "s" : ""} behind. Run ${green("soma init")} to update.`);
+        console.log(`  ${yellow("⬆")} Core: ${behind} commit${behind !== "1" ? "s" : ""} behind. Run ${green("soma update")} to update.`);
       } else {
         console.log(`  ${green("✓")} Core is up to date`);
       }
@@ -507,6 +528,16 @@ function checkForUpdates() {
 // ── Health Check ─────────────────────────────────────────────────────
 
 async function healthCheck() {
+  if (!isInstalled()) {
+    printSigma();
+    console.log(`  ${bold("Soma")} — Health Check`);
+    console.log("");
+    console.log(`  ${yellow("⚠")} Soma is not installed yet.`);
+    console.log(`  Run ${green("soma init")} to install, then ${green("soma status")} to check health.`);
+    console.log("");
+    return;
+  }
+
   printSigma();
   console.log(`  ${bold("Soma")} — Health Check`);
   console.log("");
@@ -677,7 +708,7 @@ async function projectDoctor() {
   if (!projectV) {
     console.log(`  ${yellow("⚠")} Project .soma/ has no version (pre-versioning).`);
     console.log(`  This project was likely created before v0.6.3.`);
-    console.log(`  Run ${green("soma init")} to bring it up to date.`);
+    console.log(`  Run ${green("/soma doctor")} inside a session to migrate, or re-init with ${green("soma init")}.`);
     console.log("");
     return;
   }
@@ -993,7 +1024,7 @@ if (cmd === "--version" || cmd === "-v" || cmd === "-V" || cmd === "version") {
   } catch {}
   await delegateToCore();
 } else {
-  const postInstallCmds = ["focus", "inhale", "content", "install", "list", "map", "--map", "--preload"];
+  const postInstallCmds = ["focus", "inhale", "content", "install", "list", "map", "--map", "--preload", "model", "session", "code", "verify", "refactor", "seam", "hub", "body", "run"];
   if (cmd && postInstallCmds.includes(cmd)) {
     printSigma();
     console.log(`  ${bold("soma " + cmd)} requires the Soma runtime.`);

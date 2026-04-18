@@ -10,6 +10,7 @@ import { CombinedAutocompleteProvider, Container, fuzzyFilter, Loader, Markdown,
 import { spawn, spawnSync } from "child_process";
 import { APP_NAME, getAgentDir, getAuthPath, getDebugLogPath, getShareViewerUrl, getUpdateInstruction, VERSION, } from "../../config.js";
 import { parseSkillBlock } from "../../core/agent-session.js";
+import { SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
@@ -121,6 +122,8 @@ export class InteractiveMode {
     streamingMessage = undefined;
     // Tool execution tracking: toolCallId -> component
     pendingTools = new Map();
+    // Track first user message to avoid leading spacer at top of chat
+    isFirstUserMessage = true;
     // Tool output expansion state
     toolOutputExpanded = false;
     // Thinking block visibility state
@@ -679,6 +682,17 @@ export class InteractiveMode {
      * Get a short path relative to the package root for display.
      */
     getShortPath(fullPath, sourceInfo) {
+        const baseDir = sourceInfo?.baseDir;
+        if (baseDir && this.isPackageSource(sourceInfo)) {
+            const relativePath = path.relative(path.resolve(baseDir), path.resolve(fullPath));
+            if (relativePath &&
+                relativePath !== "." &&
+                !relativePath.startsWith("..") &&
+                !relativePath.startsWith(`..${path.sep}`) &&
+                !path.isAbsolute(relativePath)) {
+                return relativePath.replace(/\\/g, "/");
+            }
+        }
         const source = sourceInfo?.source ?? "";
         const npmMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
         if (npmMatch && source.startsWith("npm:")) {
@@ -689,6 +703,86 @@ export class InteractiveMode {
             return gitMatch[1];
         }
         return this.formatDisplayPath(fullPath);
+    }
+    getCompactPathLabel(resourcePath, sourceInfo) {
+        const shortPath = this.getShortPath(resourcePath, sourceInfo);
+        const normalizedPath = shortPath.replace(/\\/g, "/");
+        const segments = normalizedPath.split("/").filter((segment) => segment.length > 0 && segment !== "~");
+        if (segments.length > 0) {
+            return segments[segments.length - 1];
+        }
+        return shortPath;
+    }
+    getCompactPackageSourceLabel(sourceInfo) {
+        const source = sourceInfo?.source ?? "";
+        if (source.startsWith("npm:")) {
+            return source.slice("npm:".length) || source;
+        }
+        const gitSource = parseGitUrl(source);
+        if (gitSource) {
+            return gitSource.path || source;
+        }
+        return source;
+    }
+    getCompactExtensionLabel(resourcePath, sourceInfo) {
+        if (!this.isPackageSource(sourceInfo)) {
+            return this.getCompactPathLabel(resourcePath, sourceInfo);
+        }
+        const sourceLabel = this.getCompactPackageSourceLabel(sourceInfo);
+        if (!sourceLabel) {
+            return this.getCompactPathLabel(resourcePath, sourceInfo);
+        }
+        const shortPath = this.getShortPath(resourcePath, sourceInfo).replace(/\\/g, "/");
+        const packagePath = shortPath.startsWith("extensions/") ? shortPath.slice("extensions/".length) : shortPath;
+        const parsedPath = path.posix.parse(packagePath);
+        if (parsedPath.name === "index") {
+            return !parsedPath.dir || parsedPath.dir === "." ? sourceLabel : `${sourceLabel}:${parsedPath.dir}`;
+        }
+        return `${sourceLabel}:${packagePath}`;
+    }
+    getCompactDisplayPathSegments(resourcePath) {
+        return this.formatDisplayPath(resourcePath)
+            .replace(/\\/g, "/")
+            .split("/")
+            .filter((segment) => segment.length > 0 && segment !== "~");
+    }
+    getCompactNonPackageExtensionLabel(resourcePath, index, allPaths) {
+        const segments = allPaths[index]?.segments;
+        if (!segments || segments.length === 0) {
+            return this.getCompactPathLabel(resourcePath);
+        }
+        for (let segmentCount = 1; segmentCount <= segments.length; segmentCount += 1) {
+            const candidate = segments.slice(-segmentCount).join("/");
+            const isUnique = allPaths.every((item, itemIndex) => {
+                if (itemIndex === index) {
+                    return true;
+                }
+                return item.segments.slice(-segmentCount).join("/") !== candidate;
+            });
+            if (isUnique) {
+                return candidate;
+            }
+        }
+        return segments.join("/");
+    }
+    getCompactExtensionLabels(extensions) {
+        const nonPackageExtensions = extensions
+            .map((extension) => ({
+            path: extension.path,
+            sourceInfo: extension.sourceInfo,
+            segments: this.getCompactDisplayPathSegments(extension.path),
+        }))
+            .filter((extension) => !this.isPackageSource(extension.sourceInfo));
+        return extensions.map((extension) => {
+            if (this.isPackageSource(extension.sourceInfo)) {
+                return this.getCompactExtensionLabel(extension.path, extension.sourceInfo);
+            }
+            const nonPackageIndex = nonPackageExtensions.findIndex((item) => item.path === extension.path);
+            if (nonPackageIndex === -1) {
+                return this.getCompactPathLabel(extension.path, extension.sourceInfo);
+            }
+            return this.getCompactNonPackageExtensionLabel(extension.path, nonPackageIndex, nonPackageExtensions);
+        });
     }
     getDisplaySourceInfo(sourceInfo) {
         const source = sourceInfo?.source ?? "local";
@@ -835,15 +929,6 @@ export class InteractiveMode {
             return;
         }
         const sectionHeader = (name, color = "mdHeading") => theme.fg(color, `[${name}]`);
-        const compactPath = (resourcePath, sourceInfo) => {
-            const shortPath = this.getShortPath(resourcePath, sourceInfo);
-            const normalizedPath = shortPath.replace(/\\/g, "/");
-            const segments = normalizedPath.split("/").filter((segment) => segment.length > 0 && segment !== "~");
-            if (segments.length > 0) {
-                return segments[segments.length - 1];
-            }
-            return shortPath;
-        };
         const formatCompactList = (items, options) => {
             const labels = items.map((item) => item.trim()).filter((item) => item.length > 0);
             if (options?.sort !== false) {
@@ -928,7 +1013,7 @@ export class InteractiveMode {
                     formatPath: (item) => this.formatDisplayPath(item.path),
                     formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
                 });
-                const extensionCompactList = formatCompactList(extensions.map((extension) => compactPath(extension.path, extension.sourceInfo)));
+                const extensionCompactList = formatCompactList(this.getCompactExtensionLabels(extensions));
                 addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");
             }
             // Show loaded themes (excluding built-in)
@@ -943,7 +1028,7 @@ export class InteractiveMode {
                     formatPath: (item) => this.formatDisplayPath(item.path),
                     formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
                 });
-                const themeCompactList = formatCompactList(customThemes.map((loadedTheme) => loadedTheme.name ?? compactPath(loadedTheme.sourcePath, loadedTheme.sourceInfo)));
+                const themeCompactList = formatCompactList(customThemes.map((loadedTheme) => loadedTheme.name ?? this.getCompactPathLabel(loadedTheme.sourcePath, loadedTheme.sourceInfo)));
                 addLoadedSection("Themes", themeCompactList, themeList);
             }
         }
@@ -1831,12 +1916,12 @@ export class InteractiveMode {
                 await this.handleModelCommand(searchTerm);
                 return;
             }
-            if (text.startsWith("/export")) {
+            if (text === "/export" || text.startsWith("/export ")) {
                 await this.handleExportCommand(text);
                 this.editor.setText("");
                 return;
             }
-            if (text.startsWith("/import")) {
+            if (text === "/import" || text.startsWith("/import ")) {
                 await this.handleImportCommand(text);
                 this.editor.setText("");
                 return;
@@ -2320,10 +2405,12 @@ export class InteractiveMode {
             case "user": {
                 const textContent = this.getUserMessageText(message);
                 if (textContent) {
+                    if (!this.isFirstUserMessage) {
+                        this.chatContainer.addChild(new Spacer(1));
+                    }
                     const skillBlock = parseSkillBlock(textContent);
                     if (skillBlock) {
                         // Render skill block (collapsible)
-                        this.chatContainer.addChild(new Spacer(1));
                         const component = new SkillInvocationMessageComponent(skillBlock, this.getMarkdownThemeWithSettings());
                         component.setExpanded(this.toolOutputExpanded);
                         this.chatContainer.addChild(component);
@@ -2337,6 +2424,7 @@ export class InteractiveMode {
                         const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
                         this.chatContainer.addChild(userComponent);
                     }
+                    this.isFirstUserMessage = false;
                     if (options?.populateHistory) {
                         this.editor.addToHistory?.(textContent);
                     }
@@ -2365,6 +2453,7 @@ export class InteractiveMode {
      */
     renderSessionContext(sessionContext, options = {}) {
         this.pendingTools.clear();
+        this.isFirstUserMessage = true;
         if (options.updateFooter) {
             this.footer.invalidate();
             this.updateEditorBorderColor();
@@ -3633,8 +3722,7 @@ export class InteractiveMode {
         }
     }
     async handleExportCommand(text) {
-        const parts = text.split(/\s+/);
-        const outputPath = parts.length > 1 ? parts[1] : undefined;
+        const outputPath = this.getPathCommandArgument(text, "/export");
         try {
             if (outputPath?.endsWith(".jsonl")) {
                 const filePath = this.session.exportToJsonl(outputPath);
@@ -3649,13 +3737,37 @@ export class InteractiveMode {
             this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
         }
     }
+    getPathCommandArgument(text, command) {
+        if (text === command) {
+            return undefined;
+        }
+        if (!text.startsWith(`${command} `)) {
+            return undefined;
+        }
+        const argsString = text.slice(command.length + 1).trimStart();
+        if (!argsString) {
+            return undefined;
+        }
+        const firstChar = argsString[0];
+        if (firstChar === '"' || firstChar === "'") {
+            const closingQuoteIndex = argsString.indexOf(firstChar, 1);
+            if (closingQuoteIndex < 0) {
+                return undefined;
+            }
+            return argsString.slice(1, closingQuoteIndex);
+        }
+        const firstWhitespaceIndex = argsString.search(/\s/);
+        if (firstWhitespaceIndex < 0) {
+            return argsString;
+        }
+        return argsString.slice(0, firstWhitespaceIndex);
+    }
     async handleImportCommand(text) {
-        const parts = text.split(/\s+/);
-        if (parts.length < 2 || !parts[1]) {
+        const inputPath = this.getPathCommandArgument(text, "/import");
+        if (!inputPath) {
             this.showError("Usage: /import <path.jsonl>");
             return;
         }
-        const inputPath = parts[1];
         const confirmed = await this.showExtensionConfirm("Import session", `Replace current session with ${inputPath}?`);
         if (!confirmed) {
             this.showStatus("Import cancelled");
@@ -3691,6 +3803,10 @@ export class InteractiveMode {
                 await this.handleRuntimeSessionChange();
                 this.renderCurrentSessionState();
                 this.showStatus(`Session imported from: ${inputPath}`);
+                return;
+            }
+            if (error instanceof SessionImportFileNotFoundError) {
+                this.showError(`Failed to import session: ${error.message}`);
                 return;
             }
             await this.handleFatalRuntimeError("Failed to import session", error);

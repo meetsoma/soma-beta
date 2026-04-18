@@ -92,7 +92,7 @@ export function getPackageDir() {
  */
 export function getThemesDir() {
     if (isBunBinary) {
-        return join(dirname(process.execPath), "theme");
+        return join(getPackageDir(), "theme");
     }
     // Theme is in modes/interactive/theme/ relative to src/ or dist/
     const packageDir = getPackageDir();
@@ -107,7 +107,7 @@ export function getThemesDir() {
  */
 export function getExportTemplateDir() {
     if (isBunBinary) {
-        return join(dirname(process.execPath), "export-html");
+        return join(getPackageDir(), "export-html");
     }
     const packageDir = getPackageDir();
     const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
@@ -141,7 +141,7 @@ export function getChangelogPath() {
  */
 export function getInteractiveAssetsDir() {
     if (isBunBinary) {
-        return join(dirname(process.execPath), "assets");
+        return join(getPackageDir(), "assets");
     }
     const packageDir = getPackageDir();
     const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";

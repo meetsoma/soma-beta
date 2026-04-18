@@ -30,7 +30,7 @@ export { bashTool, bashToolDefinition, codingTools, createBashToolDefinition, cr
 // Main entry point
 export { main } from "./main.js";
 // Run modes for programmatic SDK usage
-export { InteractiveMode, runPrintMode, runRpcMode, } from "./modes/index.js";
+export { InteractiveMode, RpcClient, runPrintMode, runRpcMode, } from "./modes/index.js";
 // UI components for extensions
 export { ArminComponent, AssistantMessageComponent, BashExecutionComponent, BorderedLoader, BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomEditor, CustomMessageComponent, DynamicBorder, ExtensionEditorComponent, ExtensionInputComponent, ExtensionSelectorComponent, FooterComponent, keyHint, keyText, LoginDialogComponent, ModelSelectorComponent, OAuthSelectorComponent, rawKeyHint, renderDiff, SessionSelectorComponent, SettingsSelectorComponent, ShowImagesSelectorComponent, SkillInvocationMessageComponent, ThemeSelectorComponent, ThinkingSelectorComponent, ToolExecutionComponent, TreeSelectorComponent, truncateToVisualLines, UserMessageComponent, UserMessageSelectorComponent, } from "./modes/interactive/components/index.js";
 // Theme utilities for custom tools and extensions
