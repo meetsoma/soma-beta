@@ -28,7 +28,28 @@ import { apiKeySetup, apiKeyExplain, apiKeyGetOne, apiKeyEntry, oauthGuide } fro
 import { showAbout } from "./welcome/about.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VERSION = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")).version;
+// __CLI_VERSION__ is replaced at bundle/copy time:
+//   - soma-npm-publish.sh esbuild --define injects the literal for the npm tarball
+//   - scripts/build-dist.mjs string-substitutes when copying to dist/ for dev
+// Fallback: read npm/package.json (works when thin-cli.js runs in-place in repos/agent/npm/).
+const __CLI_VERSION__ = "__CLI_VERSION__";
+function resolveCliVersion() {
+  if (!__CLI_VERSION__.startsWith("__")) return __CLI_VERSION__;
+  // Dev fallback — try npm/package.json next to this file, then one up.
+  const candidates = [
+    join(__dirname, "package.json"),
+    join(__dirname, "..", "package.json"),
+    join(__dirname, "..", "npm", "package.json"),
+  ];
+  for (const p of candidates) {
+    try {
+      const pkg = JSON.parse(readFileSync(p, "utf-8"));
+      if (pkg.name === "meetsoma") return pkg.version;
+    } catch {}
+  }
+  return "unknown";
+}
+const VERSION = resolveCliVersion();
 
 // semverCmp + detectDevInstall now live in lib/detect.js — re-export locally
 // for any callers outside this module that import from thin-cli.

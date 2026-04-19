@@ -7,7 +7,29 @@
 #
 # Provides: colours, σ header/footer, voice, summary helpers
 # Falls back gracefully if not found (|| true)
+#
+# v0.20.3 item 3: if executed directly (not sourced), print help.
+# Detection: BASH_SOURCE[0] == $0 means executed; otherwise sourced.
+# (Guard placed AFTER comment block, BEFORE exports, so sourcing still sets vars.)
 # ═══════════════════════════════════════════════════════════════════════════
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  cat <<'EOF'
+σ  soma-theme.sh — shared theming library (source, don't execute)
+
+  Usage:
+    source "$(dirname "$0")/soma-theme.sh"
+
+  Provides:
+    SOMA_RED/GREEN/YELLOW/BLUE/CYAN/BOLD/DIM/NC  — ANSI colours
+    soma_header "Name" "desc"                    — σ header block
+    soma_footer [--license]                      — matching footer
+    soma_summary / soma_voice / soma_error       — message helpers
+
+  Not meant to run directly.
+EOF
+  exit 0
+fi
 
 # ── Colours ──
 export SOMA_RED='\033[0;31m'

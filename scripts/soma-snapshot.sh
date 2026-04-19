@@ -48,8 +48,8 @@ DEFAULT_EXCLUDES=(
   "*.log"
 )
 
-# --- Help ---
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+# --- Help / no-flag status (v0.20.3: never snapshot without explicit intent) ---
+if [[ $# -eq 0 || "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   echo "soma-snapshot — Snapshot before risky changes"
   echo ""
   echo "Usage: soma snapshot <project-dir> [label]"
@@ -57,7 +57,16 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   echo "       soma snapshot /path/to/project pre-reorg"
   echo ""
   echo "Keeps last $MAX_SNAPSHOTS snapshots per project."
-  echo "Stores in ~/.soma/snapshots/"
+  echo "Stores in $SNAPSHOT_DIR"
+  # Show recent snapshots as status
+  if [ -d "$SNAPSHOT_DIR" ]; then
+    recent=$(ls -1t "$SNAPSHOT_DIR"/*.zip 2>/dev/null | head -5)
+    if [ -n "$recent" ]; then
+      echo ""
+      echo "Recent snapshots:"
+      echo "$recent" | sed 's|^|  |'
+    fi
+  fi
   echo ""
   soma_seams "soma-snapshot.sh" 2>/dev/null || true
   exit 0

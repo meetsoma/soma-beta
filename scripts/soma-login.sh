@@ -9,7 +9,50 @@
 
 set -euo pipefail
 
-# Configurable: soma login [hub-url]
+# v0.20.3: no-flag = status/help only (never start pairing without intent).
+# Use `soma login start [hub-url]` to initiate, or pass `--go` / env SOMA_LOGIN_GO=1.
+ACTION="${1:-}"
+if [ -z "$ACTION" ] || [ "$ACTION" = "--help" ] || [ "$ACTION" = "-h" ]; then
+  KEY_FILE="$HOME/.soma/device-key"
+  if [ -f "$KEY_FILE" ]; then
+    STATUS="✓ paired (device key present at $KEY_FILE)"
+  else
+    STATUS="· not paired"
+  fi
+  cat <<EOF
+σ  soma login — pair this device with Somaverse
+
+  Status: $STATUS
+
+  Commands:
+    soma login start [hub-url]   — begin pairing (opens browser)
+    soma login status            — show current pairing state
+    soma login --help            — this help
+
+  Env:
+    SOMA_HUB_URL                 — default hub URL
+
+  Run with 'start' to actually initiate pairing.
+EOF
+  exit 0
+fi
+if [ "$ACTION" = "status" ]; then
+  KEY_FILE="$HOME/.soma/device-key"
+  if [ -f "$KEY_FILE" ]; then
+    echo "✓ paired (key at $KEY_FILE, $(stat -f %m "$KEY_FILE" 2>/dev/null || stat -c %Y "$KEY_FILE" 2>/dev/null | xargs -I{} date -r {} 2>/dev/null))"
+  else
+    echo "· not paired — run: soma login start"
+  fi
+  exit 0
+fi
+if [ "$ACTION" != "start" ]; then
+  echo "unknown action: $ACTION" >&2
+  echo "usage: soma login [start|status|--help] [hub-url]" >&2
+  exit 2
+fi
+shift  # consume 'start'
+
+# Configurable: soma login start [hub-url]
 # Or set SOMA_HUB_URL env var
 # Or set in ~/.soma/secrets/hub.env as HUB_URL=...
 HUB_URL="${1:-${SOMA_HUB_URL:-}}"
