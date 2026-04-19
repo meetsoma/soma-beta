@@ -7,7 +7,7 @@
  * For returning users: detects installed runtime → delegates to it.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, readlinkSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, readlinkSync } from "fs";
 import { join, dirname } from "path";
 import { homedir, platform } from "os";
 import { fileURLToPath } from "url";
@@ -21,7 +21,8 @@ import { bold, dim, italic, cyan, green, yellow, red, magenta, white,
 import { SOMA_HOME, CONFIG_PATH, CORE_DIR, SITE_URL, readConfig, writeConfig } from "./lib/config.js";
 import { isInstalled, getAgentVersion, getProjectVersion, getCliVersion,
          hasAnyAuth, getShellConfigPath, getShellConfigAbsPath, detectKeyInShellConfig,
-         openBrowser, hasGitHubCLI, getGitHubUsername } from "./lib/detect.js";
+         openBrowser, hasGitHubCLI, getGitHubUsername,
+         getVersionSnapshot, semverCmp as semverCmpDetect, detectDevInstall as detectDevInstallDetect } from "./lib/detect.js";
 import { handleQuestion, interactiveQ, CONCEPTS, getConceptIndex, getConceptBody } from "./welcome/qa.js";
 import { apiKeySetup, apiKeyExplain, apiKeyGetOne, apiKeyEntry, oauthGuide } from "./welcome/auth.js";
 import { showAbout } from "./welcome/about.js";
@@ -29,18 +30,10 @@ import { showAbout } from "./welcome/about.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")).version;
 
-// Semver comparison: returns -1 (a<b), 0 (equal), 1 (a>b)
-function semverCmp(a, b) {
-  if (!a || !b) return 0;
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    const va = pa[i] || 0, vb = pb[i] || 0;
-    if (va < vb) return -1;
-    if (va > vb) return 1;
-  }
-  return 0;
-}
+// semverCmp + detectDevInstall now live in lib/detect.js — re-export locally
+// for any callers outside this module that import from thin-cli.
+const semverCmp = semverCmpDetect;
+const detectDevInstall = detectDevInstallDetect;
 
 // ── Welcome / First Run ─────────────────────────────────────────────
 
@@ -467,6 +460,13 @@ async function checkAndUpdate() {
   console.log("");
 }
 
+// Detect whether the currently-running `soma` is a dev symlink (to a
+// repos/agent path) rather than an npm-managed bin. Returns the symlink
+// target when dev, else null. Used to guide updates correctly — npm
+// install -g meetsoma fails with EEXIST on a manual symlink.
+// Three-layer update check: CLI + agent runtime + workspace marker.
+// Backed by getVersionSnapshot() in lib/detect.js — single source of truth
+// for update, doctor, and status flows.
 function checkForUpdates() {
   if (!isInstalled()) {
     printSigma();
@@ -481,47 +481,66 @@ function checkForUpdates() {
   printSigma();
   console.log(`  ${bold("Soma")} — Update Check`);
   console.log("");
-  const agentV = getAgentVersion();
-  if (agentV) {
-    console.log(`  Soma:    ${cyan(`v${agentV}`)}`);
+  // Voiced intro — context-aware (aligned vs drift), time-shaded
+  const snap = getVersionSnapshot();
+  const intro = snap.allAligned
+    ? voice.say("version_aligned")
+    : voice.say("version_check");
+  console.log(`  ${dim(intro)}`);
+  console.log("");
+  const row = (label, local, remote, status) => {
+    const v = local ? `v${local}` : dim("—");
+    let tail = "";
+    if (status === "aligned")   tail = `  ${green("✓")} latest on npm`;
+    else if (status === "dev-ahead") tail = `  ${green("✓")} dev-ahead ${dim(`(npm: v${remote})`)}`;
+    else if (status === "stale")     tail = `  ${yellow("⬆")} stale ${dim(`(npm: v${remote})`)}`;
+    else if (status === "marker-lag") tail = `  ${yellow("⬆")} marker lag ${dim("— run `soma doctor` to advance")}`;
+    else if (status === "no-workspace") tail = `  ${dim("— no .soma/ in cwd")}`;
+    else if (status === "not-installed") tail = `  ${red("✗")} not installed`;
+    else tail = `  ${dim("— unknown")}`;
+    console.log(`  ${label.padEnd(26)}${cyan(v.padEnd(12))}${tail}`);
+  };
+
+  row("CLI (meetsoma)",       snap.cli.local,       snap.cli.remote,   snap.cli.status);
+  row("Agent (soma-agent)",   snap.agent.local,     snap.agent.remote, snap.agent.status);
+  row("Workspace (.soma)",    snap.workspace.local, null,              snap.workspace.status);
+
+  // Core repo lag (dev installs only — stable installs have no git repo at CORE_DIR)
+  if (snap.coreRepo && snap.coreRepo.behind > 0) {
+    console.log(`  ${yellow("⬆")} Core repo: ${snap.coreRepo.behind} commit${snap.coreRepo.behind !== 1 ? "s" : ""} behind origin`);
+  } else if (snap.coreRepo) {
+    console.log(`  ${green("✓")} Core repo in sync with origin`);
   }
-  console.log(`  CLI:     ${cyan(`v${VERSION}`)}`);
 
-  const config = readConfig();
-
-  try {
-    const latest = execSync("npm view meetsoma version 2>/dev/null", { encoding: "utf-8" }).trim();
-    if (latest && latest !== VERSION && latest > VERSION) {
-      console.log("");
-      console.log(`  ${yellow("⬆")} CLI update available: ${green(`v${latest}`)}`);
-      console.log(`    Run: ${green("npm install -g meetsoma")}`);
-    } else {
-      console.log(`  ${green("✓")} CLI is up to date`);
-    }
-  } catch {
-    console.log(`  ${dim("Could not check npm registry")}`);
-  }
-
-  if (isInstalled() && config.installPath) {
-    try {
-      execSync("git fetch origin --quiet", { cwd: config.installPath, stdio: "ignore", timeout: 10000 });
-      const branch = execSync("git rev-parse --abbrev-ref HEAD", {
-        cwd: config.installPath, encoding: "utf-8"
-      }).trim();
-      const behind = execSync(
-        `git rev-list HEAD..origin/${branch} --count`,
-        { cwd: config.installPath, encoding: "utf-8" }
-      ).trim();
-      if (behind && parseInt(behind) > 0) {
-        console.log(`  ${yellow("⬆")} Core: ${behind} commit${behind !== "1" ? "s" : ""} behind. Run ${green("soma update")} to update.`);
+  // Recovery guidance per drifted layer
+  console.log("");
+  if (snap.allAligned) {
+    console.log(`  ${green("✓")} ${voice.say("version_aligned")}`);
+  } else {
+    console.log(`  ${dim(voice.say("version_drift"))}`);
+    console.log("");
+    const hints = [];
+    if (snap.cli.status === "stale") {
+      if (snap.devInstall) {
+        hints.push(`${yellow("→")} CLI stale: ${dim("switch to stable first:")} ${green("soma-install.sh stable")} ${dim("→ then")} ${green("npm i -g meetsoma")}`);
       } else {
-        console.log(`  ${green("✓")} Core is up to date`);
+        hints.push(`${yellow("→")} CLI stale: run ${green("npm i -g meetsoma")}`);
       }
-    } catch {
-      console.log(`  ${dim("Could not check core updates")}`);
     }
+    if (snap.agent.status === "stale") {
+      hints.push(`${yellow("→")} Agent stale: run ${green("soma update")} ${dim("(or")} ${green("soma-install.sh stable")}${dim(")")}`);
+    }
+    if (snap.workspace.status === "marker-lag") {
+      hints.push(`${yellow("→")} Workspace marker behind agent: run ${green("soma doctor")}`);
+    }
+    if (snap.coreRepo && snap.coreRepo.behind > 0) {
+      hints.push(`${yellow("→")} Core repo behind: run ${green("soma update")} (or git pull in ${dim("~/.soma/agent/")})`);
+    }
+    if (hints.length === 0) {
+      hints.push(`${green("✓")} Nothing to do.`);
+    }
+    hints.forEach(h => console.log(`  ${h}`));
   }
-
   console.log("");
 }
 

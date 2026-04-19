@@ -15,11 +15,20 @@
  *   soma.react("success", { action: "installed core" })
  */
 
+// ── State (session-scoped, no persistence) ───────────────────────────
+// Keeps the picker from repeating itself within a flow.
+// Reset via soma.reset() for tests.
+
+const _state = {
+  lru: {},           // { key: [lastN picks] } — recency tracking per slot/intent
+  register: null,    // 'formal' | 'casual' | null (sticky once a flow starts)
+  lastGreetAt: 0,    // timestamp — avoid double-greeting in short windows
+};
+
 // ── Deterministic-ish randomness ─────────────────────────────────────
-// Seeded by time-of-day so the same minute gives consistent output
-// but different minutes feel different.
 
 function pick(arr) {
+  if (!arr || arr.length === 0) return "";
   const i = Math.floor(Math.random() * arr.length);
   return arr[i];
 }
@@ -34,13 +43,53 @@ function pickWeighted(arr, weights) {
   return arr[arr.length - 1];
 }
 
+/**
+ * LRU-aware picker. Biases away from recently-picked options for the same
+ * key, so "Got it. Got it. Got it." doesn't happen within a session.
+ * When all options are recent, falls back to uniform pick.
+ *
+ * @param {array} arr — choices
+ * @param {string} lruKey — scope for recency tracking (e.g. "ack", "greet")
+ * @param {number} depth — how many recent picks to avoid (default 3)
+ */
+function pickSmart(arr, lruKey, depth = 3) {
+  if (!arr || arr.length === 0) return "";
+  if (!lruKey || arr.length <= 1) return pick(arr);
+  const recent = _state.lru[lruKey] || [];
+  const fresh = arr.filter(x => !recent.includes(x));
+  const pool = fresh.length > 0 ? fresh : arr;
+  const choice = pick(pool);
+  _state.lru[lruKey] = [...recent, choice].slice(-depth);
+  return choice;
+}
+
+/**
+ * Time-of-day bucket. Drives greeting palette.
+ * @returns {'late' | 'morning' | 'afternoon' | 'evening'}
+ */
+function timeOfDay() {
+  const h = new Date().getHours();
+  if (h < 6) return "late";
+  if (h < 12) return "morning";
+  if (h < 18) return "afternoon";
+  return "evening";
+}
+
 // ── Slot expansion ───────────────────────────────────────────────────
 
 function expand(template, slots = {}) {
   return template.replace(/\{(\w+)\}/g, (_, key) => {
     if (slots[key] !== undefined) return slots[key];
     // Check if there's a vocabulary for this slot
-    if (VOCAB[key]) return pick(VOCAB[key]);
+    if (VOCAB[key]) {
+      const v = VOCAB[key];
+      // Nested structures (e.g. time_greeting) — resolve by time-of-day
+      if (!Array.isArray(v) && typeof v === "object") {
+        const bucket = v[timeOfDay()] || v.default || Object.values(v)[0];
+        return pickSmart(bucket, key);
+      }
+      return pickSmart(v, key);
+    }
     return `{${key}}`;
   });
 }
@@ -52,6 +101,13 @@ const VOCAB = {
   greeting: [
     "Hey", "Hi", "Hello", "Hey there",
   ],
+  // Time-specific greetings
+  time_greeting: {
+    late:      ["Still up?", "Late session", "Hey — still here?"],
+    morning:   ["Morning", "Good morning", "Hey — morning"],
+    afternoon: ["Hey", "Afternoon", "Hi"],
+    evening:   ["Evening", "Good evening", "Hey"],
+  },
   // Acknowledgements
   ack: [
     "Got it", "Understood", "Right", "Noted", "Copy that", "On it",
@@ -75,6 +131,14 @@ const VOCAB = {
   // Thinking words
   consider: [
     "Looks like", "Seems like", "Appears to be", "That's",
+  ],
+  // Reassurance (when surfacing drift / problems)
+  reassure: [
+    "Nothing scary", "Small fix", "Quick one", "Easy one",
+  ],
+  // Attention (when announcing results)
+  attention: [
+    "Here's the map", "Here's what I see", "Snapshot", "Current state",
   ],
 };
 
@@ -176,6 +240,39 @@ const SKELETONS = {
     "Until next time.",
     "Exhale complete.",
   ],
+  // Version / update UX
+  version_check: [
+    "{attention} — three layers:",
+    "Checking in on your setup.",
+    "{transition} look at the version state.",
+    "Version snapshot:",
+  ],
+  version_aligned: [
+    "All three layers are aligned. You're good.",
+    "Everything's in sync — CLI, agent, workspace.",
+    "{done_word}. All layers on the same page.",
+    "Aligned end-to-end.",
+  ],
+  version_drift: [
+    "Found some drift. {reassure}.",
+    "A few things out of sync. {reassure}.",
+    "Layers don't match. {reassure} — here's the fix.",
+    "Drift detected. Walk through below.",
+  ],
+
+  // Doctor UX
+  doctor_clean: [
+    "Workspace is {quality}. Nothing to fix.",
+    "Your .soma checks out.",
+    "{done_word}. All checks pass.",
+    "Healthy. Moving on.",
+  ],
+  doctor_found_items: [
+    "Found {n} item{plural}. {reassure}.",
+    "{n} thing{plural} to tidy. {reassure}.",
+    "Spotted {n} item{plural} worth attention.",
+  ],
+
 };
 
 // ── Topics ───────────────────────────────────────────────────────────
@@ -412,6 +509,31 @@ const soma = {
    */
   expand(template, slots) {
     return expand(template, slots);
+  },
+
+  /**
+   * Time-aware intro. Greeting shaded by time of day.
+   */
+  intro(user) {
+    const bucket = VOCAB.time_greeting[timeOfDay()] || VOCAB.greeting;
+    const tg = pickSmart(bucket, "time_greeting");
+    return user ? `${tg}, ${user}.` : `${tg}.`;
+  },
+
+  /**
+   * Reset session state (tests / sandbox isolation).
+   */
+  reset() {
+    _state.lru = {};
+    _state.register = null;
+    _state.lastGreetAt = 0;
+  },
+
+  /**
+   * Current session state (debug / telemetry).
+   */
+  _debug() {
+    return JSON.parse(JSON.stringify(_state));
   },
 };
 

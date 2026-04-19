@@ -2,7 +2,12 @@
 type: protocol
 name: implementation-plans
 status: active
+version: 1.0.0
+author: Curtis Mercier
+license: CC BY 4.0
 created: 2026-04-12
+updated: 2026-04-18
+tier: core
 heat-default: cold
 scope: bundled
 description: Write plans your next self can execute without re-reading anything.

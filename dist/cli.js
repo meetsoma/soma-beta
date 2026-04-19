@@ -12,8 +12,6 @@ process.title = "soma";
 // Soma has its own versioning — skip Pi's upstream version check
 // which compares Soma 0.1.0 against pi-coding-agent 0.57.1 on npm
 process.env.PI_SKIP_VERSION_CHECK = "1";
-// Disable Pi 0.67.1 install telemetry ping
-process.env.PI_TELEMETRY = "0";
 import { setBedrockProviderModule } from "@mariozechner/pi-ai";
 import { bedrockProviderModule } from "@mariozechner/pi-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
@@ -198,6 +196,8 @@ if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
 		console.log(`    ${g("soma -r")}                 ${d("Pick a session to resume")}`);
 		console.log(`    ${g("soma focus <keyword>")}    ${d("Prime for a topic")}`);
 		console.log(`    ${g("soma map <name>")}         ${d("Boot with a MAP")}`);
+		console.log(`    ${g("soma model <pattern>")}    ${d("Switch default model (persistent)")}`);
+		console.log(`    ${g("soma model --list")}       ${d("Show available models")}`);
 		console.log(`    ${g("soma doctor")}              ${d("Project health + migration")}`);
 		console.log(`    ${g("soma status")}              ${d("Infrastructure health check")}`);
 		console.log(`    ${g("soma --help scripts")}     ${d("Show installed scripts")}`);
@@ -249,6 +249,8 @@ if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
 	console.log(`    ${g("soma focus show|clear")}   ${d("Check or remove focus state")}`);
 	console.log(`    ${g("soma map <name>")}         ${d("Boot with a MAP workflow loaded")}`);
 	console.log(`    ${g("soma map --list")}         ${d("Show available MAPs")}`);
+	console.log(`    ${g("soma model <pattern>")}    ${d("Switch default model (persistent)")}`);
+	console.log(`    ${g("soma model --list")}       ${d("Show available models")}`);
 	console.log(`    ${g("soma doctor")}              ${d("Project health + migration")}`);
 	console.log(`    ${g("soma status")}              ${d("Infrastructure health check")}`);
 	console.log(``);
@@ -259,18 +261,19 @@ if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
 	console.log(`    ${g("soma <name> [args]")}       ${d("Any soma-<name>.sh in scripts/ or .soma/")}`);  
 	console.log(`    ${g("soma --help scripts")}      ${d("Show all installed scripts")}`);  
 	console.log(``);
-	console.log(`  ${b("Options:")}`);
-	console.log(`    ${g("--model <pattern>")}        ${d("Start with a specific model (e.g. sonnet, gpt-4o)")}`);
-	console.log(`    ${g("--models <list>")}          ${d("Limit Ctrl+P cycling to these models")}`);
-	console.log(`    ${g("--provider <name>")}        ${d("Set the default provider")}`);
+	console.log(`  ${b("Session Options")} ${d("(apply to this session only):")}`);  
+	console.log(`    ${g("--model <pattern>")}        ${d("Use a specific model for this session")}`);
+	console.log(`    ${g("--provider <name>")}        ${d("Use a specific provider for this session")}`);
 	console.log(`    ${g("--thinking <level>")}       ${d("Thinking: off, minimal, low, medium, high, xhigh")}`);
-	console.log(`    ${g("--list-models [search]")}   ${d("List available models")}`);
+	console.log(`    ${g("--models <list>")}          ${d("Limit Ctrl+P cycling to these models")}`);
 	console.log(`    ${g("--print, -p")}              ${d("Non-interactive: process prompt and exit")}`);
 	console.log(`    ${g("--no-session")}             ${d("Ephemeral session (not saved)")}`);
+	console.log(`    ${g("--no-context-files, -nc")}  ${d("Skip AGENTS.md / CLAUDE.md loading")}`);
 	console.log(`    ${g("--tools <list>")}           ${d("Tools to enable (default: read,bash,edit,write)")}`);
 	console.log(`    ${g("--extension, -e <path>")}   ${d("Load an extension file")}`);
 	console.log(`    ${g("--skill <path>")}           ${d("Load a skill file or directory")}`);
 	console.log(`    ${g("--export [session.jsonl]")} ${d("Export session as HTML")}`);
+	console.log(`    ${g("--list-models [search]")}   ${d("List all available models")}`);
 	console.log(``);
 	console.log(`  ${b("Session Slash Commands")} ${d("(inside the TUI):")}`);
 	console.log(`    ${c("/exhale")}    ${d("Save state + write preload — ends session")}`);
@@ -428,6 +431,15 @@ if (args[0] === "map") {
 	} else {
 		console.log(`  Usage: ${green("soma map <name>")} or ${green("soma map --list")}`);
 		process.exit(1);
+	}
+} else if (args[0] === "model") {
+	// soma model — interactive model switching
+	const { handleModelCommand } = await import("./lib/model-cmd.js");
+	const result = await handleModelCommand(args.slice(1));
+	if (result === "start") {
+		main([]);
+	} else {
+		process.exit(0);
 	}
 } else if (args[0] === "init" || args[0] === "content" || args[0] === "install" || args[0] === "list") {
 	// soma init / soma content init / soma install / soma list
