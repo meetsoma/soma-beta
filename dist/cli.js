@@ -618,15 +618,31 @@ if (args[0] === "map") {
 
 		const script = candidates.find(p => existsSync(p));
 		if (script) {
+			// Resolve the project's .soma/ by walking up from cwd so scripts can
+			// trust SOMA_PROJECT_DIR instead of recomputing from $0 (which breaks
+			// for bundled scripts living far from the user's project).
+			let somaProjectDir = "";
+			try {
+				let dir = process.cwd();
+				while (dir !== "/") {
+					if (existsSync(join(dir, ".soma"))) { somaProjectDir = join(dir, ".soma"); break; }
+					const parent = join(dir, "..");
+					if (parent === dir) break;
+					dir = parent;
+				}
+			} catch {}
+			const scriptEnv = somaProjectDir
+				? { ...process.env, SOMA_PROJECT_DIR: somaProjectDir }
+				: process.env;
 			try {
 				if (script.endsWith(".js")) {
 					// Pro script: run with node (compiled .js module)
 					execFileSync(process.execPath, ["--input-type=module", "-e",
 						`import{run}from"${script}";const o=run(${JSON.stringify(args.slice(1))});if(o)process.stdout.write(o);`
-					], { stdio: "inherit" });
+					], { stdio: "inherit", env: scriptEnv });
 				} else {
 					// Free script: run with bash
-					execFileSync("bash", [script, ...args.slice(1)], { stdio: "inherit" });
+					execFileSync("bash", [script, ...args.slice(1)], { stdio: "inherit", env: scriptEnv });
 				}
 			} catch (err) { if (err.status) process.exit(err.status); }
 			process.exit(0);

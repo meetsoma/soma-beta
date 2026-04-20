@@ -14,8 +14,14 @@
 #   bash soma-update-check.sh --update      # pull updates for outdated items
 set -o pipefail
 
+# Help first — don't require a .soma/ to read the usage.
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+  sed -n '7,14p' "$0" | sed 's/^# \?//'
+  exit 0
+fi
+
 SOMA_DIR="${1:-.soma}"
-[[ "$1" == "--json" || "$1" == "--update" ]] && SOMA_DIR=".soma"
+[[ "${1:-}" == "--json" || "${1:-}" == "--update" ]] && SOMA_DIR=".soma"
 JSON_MODE=false
 UPDATE_MODE=false
 [[ "$*" == *"--json"* ]] && JSON_MODE=true

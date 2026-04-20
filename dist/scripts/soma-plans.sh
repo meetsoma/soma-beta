@@ -60,8 +60,10 @@ find_plans() {
 }
 
 get_field() {
+  # Always return 0 — missing field = empty string, not an error.
+  # (pipefail + set -e otherwise kills callers in while-loops.)
   local file="$1" field="$2"
-  grep -m1 "^${field}:" "$file" 2>/dev/null | sed "s/^${field}: *//" | tr -d '"'
+  grep -m1 "^${field}:" "$file" 2>/dev/null | sed "s/^${field}: *//" | tr -d '"' || true
 }
 
 get_topics() {
@@ -174,39 +176,60 @@ cmd_stale() {
 }
 
 cmd_overlap() {
+  # Portable rewrite — no `declare -A` (bash 3.2 on macOS).
+  # Emit one "topic<TAB>path" line per (topic, plan), sort, group consecutive.
   echo -e "${BOLD}σ  Plan Overlap Detection${NC}"
   echo ""
 
-  # Build topic → plan mapping
-  declare -A topic_plans
+  local tmp; tmp=$(mktemp)
   while IFS= read -r f; do
-    local status=$(get_field "$f" "status")
+    local status; status=$(get_field "$f" "status")
     [[ "$status" != "active" && "$status" != "draft" ]] && continue
-    local path=$(short_path "$f")
-    local topics=$(get_topics "$f")
-
-    IFS=',' read -ra TOPICS <<< "$topics"
-    for t in "${TOPICS[@]}"; do
-      t=$(echo "$t" | xargs) # trim
+    local path; path=$(short_path "$f")
+    local topics; topics=$(get_topics "$f")
+    [[ -z "$topics" ]] && continue
+    # bash 3.2 safe: guard empty-array expansion with ${arr[@]+...}
+    IFS=',' read -ra TOPICS <<< "$topics" || true
+    for t in ${TOPICS[@]+"${TOPICS[@]}"}; do
+      t=$(echo "$t" | xargs)
       [[ -z "$t" ]] && continue
-      topic_plans[$t]="${topic_plans[$t]:-}|$path"
+      printf '%s\t%s\n' "$t" "$path" >> "$tmp"
     done
   done < <(find_plans)
 
   local overlaps=0
-  for topic in "${!topic_plans[@]}"; do
-    local plans="${topic_plans[$topic]}"
-    local count=$(echo "$plans" | tr '|' '\n' | grep -c '.' || true)
+  local prev=""
+  local group=""
+  local count=0
+
+  _flush() {
     if [[ $count -ge 2 ]]; then
       overlaps=$((overlaps + 1))
-      echo -e "  ${YELLOW}${topic}${NC} (${count} plans):"
-      echo "$plans" | tr '|' '\n' | grep '.' | while read -r p; do
+      echo -e "  ${YELLOW}${prev}${NC} (${count} plans):"
+      printf '%s' "$group" | while IFS= read -r p; do
+        [[ -z "$p" ]] && continue
         echo -e "    ${DIM}$p${NC}"
       done
       echo ""
     fi
-  done
+  }
 
+  if [[ -s "$tmp" ]]; then
+    while IFS=$'\t' read -r topic path; do
+      if [[ "$topic" == "$prev" ]]; then
+        group="${group}${path}"$'\n'
+        count=$((count + 1))
+      else
+        _flush
+        prev="$topic"
+        group="${path}"$'\n'
+        count=1
+      fi
+    done < <(sort "$tmp")
+    _flush
+  fi
+
+  rm -f "$tmp"
   [[ $overlaps -eq 0 ]] && echo -e "  ${GREEN}✓${NC} No overlapping topics"
 }
 
@@ -318,7 +341,20 @@ cmd_preload() {
 case "${1:-}" in
   status)       cmd_status ;;
   scan)         cmd_scan ;;
-  stale)        cmd_stale "${2:-7}" ;;
+  stale)
+    # Accept: `stale`, `stale N`, `stale --days N`
+    shift
+    days=7
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --days) days="${2:-7}"; shift 2 ;;
+        --days=*) days="${1#--days=}"; shift ;;
+        [0-9]*) days="$1"; shift ;;
+        *) shift ;;
+      esac
+    done
+    cmd_stale "$days"
+    ;;
   overlap)      cmd_overlap ;;
   consolidate)  cmd_consolidate ;;
   archive)      cmd_archive "${2:-}" ;;

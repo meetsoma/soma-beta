@@ -63,14 +63,30 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   exit 0
 fi
 
-# soma-seam.sh should be alongside this script, or in the user's scripts dir
+# Locate soma-seam — ships as .sh (dev, in scripts/_pro/) or .js (released, in scripts/).
+# Also check project and global script dirs. Released package flattens _pro/ so look
+# in scripts/ first, then scripts/_pro/ (dev fallback).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SEAM_SCRIPT=""
-for candidate in "$SCRIPT_DIR/soma-seam.sh" "$SOMA_DIR/amps/scripts/soma-seam.sh"; do
-  [[ -f "$candidate" ]] && SEAM_SCRIPT="$candidate" && break
+SEAM_RUNNER="bash"
+for candidate in \
+  "$SCRIPT_DIR/soma-seam.js" \
+  "$SCRIPT_DIR/soma-seam.sh" \
+  "$SCRIPT_DIR/_pro/soma-seam.sh" \
+  "$SOMA_DIR/amps/scripts/soma-seam.js" \
+  "$SOMA_DIR/amps/scripts/soma-seam.sh" \
+  "$HOME/.soma/amps/scripts/soma-seam.js" \
+  "$HOME/.soma/amps/scripts/soma-seam.sh" \
+; do
+  if [[ -f "$candidate" ]]; then
+    SEAM_SCRIPT="$candidate"
+    [[ "$candidate" == *.js ]] && SEAM_RUNNER="node"
+    break
+  fi
 done
 if [[ -z "$SEAM_SCRIPT" ]]; then
-  echo "ERROR: soma-seam.sh not found. Install it alongside soma-focus.sh."
+  echo "ERROR: soma-seam not found. Looked for soma-seam.{sh,js} in scripts/, scripts/_pro/, \$SOMA_DIR/amps/scripts/, ~/.soma/amps/scripts/."
+  echo "Install via 'soma init' or check your release build."
   exit 1
 fi
 
@@ -173,7 +189,7 @@ run_focus() {
   # Phase 2: If frontmatter found <5 results AND single keyword, broaden with seam trace
   if [[ $fm_matches -lt 5 && $kw_count -eq 1 ]]; then
     echo -e "${DIM}Frontmatter: $fm_matches matches — broadening with seam trace${RESET}"
-    local seam_output=$(bash "$SEAM_SCRIPT" trace "$keyword" 2>/dev/null | strip_ansi)
+    local seam_output=$("$SEAM_RUNNER" "$SEAM_SCRIPT" trace "$keyword" 2>/dev/null | strip_ansi)
     trace_output="${trace_output}\n${seam_output}"
   elif [[ $fm_matches -ge 5 ]]; then
     echo -e "${DIM}Frontmatter: $fm_matches matches${RESET}"

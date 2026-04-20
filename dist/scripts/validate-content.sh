@@ -43,6 +43,10 @@ FILES=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --help|-h|help)
+            sed -n '8,23p' "$0" | sed 's/^# \?//'
+            exit 0
+            ;;
         --type) TYPE_FILTER="$2"; shift 2 ;;
         *) FILES+=("$1"); shift ;;
     esac

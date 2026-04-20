@@ -186,7 +186,12 @@ cmd_map() {
         /^  (get |set |async )[a-zA-Z]/ { printf "\033[0;33m%4d\033[0m │   \033[0;36m%s\033[0m\n", NR, $0; next }
         /^  _[a-zA-Z_]+\(/ { printf "\033[0;33m%4d\033[0m │   \033[0;90m%s\033[0m\n", NR, $0; next }
         /registerApp\(|PluginRegistry\.register/ { printf "\033[0;33m%4d\033[0m │ \033[0;32m%s\033[0m\n", NR, $0; next }
-        /^  \/\/ ══/ || /^  \/\/ ──/ { printf "\033[0;33m%4d\033[0m │   \033[0;90m%s\033[0m\n", NR, $0; next }
+        # Pi tool/command registrations — show the next `name: "..."` line as the section label
+        /^[[:space:]]*pi\.registerTool\(/ || /^[[:space:]]*pi\.registerCommand\(/ || /^[[:space:]]*somaRegisterTool\(/ { printf "\033[0;33m%4d\033[0m │ \033[0;32m%s\033[0m\n", NR, $0; next }
+        /^[[:space:]]*name:[[:space:]]*"[a-zA-Z_][a-zA-Z0-9_]*"/ { printf "\033[0;33m%4d\033[0m │     \033[0;32m%s\033[0m\n", NR, $0; next }
+        # Divider lines (═══ or ───) AND section titles (comment lines with readable text, any indent)
+        /^[[:space:]]*\/\/ ══/ || /^[[:space:]]*\/\/ ──/ { printf "\033[0;33m%4d\033[0m │   \033[0;90m%s\033[0m\n", NR, $0; next }
+        /^[[:space:]]*\/\/ [A-Z][A-Z_ ]+[A-Z]$/ { printf "\033[0;33m%4d\033[0m │   \033[1;37m%s\033[0m\n", NR, $0; next }
       ' "$file"
       ;;
     sh|bash)
