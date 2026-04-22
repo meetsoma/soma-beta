@@ -70,7 +70,7 @@ class ExpandableText extends Text {
         this.setText(expanded ? this.getExpandedText() : this.getCollapsedText());
     }
 }
-const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING = "Anthropic subscription auth is active. Third-party usage now draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
+const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING = "";  /* soma: preventive OAuth warning suppressed; runtime extra-usage detector covers real billing */
 function isAnthropicSubscriptionAuthKey(apiKey) {
     return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
 }
@@ -446,10 +446,10 @@ export class InteractiveMode {
         const cwdBasename = path.basename(this.sessionManager.getCwd());
         const sessionName = this.sessionManager.getSessionName();
         if (sessionName) {
-            this.ui.terminal.setTitle(`π - ${sessionName} - ${cwdBasename}`);
+            this.ui.terminal.setTitle(`σ - ${sessionName} - ${cwdBasename}`);
         }
         else {
-            this.ui.terminal.setTitle(`π - ${cwdBasename}`);
+            this.ui.terminal.setTitle(`σ - ${cwdBasename}`);
         }
     }
     /**
@@ -3192,7 +3192,7 @@ export class InteractiveMode {
         const storedCredential = this.session.modelRegistry.authStorage.get("anthropic");
         if (storedCredential?.type === "oauth") {
             this.anthropicSubscriptionWarningShown = true;
-            this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
+            if (ANTHROPIC_SUBSCRIPTION_AUTH_WARNING) this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
             return;
         }
         try {
@@ -3201,7 +3201,7 @@ export class InteractiveMode {
                 return;
             }
             this.anthropicSubscriptionWarningShown = true;
-            this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
+            if (ANTHROPIC_SUBSCRIPTION_AUTH_WARNING) this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
         }
         catch {
             // Ignore auth lookup failures for warning-only checks.

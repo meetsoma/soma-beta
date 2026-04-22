@@ -12,6 +12,7 @@ import { join, dirname } from "path";
 import { homedir, platform } from "os";
 import { fileURLToPath } from "url";
 import { execSync, execFileSync } from "child_process";
+import { randomBytes } from "crypto";
 import { soma as voice } from "./personality.js";
 
 // ── Shared modules ─────────────────────────────────────────────────────
@@ -161,7 +162,7 @@ function showHelp() {
   console.log("");
   console.log(`  ${bold("Maintenance")}`);
   console.log(`    ${green("soma doctor")}            Verify installation + project health`);
-  console.log(`    ${green("soma update")}            Update the Soma runtime`);
+  console.log(`    ${green("soma update")}            Update the Soma runtime ${dim("(--yes / -y to skip prompt)")}`);
   console.log(`    ${green("soma check-updates")}     Check for updates without installing`);
   console.log(`    ${green("soma status")}            Show installation status`);
   console.log("");
@@ -424,12 +425,18 @@ async function checkAndUpdate() {
     }
   } catch {}
 
-  const shouldUpdate = await confirmYN(`  ${dim("→")} Update now?`);
+  // Scripted upgrade: --yes / -y skips the Y/N prompt. Useful in CI and
+  // for the 'npm install -g meetsoma@latest && soma update --yes' one-liner.
+  const autoYes = process.argv.includes("--yes") || process.argv.includes("-y");
+  const shouldUpdate = autoYes ? true : await confirmYN(`  ${dim("→")} Update now?`);
   if (!shouldUpdate) {
     console.log("");
     console.log(`  ${dim("Skipped. Run")} ${green("soma update")} ${dim("anytime to update.")}`);
     console.log("");
     return;
+  }
+  if (autoYes) {
+    console.log(`  ${dim("→")} Auto-confirmed via --yes`);
   }
 
   console.log("");
@@ -753,6 +760,122 @@ async function projectDoctor() {
     return;
   }
 
+  // Declarative migration replay (SX-562).
+  //
+  // Doctor reads migration maps whose frontmatter carries
+  //   replay-until: <version>
+  // While the agent's version is BELOW that threshold, every doctor run
+  // evaluates the map's `## Doctor Actions` JSON block and applies each
+  // action idempotently. Once the agent reaches `replay-until`, the map
+  // is considered universally applied; doctor skips it.
+  //
+  // Action schema (see migrations/phases/v0.20.3-to-v0.21.0.md for example):
+  //   settings-defaults: { key: value }       — addIfMissing at top-level
+  //   settings-subkeys:  { parent: { k: v } } — addIfMissing into nested object
+  //   scaffold-files:    [{ target, template }] — writeIfMissing from template
+  //
+  // This block is the ONLY place doctor does tier-1 backfill work. The
+  // migration map itself is the source of truth — adding a new setting or
+  // file seed to a future release just means adding it to that release's
+  // map, not touching this code.
+  try {
+    const softSomaDir = join(process.cwd(), ".soma");
+    const softSettings = join(softSomaDir, "settings.json");
+    if (existsSync(softSettings)) {
+      // Resolve template roots (stable install + dist + dev-repo variants).
+      const templateRoots = [CORE_DIR, join(CORE_DIR, "dist")];
+      try {
+        const devCore = readlinkSync(join(CORE_DIR, "core"));
+        if (devCore) {
+          const devRoot = dirname(devCore);
+          templateRoots.push(devRoot, join(devRoot, "dist"));
+        }
+      } catch { /* not dev mode */ }
+
+      // Discover migration phase maps across the candidate roots.
+      const phaseDirsSeen = new Set();
+      const phaseDirs = [];
+      for (const root of templateRoots) {
+        const d = join(root, "migrations", "phases");
+        if (existsSync(d) && !phaseDirsSeen.has(d)) { phaseDirs.push(d); phaseDirsSeen.add(d); }
+      }
+      const seenMaps = new Set();
+      const maps = [];
+      for (const dir of phaseDirs) {
+        for (const f of readdirSync(dir).filter(f => f.endsWith(".md"))) {
+          if (seenMaps.has(f)) continue;
+          seenMaps.add(f);
+          maps.push(join(dir, f));
+        }
+      }
+
+      let obj = JSON.parse(readFileSync(softSettings, "utf-8"));
+      let objChanged = false;
+      let replayFixes = 0;
+
+      for (const mapPath of maps) {
+        let raw;
+        try { raw = readFileSync(mapPath, "utf-8"); } catch { continue; }
+
+        // Frontmatter probe — only maps with `replay-until` get replayed.
+        const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+        if (!fmMatch) continue;
+        const replayLine = fmMatch[1].match(/^replay-until:\s*["']?([^"'\n]+?)["']?\s*$/m);
+        if (!replayLine) continue;
+        const replayUntil = replayLine[1].trim();
+        // If agent has caught up, assume every upgrade path has run through it.
+        if (agentV && semverCmp(agentV, replayUntil) >= 0) continue;
+
+        // Extract `## Doctor Actions` JSON block.
+        const actionsBlock = raw.match(/^## Doctor Actions[\s\S]*?```json\s*\n([\s\S]*?)```/m);
+        if (!actionsBlock) continue;
+        let actions;
+        try { actions = JSON.parse(actionsBlock[1]); } catch { continue; }
+
+        // Apply top-level settings defaults (addIfMissing at root).
+        if (actions["settings-defaults"] && typeof actions["settings-defaults"] === "object") {
+          for (const [k, v] of Object.entries(actions["settings-defaults"])) {
+            if (!(k in obj)) { obj[k] = v; objChanged = true; replayFixes++; }
+          }
+        }
+
+        // Apply nested settings subkeys (addIfMissing into existing objects only).
+        if (actions["settings-subkeys"] && typeof actions["settings-subkeys"] === "object") {
+          for (const [parent, sub] of Object.entries(actions["settings-subkeys"])) {
+            if (!obj[parent] || typeof obj[parent] !== "object") continue;
+            for (const [k, v] of Object.entries(sub)) {
+              if (obj[parent][k] === undefined) { obj[parent][k] = v; objChanged = true; replayFixes++; }
+            }
+          }
+        }
+
+        // Apply file scaffolds (writeIfMissing from a bundled template).
+        if (Array.isArray(actions["scaffold-files"])) {
+          for (const entry of actions["scaffold-files"]) {
+            if (!entry || !entry.target || !entry.template) continue;
+            const target = join(softSomaDir, entry.target);
+            if (existsSync(target)) continue;
+            for (const root of templateRoots) {
+              const src = join(root, entry.template);
+              if (!existsSync(src)) continue;
+              const today = new Date().toISOString().slice(0, 10);
+              mkdirSync(dirname(target), { recursive: true });
+              writeFileSync(target, readFileSync(src, "utf-8").replace(/\{\{today\}\}/g, today));
+              replayFixes++;
+              break;
+            }
+          }
+        }
+      }
+
+      if (objChanged) writeFileSync(softSettings, JSON.stringify(obj, null, "\t") + "\n");
+      if (replayFixes > 0) {
+        console.log(`  ${green("✓")} Migration replay applied ${replayFixes} backfill(s)`);
+        console.log("");
+      }
+    }
+  } catch { /* best-effort; doctor continues */ }
+
   if (agentV && semverCmp(projectV, agentV) === 0) {
     console.log(`  ${green("✓")} Project is up to date.`);
     console.log("");
@@ -773,15 +896,25 @@ async function projectDoctor() {
         const current = JSON.parse(readFileSync(settingsPath, "utf-8"));
         let changed = false;
         const add = (k, v) => { if (!(k in current)) { current[k] = v; changed = true; fixes++; } };
+        // Keep in sync with extensions/soma-boot.ts:1167-1180 — same keys/values.
+        // Both paths run addIfMissing; first to fire wins, second is a no-op.
         add("doctor", { autoUpdate: true, declinedVersion: null });
+        add("keepalive", { maxPings: 5, autoExhale: true, autoExhaleMinTokens: 75000 });
         add("breathe", { auto: false, triggerAt: 50, rotateAt: 70, graceSeconds: 30 });
         add("context", { notifyAt: 50, warnAt: 70, urgentAt: 80, autoExhaleAt: 85 });
-        add("preload", { staleAfterHours: 48, lastSessionLogs: 0 });
+        add("preload", { staleAfterHours: 48, lastSessionLogs: 0, recentNotesCount: 3 });
         add("scratch", { autoInject: false });
         add("guard", { coreFiles: "warn", bashCommands: "warn", gitIdentity: null });
         add("checkpoints", { enabled: true, intervalMinutes: 5, squashOnPush: true });
+        add("cache", { retention: null });
         add("persona", { name: null, emoji: "σ" });
         add("inherit", { identity: true, protocols: true, muscles: true, tools: true });
+        // Sub-migrate existing preload blocks that predate recentNotesCount (v0.21.0).
+        if (current.preload && typeof current.preload === "object" && current.preload.recentNotesCount === undefined) {
+          current.preload.recentNotesCount = 3;
+          changed = true;
+          fixes++;
+        }
         if (changed) writeFileSync(settingsPath, JSON.stringify(current, null, "\t") + "\n");
       } catch {}
     }
@@ -841,6 +974,27 @@ async function projectDoctor() {
         }
       }
     }
+
+    // SX-547 (v0.21.0): seed memory/notes/soma-log.md if missing. Mirrors
+    // scaffoldMemoryNotes in core/init.ts. Never clobbers (writeIfMissing).
+    try {
+      const notesTarget = join(somaDir, "memory", "notes", "soma-log.md");
+      if (!existsSync(notesTarget)) {
+        const candidates = [
+          join(agentRoot, "templates", "default", "memory", "notes", "soma-log.md"),
+          join(agentRoot, "dist", "templates", "default", "memory", "notes", "soma-log.md"),
+        ];
+        for (const src of candidates) {
+          if (!existsSync(src)) continue;
+          const today = new Date().toISOString().slice(0, 10);
+          const content = readFileSync(src, "utf-8").replace(/\{\{today\}\}/g, today);
+          mkdirSync(dirname(notesTarget), { recursive: true });
+          writeFileSync(notesTarget, content);
+          fixes++;
+          break;
+        }
+      }
+    } catch { /* best-effort */ }
 
     if (fixes > 0) {
       try {
@@ -1012,6 +1166,19 @@ try {
     writeConfig(config);
   }
 } catch {}
+
+// Provision the per-install session token on first run. Written to
+// ~/.soma/somadian-token (chmod 600). Used by extensions + compiled
+// scripts as a presence signal. For v0.21.x beta the token is a local
+// random hex generated at install time; later releases will replace the
+// provisioning source without changing the consumer-side shape.
+try {
+  const tokenPath = join(SOMA_HOME, "somadian-token");
+  if (!existsSync(tokenPath)) {
+    mkdirSync(SOMA_HOME, { recursive: true, mode: 0o700 });
+    writeFileSync(tokenPath, randomBytes(24).toString("hex"), { mode: 0o600 });
+  }
+} catch { /* best-effort; absence downgrades Pro scripts but won't break CLI */ }
 
 if (cmd === "--version" || cmd === "-v" || cmd === "-V" || cmd === "version") {
   showVersion();

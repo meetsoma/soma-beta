@@ -2,126 +2,159 @@
 type: reference
 status: active
 created: 2026-03-21
+updated: 2026-04-22
 ---
 
 # Migration Maps
 
 Version-to-version migration maps for `.soma/` workspaces.
 
-## How It Works
+## Status: documentation layer, not the enforcement layer
 
-Each file describes what changed between two versions and how to update a `.soma/` folder:
+As of v0.20.x, **migration maps are narrative documentation**. They explain
+what changed between versions so a user (or agent) reading the git history
+has a single source of truth per release arc. They are **not** the mechanism
+that actually keeps user workspaces in sync.
+
+### The enforcement layer is `addIfMissing`
+
+The mechanism that keeps existing `.soma/` workspaces forward-compatible
+lives in `extensions/soma-boot.ts` (lines ~1167-1178):
+
+```ts
+const addIfMissing = (key: string, val: any) => { /* ... */ };
+addIfMissing("doctor",      { autoUpdate: true, declinedVersion: null });
+addIfMissing("keepalive",   { maxPings: 5, autoExhale: true, ... });
+addIfMissing("breathe",     { auto: false, triggerAt: 50, rotateAt: 70, ... });
+addIfMissing("context",     { notifyAt: 50, warnAt: 70, ... });
+addIfMissing("preload",     { staleAfterHours: 48, lastSessionLogs: 0 });
+addIfMissing("scratch",     { autoInject: false });
+addIfMissing("guard",       { coreFiles: "warn", bashCommands: "warn", ... });
+addIfMissing("checkpoints", { enabled: true, intervalMinutes: 5, ... });
+addIfMissing("cache",       { retention: null });
+```
+
+Every boot, Soma adds any missing top-level settings keys with sane defaults.
+Doctor also seeds body files (e.g. `body/children/*.md`, `_tools.md`) when
+absent via `core/init.ts`. This strategy:
+
+- **Self-heals** — a user who skipped 5 versions gets all new settings in one boot
+- **Doesn't need version tracking** — every key is idempotent and cumulative
+- **Doesn't fail** — presence of extra old keys is harmless
+- **No per-version migration script to maintain**
+
+**This is why migration maps stopped being written as executable `fix-scripts`
+around v0.11.0.** The `addIfMissing` pattern made them redundant for the
+mechanical case.
+
+## When to write a migration map
+
+Write one when:
+
+1. **A release ships.** One map per release arc (major or minor — your call based on coherence, not SemVer rigidity). Goal: if a user reads one map, they understand the full transition. Consolidate patch versions into the arc's map.
+2. **A change is breaking.** Old format will *fail* (not just be suboptimal). Breaking changes are rare — flag with `breaking: true` and describe remediation in `## Migration Steps`.
+3. **A change requires user-side action.** Flag `migration-required: true`. Usually: the user must rename a file, move content, or opt in. Most Soma changes don't.
+
+Do **not** write one when:
+
+- The change is a pure bug fix with no new settings
+- The change is additive and `addIfMissing` covers it
+- The change is internal (no user-facing `.soma/` surface)
+
+## File conventions
 
 ```
-v0.6.1-to-v0.6.2.md    ← changes from 0.6.1 to 0.6.2
-v0.6.2-to-v0.6.3.md    ← next version
+migrations/
+├── README.md                         ← this file
+├── phases/
+│   ├── v0.6.1-to-v0.6.2.md
+│   ├── v0.6.2-to-v0.6.3.md
+│   ...
+│   ├── v0.10.0-to-v0.11.0.md        ← per-minor when active development
+│   ├── v0.11.0-to-v0.12.0.md        ← consolidated arc (backfilled s01-f6e928)
+│   ├── v0.12.0-to-v0.20.0.md        ← consolidated arc (backfilled s01-f6e928)
+│   └── v0.20.0-to-v0.20.4.md        ← consolidated arc (dev)
+└── _legacy/                          ← archived pre-0.6.1 maps, if any
 ```
 
-When a user runs `soma update` or `soma doctor`, the system:
+**Per-patch** (v0.X.1 → v0.X.2) granularity is fine but not required.
+**Per-arc** (e.g. v0.11.0 → v0.12.0 covering 0.11.1, 0.11.2, 0.11.3, 0.11.4, 0.12.0)
+tells the story better and is what the current-day practice does.
 
-1. Reads `version` from their `.soma/settings.json` (or assumes `0.6.1` if missing)
-2. Compares against the current agent version
-3. Chains any migration maps needed (e.g., 0.6.1 → 0.6.2 → 0.6.3)
-4. Applies each migration in order
-
-## Migration Map Format
-
-### Required Frontmatter
+## Minimum frontmatter
 
 ```yaml
 ---
-type: migration-map              # always this value
-from: 0.6.2                      # version migrating FROM
-to: 0.6.3                        # version migrating TO
-migration-required: true         # true if user .soma/ needs changes, false if internal only
-breaking: false                  # true if old format will FAIL (not just suboptimal)
-created: 2026-03-22
-status: active                   # active | draft | deprecated
-tags: [hub, install, extensions] # searchable topics
-fix-mode: script                 # script | agent | none
-fix-script: migrate-X-to-Y.sh   # filename in same directory. $1 = .soma/ path.
-                                 # Exit 0 = fixed, 1 = partial, 2 = error.
-doctor-checks:                   # list of {id, check, fix} entries
-  - id: check-name               # unique ID for this check
-    check: "description"         # what to verify
-    fix: script                  # script | agent
-agent-prompt: |                  # prompt for soma doctor --migrate (complex fixes)
-  Instructions for the agent...  # {migration_path} = placeholder for this file
+type: migration-map
+from: "0.11.0"                    # starting version
+to: "0.12.0"                      # ending version
+migration-required: false         # true if user-side action needed
+breaking: false                   # true if old format will fail
+created: 2026-04-22
+status: active                    # active | draft | deprecated
+tags: [somaverse, hub, cache]
+fix-mode: none                    # script | agent | none
 ---
 ```
 
-### Required Body Sections
+**`fix-mode: none`** is the default today. Reserve `script` or `agent` for
+rare breaking transitions that need a mechanical or semantic fix beyond
+what `addIfMissing` can handle.
+
+## Minimum body sections
 
 ```markdown
 # Migration: vX.Y.Z → vA.B.C
 
 ## Summary
-<!-- 2-3 sentences: what changed, is it breaking, what's the impact -->
+<!-- 2-3 sentences: what changed, breaking?, what user sees -->
 
-## Changes
-### 1. Change Name
-<!-- Before/after code blocks. Why it changed. -->
+## What Changed
+<!-- Grouped by theme. Bullet list. Link to tickets/CHANGELOG entries. -->
 
 ## Migration Steps
-### Step 1: Step Name
-<!-- Detection: how to know if this step is needed -->
-<!-- Action: what to do -->
-<!-- Risk: what could go wrong -->
+<!-- "None required" is a valid answer — say so explicitly. -->
+<!-- If opt-in features exist, put them under "### Optional (opt into X)". -->
+
+## Compatibility
+<!-- What old configs / custom extensions / body files continue to work. -->
 
 ## Verify
-<!-- Numbered list of checks to confirm migration succeeded -->
+<!-- Numbered checks to confirm the user's workspace is on the new version. -->
 ```
 
-### Required Files Per Migration
+## How `soma doctor` uses maps today
 
-```
-migrations/
-├── v0.6.2-to-v0.6.3.md           ← migration map (frontmatter + body)
-├── migrate-0.6.2-to-0.6.3.sh     ← fix script (bash, receives $1 = .soma/ path)
-└── README.md                      ← this file
-```
+`soma doctor` and `soma update`:
+1. Read `version` from `.soma/settings.json` (or default `0.6.1` if missing)
+2. Compare against the agent's current version
+3. Report which migration maps are "pending" (purely informational — the maps
+   themselves don't run; they exist for humans and agents to read)
+4. Apply `addIfMissing` to settings and seed any missing body files
 
-### Key Fields Explained
+When `fix-mode: script` or `fix-mode: agent` is set on a map, the doctor
+*can* run the fix script (or agent prompt). As of v0.20.x, no active map
+uses these modes — all migrations are handled by the boot-time pattern
+above.
 
-- **`migration-required`** — `true` if changes need user-side updates, `false` if purely internal
-- **`breaking`** — whether old format will fail (vs just being suboptimal)
-- **`fix-mode`** — how to fix: `script` (mechanical, no LLM), `agent` (needs judgement), or `none`
-- **`fix-script`** — bash script in same directory. Receives `.soma/` path as $1. Exit 0 = fully fixed, exit 1 = partial (needs agent for the rest).
-- **`doctor-checks`** — list of `{id, check, fix}` entries. Each check describes what the doctor should verify, and whether the fix is `script` or `agent`. Guides the doctor's report.
-- **`agent-prompt`** — the prompt `soma doctor --migrate` passes to `soma -p`. For complex fixes only. Use `{migration_path}` as placeholder for the map's own file path.
-- **`changes`** — what changed and why
-- **`steps`** — concrete actions the migration runner (or agent) should take
-- **`verify`** — how to confirm the migration succeeded
+## During development
 
-### Fix Resolution Order
+When making changes that affect user `.soma/` format:
 
-```
-soma doctor           → reads doctor-checks from all pending maps → reports
-soma doctor --fix     → runs fix-script from each map → re-scans → reports remainder
-soma doctor --migrate → loads agent-prompt from maps where fix-mode=agent → spawns soma -p
-```
+1. Are you adding a new settings key? → add an `addIfMissing` line in `soma-boot.ts` and document it in the current release's map.
+2. Are you adding a new body file? → seed it from `core/init.ts` doctor logic and document.
+3. Are you breaking an old format? → stop and think. Write a `fix-mode: script` map if unavoidable.
+4. Otherwise → no action beyond a bullet in the current arc's map.
 
-Most migrations should be `fix-mode: script`. The agent is a fallback for ambiguous cases (e.g., merging content that needs semantic understanding, restructuring that depends on context).
+## Multi-project (v0.7.0+)
 
-## During Development
-
-When making changes to core that affect `.soma/` format:
-
-1. Open (or create) the migration map for the current dev version
-2. Add the change to the `changes` section
-3. Add migration steps
-4. At release: if no changes accumulated, set `migration-required: false`
-
-This happens naturally during development — the map grows as we work.
-
-## Multi-Project (v0.7.0+)
-
-When Project Navigator ships, `soma doctor` will support checking all registered projects:
+When Project Navigator lands, `soma doctor` will scan all registered
+projects. Each project's `.soma/settings.json` tracks its own version
+independently. Maps remain universal — same map applies to any `.soma/`
+regardless of project.
 
 ```
 soma doctor              ← current: scans .soma/ in cwd
 soma doctor --all        ← future: scans all registered projects
 soma doctor --select     ← future: interactive picker
 ```
-
-Each project's `.soma/settings.json` tracks its own version independently. The navigator maintains a registry of project paths. Migration maps are universal — same map applies to any `.soma/` regardless of project.
