@@ -11,6 +11,22 @@ export function createFileOps() {
 /**
  * Extract file operations from tool calls in an assistant message.
  */
+/**
+ * Soma patch (SX-569): skip ephemeral paths that pollute the compaction summary.
+ * Clipboard images (macOS pastes), /tmp screenshots, and browser downloads are
+ * re-referenced every turn the agent pastes something, even after the files are
+ * gone. They bloat the cached <read-files> block without adding signal.
+ */
+function isEphemeralPath(p) {
+    if (!p) return false;
+    if (/\/clipboard-\d{4}-\d{2}-\d{2}-at-[\d.]+-(?:am|pm|AM|PM)\.(?:jpeg|jpg|png|webp|gif)$/.test(p))
+        return true;
+    if (/^(\/private)?\/var\/folders\/.+\/T\/clipboard-/.test(p))
+        return true;
+    if (/^\/tmp\/.*\.(png|jpg|jpeg|webp|gif)$/i.test(p))
+        return true;
+    return false;
+}
 export function extractFileOpsFromMessage(message, fileOps) {
     if (message.role !== "assistant")
         return;
@@ -28,6 +44,8 @@ export function extractFileOpsFromMessage(message, fileOps) {
             continue;
         const path = typeof args.path === "string" ? args.path : undefined;
         if (!path)
+            continue;
+        if (isEphemeralPath(path))
             continue;
         switch (block.name) {
             case "read":

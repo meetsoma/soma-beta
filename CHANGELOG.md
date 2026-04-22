@@ -8,6 +8,113 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.21.1] — 2026-04-22 — Children control panel + tmux baseline
+
+Patch release. Three themes woven together: complete the background-
+delegation surface (Phase B ops), ship background delegation to npm users
+(tmux driver), and fix a months-old dead branch in the boot resume path
+so the delta-diff and `/reload` signal can actually fire.
+
+### Added
+
+- **`children` tool — Phase B ops (SX-553)** — `tail` / `steer` / `kill` /
+  `harvest` on top of `list`. `tail` uses the driver's capture; `steer`
+  sends a chat message (blocked on non-running); `kill` closes the driver
+  container + marks aborted; `harvest` returns the MLR placeholder + removes
+  the entry from the registry. `findChild(id)` accepts either the child id
+  or the driver handle id (e.g. `surface:8`, `soma-child-abc`).
+- **TerminalDriver interface + TmuxDriver baseline (SX-580 Phase C.1–C.2)** —
+  new `core/terminal-drivers/` package with a unified driver interface. Two
+  implementations: `TmuxDriver` (ships to npm — detached tmux sessions,
+  attach-on-demand via `tmux attach -t soma-child-<id>`, works on any Unix
+  with tmux installed, no TTY issues, CI-compatible) and `CmuxDriver` (dev-
+  mode only, existing logic refactored with zero behavior change). Auto-
+  pick prefers `tmux > cmux`. `delegate` gains optional `terminal:'tmux'|'cmux'`
+  param. `ChildEntry` schema gains `driver`, `handle_id`, `attach_hint`;
+  legacy `pane`/`surface` kept for pre-refactor entries. `children list`
+  table gains a driver column. **First time `delegate(background:true)`
+  works for a non-cmux user in any Soma release.**
+- **`soma terminals` CLI + persistent driver preference (SX-580 Phase C.3–C.4)** —
+  new bundled `scripts/soma-terminals.sh` modeled on soma-blog's self-describing
+  pattern. Subcommands: `list`, `detect` (list + recommendation),
+  `status` (current configured driver), `prefer <driver>` (persist to
+  `~/.soma/settings.json` `delegate.terminal`), `setup [<driver>]` (install
+  walkthrough), `doctor [<driver>]` (diagnose why a driver isn't working).
+  `pickDriver()` consults settings before auto-pick. Precedence:
+  per-call `terminal:` param → settings → auto-pick. Agent can run
+  `soma terminals setup` and walk a user through install when
+  `delegate(background:true)` fails with no-driver-available.
+- **`/reload` distinguished from resume in boot message** — `soma-boot` now
+  stamps `process.pid` on every fingerprint entry. On resume, if the most
+  recent entry's PID matches `process.pid`, the extension re-activated in-
+  process (= user ran `/reload`) and the boot message becomes
+  `[Soma Boot — /reloaded]` with the explicit signal `any 'needs /reload'
+  work from the last turn is now live`. Prompt cache is already busted by
+  `/reload` so emitting a message here costs nothing. Distinguishes from:
+  ctrl-C restart (new PID, resumed session) and periodic checkpoints (not
+  a boot at all).
+- **Background-delegation guide** — new `docs/guides/background-delegation.md`
+  with the sync-vs-background decision tree, tmux install hints, mental
+  model, attach-on-demand pattern, full children-ops examples, kill-vs-harvest
+  semantics, the MLR-writing gap stated honestly, troubleshooting entries
+  for the two surfaced bugs, and a pointer for authoring new drivers.
+  `docs/tools.md` + `docs/commands.md` gain cross-links and CLI table rows.
+- **Upstream Pi patches shipped as dist overlays:**
+  - **pi-tui inline image height cap (SX-579)** — tall clipboard screenshots
+    no longer take over the terminal. Capped at a readable row count via
+    `PI_TUI_MAX_IMAGE_ROWS` (default 80% of `process.stdout.rows`, min 20).
+    Patch is PR-shaped (opt-in, backward-compatible) pending the upstream
+    `CONTRIBUTING.md` flow.
+  - **Compaction ephemeral-path filter (SX-569)** — `extractFileOpsFromMessage`
+    in Pi's compaction util was collecting every `read`/`write`/`edit` path
+    into `<read-files>` / `<modified-files>` XML blocks. macOS clipboard
+    paste-temp files (`/var/folders/.../T/clipboard-*.jpeg`) + `/tmp/*.{png,jpg,…}`
+    screenshots accumulated across compactions. Added `isEphemeralPath(p)`
+    guard. Zero payload mutation.
+
+### Fixed
+
+- **Boot resume fingerprint reader was reading the wrong field** — filter
+  code read `entry.content?.fingerprint`, but Pi's `SessionManager.appendEntry`
+  stores payloads under `entry.data`. The delta-diff branch had been silently
+  dead since it was written; every resume fell through to the "no fingerprint"
+  fallback. Fixed — delta-diff resume now actually fires when heat or muscles
+  changed.
+- **`delegate(background:true)` was broken since Phase A shipped** — `CMUX_SCRIPT`
+  path resolution used an unset env var + a dev-install symlink that doesn't
+  cover `scripts/`. Every call hit "install cmux" even when cmux was running.
+  New resolution walks `SOMA_CMUX_SCRIPT` env → `SOMA_CODING_AGENT_DIR` →
+  cwd-relative → walk-up → dev-symlink → PATH. Uncovered by end-to-end
+  exercise.
+- **Model alias leakage to children** — `spawnBackground` passed bare aliases
+  (`haiku`, `sonnet`, `opus`) straight to `soma --model`, and Pi's model
+  registry picked the wrong provider (`us.anthropic.haiku-4-5` = bedrock)
+  in the child's environment. Child died on missing bedrock creds.
+  `MODEL_ALIASES` now exported from `core/delegate-core.ts`; aliases are
+  pre-resolved to fully-qualified ids (`claude-haiku-4-5`) before building
+  the boot command.
+- **Registry stayed `running` after a child's container closed** — no auto
+  status-transition on pane death. New `reconcileChildStatuses()` pass runs
+  at the start of `children(op:'list')`: any registry entry whose driver
+  container is gone auto-flips to `completed` with `ended_at`.
+- **Channel guard false-positive on `SOMA_PROJECT_DIR`** — the `soma_pro`
+  keyword in the guard's pattern matched `SOMA_PROJECT_DIR` env mentions in
+  benign output. Narrowed the pattern.
+
+### Verified end-to-end (s01-b1b654)
+
+`delegate(background:true, terminal:'tmux', model:'haiku')` → `children(op:'list')`
+→ `tail` → `steer` → `kill` → `harvest` against a real tmux-spawned child.
+Child booted in a detached tmux session, executed the task, responded to
+steer, kill cleanly closed the session (`tmux ls` confirmed: no server),
+harvest returned the summary and removed the registry entry. Model resolved
+to `claude-haiku-4-5` end-to-end. Same flow also verified against a
+cmux-spawned child earlier in the same session — both drivers work.
+
+Release notes: `.soma/releases/v0.20.x/v0.21.1/release-notes.md`.
+
 ## [0.21.0] — 2026-04-22 — Cache Economics + Discoverability + Self-Knowledge
 
 ### Added
