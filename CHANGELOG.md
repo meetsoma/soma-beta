@@ -10,6 +10,57 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 _Nothing yet._
 
+## [0.21.1.1] — 2026-04-22 — Same-cycle audit patches
+
+Micro-release caught during a post-ship audit of `v0.21.0..HEAD`. Three
+findings with real code impact; two dead-code + hygiene tidy-ups.
+
+### Added
+
+- **`soma model-sync` — audit + set `defaultModel` across all scopes.** New
+  bundled script `scripts/soma-model-sync.sh`. Audits global
+  (`~/.soma/settings.json`) + project (`<cwd>/.soma/settings.json`) + any
+  `.soma/` dirs under `$HOME` (with `--crawl`). `--set <id>` writes
+  everywhere; `--yes` skips confirmation; idempotent. Bundled default is
+  `claude-opus-4-7` (the latest Opus on Claude Max plans). Creates
+  `settings.json` where missing; preserves all unrelated keys in files
+  that are already populated. Closes the "keep every project on the
+  current model without hand-editing" gap. 23-assertion test suite at
+  `tests/test-model-sync.sh`. Guide: `docs/guides/sane-defaults.md`.
+
+### Fixed
+
+- **TmuxDriver shell-quoting.** `tmuxExec` used `JSON.stringify` per-arg,
+  which wraps in **double** quotes — bash double-quotes let `$(...)` +
+  backticks + `$VAR` expand on the parent shell before tmux sees them.
+  A task like `"list files in $(pwd)/logs"` would arrive at the child
+  with `$(pwd)` already substituted for the parent's cwd. Switched to
+  single-quote wrapping with the classic `'\''` escape for embedded
+  quotes. Verified against 7 edge cases (plain, single + double quotes,
+  backticks, `$()`, paths, semicolons — all round-trip literal).
+
+  Not a security bug (self-injection only; same user), but a correctness
+  bug that landed in v0.21.1 and would surface the first time a user
+  wrote a task with shell metacharacters.
+
+- **`soma-model-sync` shell-to-python interpolation.** `read/write_default_model`
+  built python `-c` source via `$var` interpolation. A model id with a
+  single quote character (or shell metacharacter) would break the `-c`
+  block. Moved path + model to env vars (`SOMA_MS_PATH`, `SOMA_MS_MODEL`);
+  python source is now static.
+
+- **`.gitignore`: `__pycache__/` + `*.pyc`.** An accidentally-tracked
+  `scripts/__pycache__/soma-children.cpython-313.pyc` landed in the
+  v0.21.1 agent dev commits. Confirmed it did NOT ship to soma-beta
+  (`.releaseignore` filtered it), so no user runtime impact. Cleaned up +
+  prevented future recurrence.
+
+- **Dead code removed.** `shEscape` helper in `core/terminal-drivers/tmux.ts`
+  was orphaned after the signature changed during the driver refactor.
+
+- **Import order.** `biome --write --unsafe` on `core/terminal-drivers/index.ts`
+  + `extensions/soma-delegate.ts` to match the project's import conventions.
+
 ## [0.21.1] — 2026-04-22 — Children control panel + tmux baseline
 
 Patch release. Three themes woven together: complete the background-

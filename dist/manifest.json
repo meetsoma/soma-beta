@@ -1,7 +1,7 @@
 {
-  "version": "0.21.0",
-  "buildId": "9f5f6aa978a91edb",
-  "buildDate": "2026-04-22T23:51:41.069Z",
+  "version": "0.21.1.1",
+  "buildId": "ab0eb63d3d31bc7c",
+  "buildDate": "2026-04-23T00:55:39.594Z",
   "piVersion": "0.67.68",
   "fileCount": 179,
   "files": {
@@ -100,7 +100,7 @@
     "extensions/soma-capabilities.js": "a30b97741bf20931173263bb7ff39f196b33dd726969c2b9a0c06a4575f20280",
     "extensions/soma-code-tools.js": "8a6db0861c83392bd806e7a69120573771312ae6d8d50ff5e14b5e49006558e3",
     "extensions/soma-context.js": "2ddba123c595e87435e028e676e99c08755f78efde28935ff1651ed8da0ab64e",
-    "extensions/soma-delegate.js": "df0cbac83eb242803efb5ecb79755ea95a803bc09345d772fd79a7479651eed2",
+    "extensions/soma-delegate.js": "ed84465e1f8b3846f52ff169e8c8b3057e0dcab8fa6cba617f88ba2057033b41",
     "extensions/soma-guard.js": "7fe21266b6ee35d1532dae21a0c9d322e2d6a1ff4ce4b28c4bbe451f11d96f31",
     "extensions/soma-header.js": "715ae331fddb6962c66ce9988b3ead18cb9e7da7df0655ec648f647c1aa7b06f",
     "extensions/soma-hub.js": "00df40f9cf80eecb61a66b54e14ea4336e729991f7394facae934f5cd4adc04b",
