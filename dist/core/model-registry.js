@@ -16,14 +16,12 @@
  */
 import { getModels, getProviders, registerApiProvider, resetApiProviders, } from "@mariozechner/pi-ai";
 import { registerOAuthProvider, resetOAuthProviders } from "@mariozechner/pi-ai/oauth";
-import { Type } from "@sinclair/typebox";
-import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { Type } from "typebox";
+import { Compile } from "typebox/compile";
 import { getAgentDir } from "../config.js";
 import { clearConfigValueCache, resolveConfigValueOrThrow, resolveConfigValueUncached, resolveHeadersOrThrow, } from "./resolve-config-value.js";
-const Ajv = AjvModule.default || AjvModule;
-const ajv = new Ajv();
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({
     p50: Type.Optional(Type.Number()),
@@ -88,6 +86,7 @@ const OpenAICompletionsCompatSchema = Type.Object({
         Type.Literal("qwen"),
         Type.Literal("qwen-chat-template"),
     ])),
+    cacheControlFormat: Type.Optional(Type.Literal("anthropic")),
     openRouterRouting: Type.Optional(OpenRouterRoutingSchema),
     vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
     supportsStrictMode: Type.Optional(Type.Boolean()),
@@ -143,7 +142,19 @@ const ProviderConfigSchema = Type.Object({
 const ModelsConfigSchema = Type.Object({
     providers: Type.Record(Type.String(), ProviderConfigSchema),
 });
-ajv.addSchema(ModelsConfigSchema, "ModelsConfig");
+const validateModelsConfig = Compile(ModelsConfigSchema);
+function formatValidationPath(error) {
+    if (error.keyword === "required") {
+        const requiredProperties = error.params.requiredProperties;
+        const requiredProperty = requiredProperties?.[0];
+        if (requiredProperty) {
+            const basePath = error.instancePath.replace(/^\//, "").replace(/\//g, ".");
+            return basePath ? `${basePath}.${requiredProperty}` : requiredProperty;
+        }
+    }
+    const path = error.instancePath.replace(/^\//, "").replace(/\//g, ".");
+    return path || "root";
+}
 function emptyCustomModelsResult(error) {
     return { models: [], overrides: new Map(), modelOverrides: new Map(), error };
 }
@@ -308,14 +319,15 @@ export class ModelRegistry {
         }
         try {
             const content = readFileSync(modelsJsonPath, "utf-8");
-            const config = JSON.parse(content);
-            // Validate schema
-            const validate = ajv.getSchema("ModelsConfig");
-            if (!validate(config)) {
-                const errors = validate.errors?.map((e) => `  - ${e.instancePath || "root"}: ${e.message}`).join("\n") ||
-                    "Unknown schema error";
+            const parsed = JSON.parse(content);
+            if (!validateModelsConfig.Check(parsed)) {
+                const errors = validateModelsConfig
+                    .Errors(parsed)
+                    .map((error) => `  - ${formatValidationPath(error)}: ${error.message}`)
+                    .join("\n") || "Unknown schema error";
                 return emptyCustomModelsResult(`Invalid models.json schema:\n${errors}\n\nFile: ${modelsJsonPath}`);
             }
+            const config = parsed;
             // Additional validation
             this.validateConfig(config);
             const overrides = new Map();
@@ -352,9 +364,9 @@ export class ModelRegistry {
             const models = providerConfig.models ?? [];
             const hasModelOverrides = providerConfig.modelOverrides && Object.keys(providerConfig.modelOverrides).length > 0;
             if (models.length === 0) {
-                // Override-only config: needs baseUrl, compat, modelOverrides, or some combination.
-                if (!providerConfig.baseUrl && !providerConfig.compat && !hasModelOverrides) {
-                    throw new Error(`Provider ${providerName}: must specify "baseUrl", "compat", "modelOverrides", or "models".`);
+                // Override-only config: needs baseUrl, headers, compat, modelOverrides, or some combination.
+                if (!providerConfig.baseUrl && !providerConfig.headers && !providerConfig.compat && !hasModelOverrides) {
+                    throw new Error(`Provider ${providerName}: must specify "baseUrl", "headers", "compat", "modelOverrides", or "models".`);
                 }
             }
             else if (!isBuiltIn) {

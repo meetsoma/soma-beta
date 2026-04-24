@@ -38,13 +38,14 @@ import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import { exportSessionToHtml } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import { ExtensionRunner, wrapRegisteredTools, } from "./extensions/index.js";
+import { emitSessionShutdownEvent } from "./extensions/runner.js";
 import { expandPromptTemplate } from "./prompt-templates.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry } from "./session-manager.js";
 import { createSyntheticSourceInfo } from "./source-info.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
-import { createToolDefinitionFromAgentTool, wrapToolDefinition } from "./tools/tool-definition-wrapper.js";
+import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.js";
 /**
  * Parse a skill block from message text.
  * Returns null if the text doesn't contain a skill block.
@@ -100,7 +101,7 @@ export class AgentSession {
     _bashAbortController = undefined;
     _pendingBashMessages = [];
     // Extension system
-    _extensionRunner = undefined;
+    _extensionRunner;
     _turnIndex = 0;
     _resourceLoader;
     _customTools;
@@ -108,6 +109,7 @@ export class AgentSession {
     _cwd;
     _extensionRunnerRef;
     _initialActiveToolNames;
+    _allowedToolNames;
     _baseToolsOverride;
     _sessionStartEvent;
     _extensionUIContext;
@@ -124,6 +126,7 @@ export class AgentSession {
     _toolPromptGuidelines = new Map();
     // Base system prompt (without extension appends) - used to apply fresh appends each turn
     _baseSystemPrompt = "";
+    _baseSystemPromptOptions;
     constructor(config) {
         this.agent = config.agent;
         this.sessionManager = config.sessionManager;
@@ -135,6 +138,7 @@ export class AgentSession {
         this._modelRegistry = config.modelRegistry;
         this._extensionRunnerRef = config.extensionRunnerRef;
         this._initialActiveToolNames = config.initialActiveToolNames;
+        this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
         this._baseToolsOverride = config.baseToolsOverride;
         this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
         // Always subscribe to agent events for internal handling
@@ -178,7 +182,7 @@ export class AgentSession {
     _installAgentToolHooks() {
         this.agent.beforeToolCall = async ({ toolCall, args }) => {
             const runner = this._extensionRunner;
-            if (!runner?.hasHandlers("tool_call")) {
+            if (!runner.hasHandlers("tool_call")) {
                 return undefined;
             }
             await this._agentEventQueue;
@@ -199,7 +203,7 @@ export class AgentSession {
         };
         this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
             const runner = this._extensionRunner;
-            if (!runner?.hasHandlers("tool_result")) {
+            if (!runner.hasHandlers("tool_result")) {
                 return undefined;
             }
             const hookResult = await runner.emitToolResult({
@@ -381,8 +385,6 @@ export class AgentSession {
     }
     /** Emit extension events based on agent events */
     async _emitExtensionEvent(event) {
-        if (!this._extensionRunner)
-            return;
         if (event.type === "agent_start") {
             this._turnIndex = 0;
             await this._extensionRunner.emit({ type: "agent_start" });
@@ -500,6 +502,7 @@ export class AgentSession {
      * Call this when completely done with the session.
      */
     dispose() {
+        this._extensionRunner.invalidate("This extension instance is stale after session replacement or reload. Use the provided replacement-session context instead.");
         this._disconnectFromAgent();
         this._eventListeners = [];
     }
@@ -655,7 +658,7 @@ export class AgentSession {
         const appendSystemPrompt = loaderAppendSystemPrompt.length > 0 ? loaderAppendSystemPrompt.join("\n\n") : undefined;
         const loadedSkills = this._resourceLoader.getSkills().skills;
         const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
-        return buildSystemPrompt({
+        this._baseSystemPromptOptions = {
             cwd: this._cwd,
             skills: loadedSkills,
             contextFiles: loadedContextFiles,
@@ -664,7 +667,8 @@ export class AgentSession {
             selectedTools: validToolNames,
             toolSnippets,
             promptGuidelines,
-        });
+        };
+        return buildSystemPrompt(this._baseSystemPromptOptions);
     }
     // =========================================================================
     // Prompting
@@ -696,7 +700,7 @@ export class AgentSession {
             // Emit input event for extension interception (before skill/template expansion)
             let currentText = text;
             let currentImages = options?.images;
-            if (this._extensionRunner?.hasHandlers("input")) {
+            if (this._extensionRunner.hasHandlers("input")) {
                 const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, options?.source ?? "interactive");
                 if (inputResult.action === "handled") {
                     preflightResult?.(true);
@@ -768,29 +772,27 @@ export class AgentSession {
             }
             this._pendingNextTurnMessages = [];
             // Emit before_agent_start extension event
-            if (this._extensionRunner) {
-                const result = await this._extensionRunner.emitBeforeAgentStart(expandedText, currentImages, this._baseSystemPrompt);
-                // Add all custom messages from extensions
-                if (result?.messages) {
-                    for (const msg of result.messages) {
-                        messages.push({
-                            role: "custom",
-                            customType: msg.customType,
-                            content: msg.content,
-                            display: msg.display,
-                            details: msg.details,
-                            timestamp: Date.now(),
-                        });
-                    }
+            const result = await this._extensionRunner.emitBeforeAgentStart(expandedText, currentImages, this._baseSystemPrompt, this._baseSystemPromptOptions);
+            // Add all custom messages from extensions
+            if (result?.messages) {
+                for (const msg of result.messages) {
+                    messages.push({
+                        role: "custom",
+                        customType: msg.customType,
+                        content: msg.content,
+                        display: msg.display,
+                        details: msg.details,
+                        timestamp: Date.now(),
+                    });
                 }
-                // Apply extension-modified system prompt, or reset to base
-                if (result?.systemPrompt) {
-                    this.agent.state.systemPrompt = result.systemPrompt;
-                }
-                else {
-                    // Ensure we're using the base prompt (in case previous turn had modifications)
-                    this.agent.state.systemPrompt = this._baseSystemPrompt;
-                }
+            }
+            // Apply extension-modified system prompt, or reset to base
+            if (result?.systemPrompt) {
+                this.agent.state.systemPrompt = result.systemPrompt;
+            }
+            else {
+                // Ensure we're using the base prompt (in case previous turn had modifications)
+                this.agent.state.systemPrompt = this._baseSystemPrompt;
             }
         }
         catch (error) {
@@ -808,8 +810,6 @@ export class AgentSession {
      * Try to execute an extension command. Returns true if command was found and executed.
      */
     async _tryExecuteExtensionCommand(text) {
-        if (!this._extensionRunner)
-            return false;
         // Parse command name and args
         const spaceIndex = text.indexOf(" ");
         const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
@@ -855,7 +855,7 @@ export class AgentSession {
         }
         catch (err) {
             // Emit error like extension commands do
-            this._extensionRunner?.emitError({
+            this._extensionRunner.emitError({
                 extensionPath: skill.filePath,
                 event: "skill_expansion",
                 error: err instanceof Error ? err.message : String(err),
@@ -934,8 +934,6 @@ export class AgentSession {
      * Throw an error if the text is an extension command.
      */
     _throwIfExtensionCommand(text) {
-        if (!this._extensionRunner)
-            return;
         const spaceIndex = text.indexOf(" ");
         const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
         const command = this._extensionRunner.getCommand(commandName);
@@ -1063,8 +1061,6 @@ export class AgentSession {
     // Model Management
     // =========================================================================
     async _emitModelSelect(nextModel, previousModel, source) {
-        if (!this._extensionRunner)
-            return;
         if (modelsAreEqual(previousModel, nextModel))
             return;
         await this._extensionRunner.emit({
@@ -1282,7 +1278,7 @@ export class AgentSession {
             }
             let extensionCompaction;
             let fromExtension = false;
-            if (this._extensionRunner?.hasHandlers("session_before_compact")) {
+            if (this._extensionRunner.hasHandlers("session_before_compact")) {
                 const result = (await this._extensionRunner.emit({
                     type: "session_before_compact",
                     preparation,
@@ -1311,7 +1307,7 @@ export class AgentSession {
             }
             else {
                 // Generate compaction result
-                const result = await compact(preparation, this.model, apiKey, headers, customInstructions, this._compactionAbortController.signal);
+                const result = await compact(preparation, this.model, apiKey, headers, customInstructions, this._compactionAbortController.signal, this.thinkingLevel);
                 summary = result.summary;
                 firstKeptEntryId = result.firstKeptEntryId;
                 tokensBefore = result.tokensBefore;
@@ -1505,7 +1501,7 @@ export class AgentSession {
             }
             let extensionCompaction;
             let fromExtension = false;
-            if (this._extensionRunner?.hasHandlers("session_before_compact")) {
+            if (this._extensionRunner.hasHandlers("session_before_compact")) {
                 const extensionResult = (await this._extensionRunner.emit({
                     type: "session_before_compact",
                     preparation,
@@ -1541,7 +1537,7 @@ export class AgentSession {
             }
             else {
                 // Generate compaction result
-                const compactResult = await compact(preparation, this.model, apiKey, headers, undefined, this._autoCompactionAbortController.signal);
+                const compactResult = await compact(preparation, this.model, apiKey, headers, undefined, this._autoCompactionAbortController.signal, this.thinkingLevel);
                 summary = compactResult.summary;
                 firstKeptEntryId = compactResult.firstKeptEntryId;
                 tokensBefore = compactResult.tokensBefore;
@@ -1635,14 +1631,12 @@ export class AgentSession {
         if (bindings.onError !== undefined) {
             this._extensionErrorListener = bindings.onError;
         }
-        if (this._extensionRunner) {
-            this._applyExtensionBindings(this._extensionRunner);
-            await this._extensionRunner.emit(this._sessionStartEvent);
-            await this.extendResourcesFromExtensions(this._sessionStartEvent.reason === "reload" ? "reload" : "startup");
-        }
+        this._applyExtensionBindings(this._extensionRunner);
+        await this._extensionRunner.emit(this._sessionStartEvent);
+        await this.extendResourcesFromExtensions(this._sessionStartEvent.reason === "reload" ? "reload" : "startup");
     }
     async extendResourcesFromExtensions(reason) {
-        if (!this._extensionRunner?.hasHandlers("resources_discover")) {
+        if (!this._extensionRunner.hasHandlers("resources_discover")) {
             return;
         }
         const { skillPaths, promptPaths, themePaths } = await this._extensionRunner.emitResourcesDiscover(this._cwd, reason);
@@ -1803,15 +1797,19 @@ export class AgentSession {
     _refreshToolRegistry(options) {
         const previousRegistryNames = new Set(this._toolRegistry.keys());
         const previousActiveToolNames = this.getActiveToolNames();
-        const registeredTools = this._extensionRunner?.getAllRegisteredTools() ?? [];
+        const allowedToolNames = this._allowedToolNames;
+        const isAllowedTool = (name) => !allowedToolNames || allowedToolNames.has(name);
+        const registeredTools = this._extensionRunner.getAllRegisteredTools();
         const allCustomTools = [
             ...registeredTools,
             ...this._customTools.map((definition) => ({
                 definition,
                 sourceInfo: createSyntheticSourceInfo(`<sdk:${definition.name}>`, { source: "sdk" }),
             })),
-        ];
-        const definitionRegistry = new Map(Array.from(this._baseToolDefinitions.entries()).map(([name, definition]) => [
+        ].filter((tool) => isAllowedTool(tool.definition.name));
+        const definitionRegistry = new Map(Array.from(this._baseToolDefinitions.entries())
+            .filter(([name]) => isAllowedTool(name))
+            .map(([name, definition]) => [
             name,
             {
                 definition,
@@ -1837,21 +1835,28 @@ export class AgentSession {
             return guidelines.length > 0 ? [definition.name, guidelines] : undefined;
         })
             .filter((entry) => entry !== undefined));
-        const wrappedExtensionTools = this._extensionRunner
-            ? wrapRegisteredTools(allCustomTools, this._extensionRunner)
-            : [];
-        const toolRegistry = new Map(Array.from(this._baseToolDefinitions.values()).map((definition) => [
-            definition.name,
-            wrapToolDefinition(definition),
-        ]));
+        const runner = this._extensionRunner;
+        const wrappedExtensionTools = wrapRegisteredTools(allCustomTools, runner);
+        const wrappedBuiltInTools = wrapRegisteredTools(Array.from(this._baseToolDefinitions.values())
+            .filter((definition) => isAllowedTool(definition.name))
+            .map((definition) => ({
+            definition,
+            sourceInfo: createSyntheticSourceInfo(`<builtin:${definition.name}>`, { source: "builtin" }),
+        })), runner);
+        const toolRegistry = new Map(wrappedBuiltInTools.map((tool) => [tool.name, tool]));
         for (const tool of wrappedExtensionTools) {
             toolRegistry.set(tool.name, tool);
         }
         this._toolRegistry = toolRegistry;
-        const nextActiveToolNames = options?.activeToolNames
-            ? [...options.activeToolNames]
-            : [...previousActiveToolNames];
-        if (options?.includeAllExtensionTools) {
+        const nextActiveToolNames = (options?.activeToolNames ? [...options.activeToolNames] : [...previousActiveToolNames]).filter((name) => isAllowedTool(name));
+        if (allowedToolNames) {
+            for (const toolName of this._toolRegistry.keys()) {
+                if (allowedToolNames.has(toolName)) {
+                    nextActiveToolNames.push(toolName);
+                }
+            }
+        }
+        else if (options?.includeAllExtensionTools) {
             for (const tool of wrappedExtensionTools) {
                 nextActiveToolNames.push(tool.name);
             }
@@ -1868,6 +1873,7 @@ export class AgentSession {
     _buildRuntime(options) {
         const autoResizeImages = this.settingsManager.getImageAutoResize();
         const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
+        const shellPath = this.settingsManager.getShellPath();
         const baseToolDefinitions = this._baseToolsOverride
             ? Object.fromEntries(Object.entries(this._baseToolsOverride).map(([name, tool]) => [
                 name,
@@ -1875,7 +1881,7 @@ export class AgentSession {
             ]))
             : createAllToolDefinitions(this._cwd, {
                 read: { autoResizeImages },
-                bash: { commandPrefix: shellCommandPrefix },
+                bash: { commandPrefix: shellCommandPrefix, shellPath },
             });
         this._baseToolDefinitions = new Map(Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool]));
         const extensionsResult = this._resourceLoader.getExtensions();
@@ -1884,19 +1890,12 @@ export class AgentSession {
                 extensionsResult.runtime.flagValues.set(name, value);
             }
         }
-        const hasExtensions = extensionsResult.extensions.length > 0;
-        const hasCustomTools = this._customTools.length > 0;
-        this._extensionRunner =
-            hasExtensions || hasCustomTools
-                ? new ExtensionRunner(extensionsResult.extensions, extensionsResult.runtime, this._cwd, this.sessionManager, this._modelRegistry)
-                : undefined;
+        this._extensionRunner = new ExtensionRunner(extensionsResult.extensions, extensionsResult.runtime, this._cwd, this.sessionManager, this._modelRegistry);
         if (this._extensionRunnerRef) {
             this._extensionRunnerRef.current = this._extensionRunner;
         }
-        if (this._extensionRunner) {
-            this._bindExtensionCore(this._extensionRunner);
-            this._applyExtensionBindings(this._extensionRunner);
-        }
+        this._bindExtensionCore(this._extensionRunner);
+        this._applyExtensionBindings(this._extensionRunner);
         const defaultActiveToolNames = this._baseToolsOverride
             ? Object.keys(this._baseToolsOverride)
             : ["read", "bash", "edit", "write"];
@@ -1907,8 +1906,8 @@ export class AgentSession {
         });
     }
     async reload() {
-        const previousFlagValues = this._extensionRunner?.getFlagValues();
-        await this._extensionRunner?.emit({ type: "session_shutdown" });
+        const previousFlagValues = this._extensionRunner.getFlagValues();
+        await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
         await this.settingsManager.reload();
         resetApiProviders();
         await this._resourceLoader.reload();
@@ -1921,7 +1920,7 @@ export class AgentSession {
             this._extensionCommandContextActions ||
             this._extensionShutdownHandler ||
             this._extensionErrorListener;
-        if (this._extensionRunner && hasBindings) {
+        if (hasBindings) {
             await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
             await this.extendResourcesFromExtensions("reload");
         }
@@ -2063,9 +2062,10 @@ export class AgentSession {
         this._bashAbortController = new AbortController();
         // Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
         const prefix = this.settingsManager.getShellCommandPrefix();
+        const shellPath = this.settingsManager.getShellPath();
         const resolvedCommand = prefix ? `${prefix}\n${command}` : command;
         try {
-            const result = await executeBashWithOperations(resolvedCommand, this.sessionManager.getCwd(), options?.operations ?? createLocalBashOperations(), {
+            const result = await executeBashWithOperations(resolvedCommand, this.sessionManager.getCwd(), options?.operations ?? createLocalBashOperations({ shellPath }), {
                 onChunk,
                 signal: this._bashAbortController.signal,
             });
@@ -2191,7 +2191,7 @@ export class AgentSession {
         let extensionSummary;
         let fromExtension = false;
         // Emit session_before_tree event
-        if (this._extensionRunner?.hasHandlers("session_before_tree")) {
+        if (this._extensionRunner.hasHandlers("session_before_tree")) {
             const result = (await this._extensionRunner.emit({
                 type: "session_before_tree",
                 preparation,
@@ -2299,15 +2299,13 @@ export class AgentSession {
         const sessionContext = this.sessionManager.buildSessionContext();
         this.agent.state.messages = sessionContext.messages;
         // Emit session_tree event
-        if (this._extensionRunner) {
-            await this._extensionRunner.emit({
-                type: "session_tree",
-                newLeafId: this.sessionManager.getLeafId(),
-                oldLeafId,
-                summaryEntry,
-                fromExtension: summaryText ? fromExtension : undefined,
-            });
-        }
+        await this._extensionRunner.emit({
+            type: "session_tree",
+            newLeafId: this.sessionManager.getLeafId(),
+            oldLeafId,
+            summaryEntry,
+            fromExtension: summaryText ? fromExtension : undefined,
+        });
         // Emit to custom tools
         this._branchSummaryAbortController = undefined;
         return { editorText, cancelled: false, summaryEntry };
@@ -2510,11 +2508,17 @@ export class AgentSession {
     // =========================================================================
     // Extension System
     // =========================================================================
+    createReplacedSessionContext() {
+        const context = Object.defineProperties({}, Object.getOwnPropertyDescriptors(this._extensionRunner.createCommandContext()));
+        context.sendMessage = (message, options) => this.sendCustomMessage(message, options);
+        context.sendUserMessage = (content, options) => this.sendUserMessage(content, options);
+        return context;
+    }
     /**
      * Check if extensions have handlers for a specific event type.
      */
     hasExtensionHandlers(eventType) {
-        return this._extensionRunner?.hasHandlers(eventType) ?? false;
+        return this._extensionRunner.hasHandlers(eventType);
     }
     /**
      * Get the extension runner (for setting UI context and error handlers).

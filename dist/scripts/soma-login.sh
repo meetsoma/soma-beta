@@ -70,9 +70,17 @@ echo "🔗 Connecting Soma to Somaverse..."
 echo ""
 
 # 1. Create pairing code
-PAIR_RESPONSE=$(curl -s -X POST "$HUB_URL/api/pair/create" \
+# Hardened s01-d7bdf0: --fail (explicit HTTP-error exit), --max-time (no hang),
+#   -L (follow redirects). Stderr captured for diagnostics on failure.
+PAIR_RESPONSE=$(curl -sSL --fail --max-time 10 -X POST "$HUB_URL/api/pair/create" \
   -H "Content-Type: application/json" \
-  -d "{\"device_id\": \"$DEVICE_ID\"}" 2>/dev/null)
+  -d "{\"device_id\": \"$DEVICE_ID\"}" 2>/tmp/soma-login-err.$$) || {
+  echo "❌ Failed to reach hub at $HUB_URL/api/pair/create" >&2
+  echo "   $(cat /tmp/soma-login-err.$$ 2>/dev/null | tr -d '\n' | head -c 200)" >&2
+  rm -f /tmp/soma-login-err.$$
+  exit 1
+}
+rm -f /tmp/soma-login-err.$$
 
 CODE=$(echo "$PAIR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('code',''))" 2>/dev/null)
 SECRET=$(echo "$PAIR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('secret',''))" 2>/dev/null)
@@ -103,16 +111,33 @@ MAX_ATTEMPTS=150  # 5 minutes (2s intervals)
 
 while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
   ATTEMPTS=$((ATTEMPTS + 1))
-  
-  STATUS=$(curl -s "$HUB_URL/api/pair/$CODE/status?secret=$SECRET" 2>/dev/null)
+
+  # SECURITY (s01-d7bdf0): secret moved from URL query to Authorization header.
+  # URL query strings leak into server access logs (nginx default fmt, CloudFront
+  # logs, etc.). The secret is the ephemeral proof-of-pair-origination; log leak
+  # lets anyone complete the pairing on their end. Header avoids that class of
+  # exposure. Back-compat note: hub must accept either ?secret=... OR
+  # X-Pair-Secret header until all clients update.
+  STATUS=$(curl -sSL --max-time 5 \
+    -H "X-Pair-Secret: $SECRET" \
+    "$HUB_URL/api/pair/$CODE/status" 2>/dev/null)
   PAIRED=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('paired',False))" 2>/dev/null)
   DEVICE_KEY=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('device_key',''))" 2>/dev/null)
   
   if [ "$PAIRED" = "True" ] && [ -n "$DEVICE_KEY" ] && [ "$DEVICE_KEY" != "None" ]; then
-    # Save device key
+    # SECURITY (s01-d7bdf0):
+    #   (a) umask 077 before write avoids world-readable race between open() and chmod().
+    #   (b) Shape-check the key before writing. Hub is trusted today, but defense
+    #       in depth — a malformed key ('<script>...') would poison downstream
+    #       Authorization: header construction.
+    if ! printf '%s' "$DEVICE_KEY" | grep -qE '^[A-Za-z0-9_.-]{16,256}$'; then
+      echo "❌ Hub returned malformed device_key. Refusing to save." >&2
+      echo "   Got: $(printf '%s' \"$DEVICE_KEY\" | head -c 40)..." >&2
+      exit 1
+    fi
     mkdir -p "$(dirname "$KEY_FILE")"
-    echo "$DEVICE_KEY" > "$KEY_FILE"
-    chmod 600 "$KEY_FILE"
+    (umask 077; printf '%s\n' "$DEVICE_KEY" > "$KEY_FILE")
+    chmod 600 "$KEY_FILE"  # belt-and-braces
     
     echo ""
     echo "✅ Paired! Device key saved to $KEY_FILE"

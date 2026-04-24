@@ -12,7 +12,7 @@ import { join, dirname } from "path";
 import { homedir, platform } from "os";
 import { fileURLToPath } from "url";
 import { execSync, execFileSync } from "child_process";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { soma as voice } from "./personality.js";
 
 // ── Shared modules ─────────────────────────────────────────────────────
@@ -647,30 +647,52 @@ async function healthCheck() {
     }
   }
 
-  // Pi runtime drift — declared version (package.json) vs installed (node_modules).
-  // Catches the exact class of bug where npm install hadn't been re-run after
-  // a package.json bump, so runtime Pi didn't match what the release tested.
-  // (shipping-integrity Layer 4, s01-054a4c — Curtis's opus-4-7 "missing" bug.)
+  // Pi runtime drift — compare declared (package.json) vs BUNDLED (dist/manifest.json).
+  // The bundled copy in dist/ is what actually executes. node_modules in
+  // CORE_DIR can go stale (never re-installed) while dist/ stays current via
+  // build-dist.mjs. Pre-SX-604 this read from node_modules and mis-reported
+  // Pi versions for every dev install. See ../../.soma/releases/v0.22.x/v0.22.0/.
   if (installed) {
     try {
       const pkgPath = join(CORE_DIR, "package.json");
       if (existsSync(pkgPath)) {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
         const declaredPi = (pkg.dependencies || {})["@mariozechner/pi-coding-agent"];
-        const piPkgPath = join(CORE_DIR, "node_modules", "@mariozechner", "pi-coding-agent", "package.json");
-        if (existsSync(piPkgPath)) {
-          const installedPi = JSON.parse(readFileSync(piPkgPath, "utf-8")).version;
-          const declaredClean = (declaredPi || "").replace(/^[\^~]/, "");
-          if (declaredClean && installedPi && declaredClean !== installedPi) {
-            console.log(`  ${yellow("⚠")} Pi runtime drift: declared ${cyan(declaredClean)}, installed ${cyan(installedPi)}`);
-            console.log(`    ${dim("Fix:")} ${green("soma update")}`);
-            warnings++;
-          } else if (installedPi) {
-            console.log(`  ${green("✓")} Pi runtime ${installedPi}`);
+        const declaredClean = (declaredPi || "").replace(/^[\^~]/, "");
+
+        // Authoritative: what Pi version is in dist/ (the one that actually runs)?
+        let bundledPi = null;
+        let bundledSource = null;
+        const manifestPath = join(CORE_DIR, "dist", "manifest.json");
+        if (existsSync(manifestPath)) {
+          try {
+            const m = JSON.parse(readFileSync(manifestPath, "utf-8"));
+            if (m.piVersion) { bundledPi = m.piVersion; bundledSource = "dist/manifest.json"; }
+          } catch {}
+        }
+        // Fallback: node_modules (stale-prone, warn if we had to use it).
+        let fallbackUsed = false;
+        if (!bundledPi) {
+          const piPkgPath = join(CORE_DIR, "node_modules", "@mariozechner", "pi-coding-agent", "package.json");
+          if (existsSync(piPkgPath)) {
+            try {
+              bundledPi = JSON.parse(readFileSync(piPkgPath, "utf-8")).version;
+              bundledSource = "node_modules (fallback — dist/manifest.json missing)";
+              fallbackUsed = true;
+            } catch {}
           }
-        } else {
-          console.log(`  ${yellow("⚠")} Pi not installed — run ${green("soma update")}`);
+        }
+
+        if (!bundledPi) {
+          console.log(`  ${yellow("⚠")} Pi not found — run ${green("soma update")}`);
           warnings++;
+        } else if (declaredClean && declaredClean !== bundledPi) {
+          console.log(`  ${yellow("⚠")} Pi runtime drift: declared ${cyan(declaredClean)}, bundled ${cyan(bundledPi)}`);
+          console.log(`    ${dim("Fix:")} ${green("soma update")}${fallbackUsed ? dim(" (also rebuild dist: node scripts/build-dist.mjs --clean)") : ""}`);
+          warnings++;
+        } else {
+          const suffix = fallbackUsed ? dim(" (via node_modules fallback)") : "";
+          console.log(`  ${green("✓")} Pi runtime ${bundledPi}${suffix}`);
         }
       }
     } catch {
@@ -724,7 +746,7 @@ async function projectDoctor() {
 
   printSigma();
   const agentV = getAgentVersion();
-  const projectV = getProjectVersion();
+  let projectV = getProjectVersion();
   const installed = isInstalled();
 
   console.log(`  ${bold("Soma")} — Doctor`);
@@ -753,11 +775,29 @@ async function projectDoctor() {
   }
 
   if (!projectV) {
-    console.log(`  ${yellow("⚠")} Project .soma/ has no version (pre-versioning).`);
-    console.log(`  This project was likely created before v0.6.3.`);
-    console.log(`  Run ${green("/soma doctor")} inside a session to migrate, or re-init with ${green("soma init")}.`);
-    console.log("");
-    return;
+    // Pre-versioning branch — stamp current agent version into settings.json
+    // (create if missing, merge if present) and fall through to migration
+    // replay. Prior behavior dead-ended with circular guidance.
+    console.log(`  ${yellow("⚠")} Project .soma/ has no version (pre-versioning). Stamping...`);
+    try {
+      const settingsPath = join(process.cwd(), ".soma", "settings.json");
+      let cfg = {};
+      if (existsSync(settingsPath)) {
+        try { cfg = JSON.parse(readFileSync(settingsPath, "utf8")); } catch { /* malformed — start fresh */ }
+      } else {
+        mkdirSync(dirname(settingsPath), { recursive: true });
+      }
+      cfg.version = agentV;
+      writeFileSync(settingsPath, JSON.stringify(cfg, null, 2) + "\n");
+      console.log(`  ${green("✓")} Stamped .soma/settings.json → v${agentV}`);
+      console.log("");
+      projectV = agentV;  // continue into migration replay
+    } catch (e) {
+      console.log(`  ${red("✗")} Failed to stamp settings.json: ${e.message}`);
+      console.log(`  Run ${green("soma init")} to scaffold a fresh .soma/settings.json.`);
+      console.log("");
+      return;
+    }
   }
 
   // Declarative migration replay (SX-562).
@@ -872,6 +912,87 @@ async function projectDoctor() {
       if (replayFixes > 0) {
         console.log(`  ${green("✓")} Migration replay applied ${replayFixes} backfill(s)`);
         console.log("");
+      }
+    }
+  } catch { /* best-effort; doctor continues */ }
+
+  // Bundled body template drift check (SX-603).
+  //
+  // For each tracked template file (_mind.md, _memory.md, DNA.md):
+  //   local-hash == current-bundled-hash   → up to date, skip
+  //   local-hash ∈ historical-bundled-hashes → pristine-outdated, AUTO-REFRESH
+  //   else                                 → user-edited, WARN + suggest merge
+  //
+  // Data: migrations/template-hashes.json (bundled with agent). Historical
+  // list grows each release that changes a bundled template. Pristine case
+  // is safe because user made no edits; customized case preserves user
+  // intent but surfaces that improvements exist.
+  //
+  // Stepping stone to SX-599 (global body layer) which applies same hash
+  // mechanic at the ~/.soma/body/ chain layer. This release's mechanism
+  // operates per-project; SX-599's version operates globally.
+  try {
+    const softSomaDir = join(process.cwd(), ".soma");
+    if (existsSync(softSomaDir)) {
+      const templateRoots = [CORE_DIR, join(CORE_DIR, "dist")];
+      try {
+        const devCore = readlinkSync(join(CORE_DIR, "core"));
+        if (devCore) {
+          const devRoot = dirname(devCore);
+          templateRoots.push(devRoot, join(devRoot, "dist"));
+        }
+      } catch { /* not dev mode */ }
+
+      // Locate hash registry + bundled template dir.
+      let registry = null;
+      let bundledTemplatesDir = null;
+      for (const root of templateRoots) {
+        const regPath = join(root, "migrations", "template-hashes.json");
+        if (existsSync(regPath) && !registry) {
+          try { registry = JSON.parse(readFileSync(regPath, "utf-8")); } catch {}
+        }
+        const td = join(root, "templates", "default");
+        if (existsSync(td) && !bundledTemplatesDir) bundledTemplatesDir = td;
+      }
+
+      if (registry?.templates && bundledTemplatesDir) {
+        const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
+
+        let refreshed = 0;
+        let customized = 0;
+        const customizedFiles = [];
+
+        for (const [filename, meta] of Object.entries(registry.templates)) {
+          const localPath = join(softSomaDir, "body", filename);
+          const bundledPath = join(bundledTemplatesDir, filename);
+          if (!existsSync(localPath) || !existsSync(bundledPath)) continue;
+
+          const localContent = readFileSync(localPath);
+          const bundledContent = readFileSync(bundledPath);
+          const localHash = sha256(localContent);
+          const bundledHash = sha256(bundledContent);
+
+          if (localHash === bundledHash) continue; // up to date
+
+          const historical = (meta.historical || []).map(h => h.sha256);
+          if (historical.includes(localHash)) {
+            // Pristine but outdated — safe auto-refresh.
+            writeFileSync(localPath, bundledContent);
+            console.log(`  ${green("✓")} Refreshed body/${filename} (pristine older bundled → current)`);
+            refreshed++;
+          } else {
+            customized++;
+            customizedFiles.push(filename);
+          }
+        }
+
+        if (refreshed > 0) console.log("");
+        if (customized > 0) {
+          console.log(`  ${yellow("⚠")} Customized body files with bundled updates available: ${customizedFiles.join(", ")}`);
+          console.log(`    ${dim("Review updates: diff body/<file> vs " + bundledTemplatesDir + "/<file>")}`);
+          console.log(`    ${dim("To adopt bundled: rm body/<file> && soma init --force (safe — writeIfMissing preserves others)")}`);
+          console.log("");
+        }
       }
     }
   } catch { /* best-effort; doctor continues */ }

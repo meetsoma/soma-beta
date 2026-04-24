@@ -3,7 +3,7 @@ type: content
 name: dna
 status: active
 created: 2026-03-23
-updated: 2026-04-01
+updated: 2026-04-23
 description: Body blueprint — how your files work, how to grow them
 lazy: true
 ---
@@ -21,6 +21,12 @@ Read this when you need to understand, update, or add body files.
 
 **`_` prefix = template.** Contains `{{variables}}`, defines structure.
 **No prefix = content.** Loaded as-is into a `{{filename}}` variable.
+
+**Variables only work inside `_` templates.** Content files (soul.md, body.md,
+any non-underscore file) are loaded as raw text. If you write `{{ecosystem}}`
+inside `body.md`, it renders as the literal string — not the resolved variable.
+Only `_mind.md`, `_memory.md`, `_boot.md`, `_first-breath.md`, and other `_`
+prefixed files interpolate.
 
 ```
 body/
@@ -52,6 +58,39 @@ content — the system prompt already carries identity and protocols.
 
 **`_first-breath.md`** — Your very first session in a project. Guides
 you through orientation, self-exploration, and meeting the user.
+
+## Conditional Blocks
+
+Templates support if/else blocks based on variable truthiness:
+
+```markdown
+{{#voice}}
+# Voice
+{{voice}}
+{{/voice}}
+
+{{#has_preload}}
+Content shown when a preload was loaded this session.
+{{/has_preload}}
+```
+
+A variable is "truthy" if it resolves to a non-empty string that isn't `"false"`.
+Empty string, missing variable, and `"false"` are falsy. Use these to hide
+headings when optional content is absent.
+
+## Identity Resolution
+
+The runtime loads identity from the first file found in this order:
+
+```
+1. body/soul.md     ← structured identity (the body architecture way)
+2. SOMA.md          ← canonical monolith (starter projects)
+3. identity.md      ← legacy monolith
+```
+
+When `body/soul.md` exists, the others are **never read**. Dead files don't
+break anything but they confuse future selves — archive them when the soul is
+established.
 
 ## Adding Your Own Files
 
@@ -105,6 +144,21 @@ What you noticed about the user. What surprised you.
 **When to split:** If a file grows past ~50 lines, move reference content
 to a new file with `lazy: true`. The soul stays light. The body carries the weight.
 
+## Known Quirks
+
+- **Preload picked by mtime, not filename.** `soma inhale` loads the preload
+  with the most recent modification time. Edit an old preload (even accidentally)
+  and it becomes "newest." Use `soma inhale --list` to verify what will load.
+- **Renaming CWD breaks bash for the session.** If you rename/delete the
+  directory a session was started from, `bash` becomes unusable until restart.
+  Read/Write/Edit still work via absolute paths.
+- **Template chain priority: first wins, no merge.** If `body/_mind.md` exists
+  at project level, parent/global `_mind.md` is ignored entirely. Content files
+  (non-template) DO merge across the chain — child wins on name collision.
+- **Resume (`soma -c`) skips `_boot.md`.** The system prompt (`_mind.md`) always
+  renders, but resume sends a minimal delta message instead of the full boot
+  template. Put persistent per-session content in `_mind.md`, not `_boot.md`.
+
 ## Full Reference
 
 For the complete variable reference, boot lifecycle, soma chain, settings
@@ -117,6 +171,7 @@ integration, conditional blocks, and known quirks:
 
 Self-exploration:
 - Run `soma --help` to see all CLI commands
-- Run `/body vars` to see all available variables with current values
-- Run `/body check` for a health report on your body files
-- Run `/body map` to see the template structure visually
+- Run `soma body vars` to see all available variables with current values
+- Run `soma body check` for a health report on your body files
+- Run `soma body slots` to inspect cache cost of each `_mind.md` slot
+- Run `soma body audit` for layout issues (cache-unfriendly ordering, etc.)

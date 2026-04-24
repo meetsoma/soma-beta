@@ -1,6 +1,7 @@
 import { Container, fuzzyFilter, getKeybindings, Input, Key, matchesKey, Spacer, Text, } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { keyText } from "./keybinding-hints.js";
 function isEnabled(enabledIds, id) {
     return enabledIds === null || enabledIds.includes(id);
 }
@@ -89,7 +90,7 @@ export class ScopedModelsSelectorComponent extends Container {
         this.addChild(new DynamicBorder());
         this.addChild(new Spacer(1));
         this.addChild(new Text(theme.fg("accent", theme.bold("Model Configuration")), 0, 0));
-        this.addChild(new Text(theme.fg("muted", "Session-only. Ctrl+S to save to settings."), 0, 0));
+        this.addChild(new Text(theme.fg("muted", `Session-only. ${keyText("app.models.save")} to save to settings.`), 0, 0));
         this.addChild(new Spacer(1));
         // Search input
         this.searchInput = new Input();
@@ -119,7 +120,15 @@ export class ScopedModelsSelectorComponent extends Container {
         const enabledCount = this.enabledIds?.length ?? this.allIds.length;
         const allEnabled = this.enabledIds === null;
         const countText = allEnabled ? "all enabled" : `${enabledCount}/${this.allIds.length} enabled`;
-        const parts = ["Enter toggle", "^A all", "^X clear", "^P provider", "Alt+↑↓ reorder", "^S save", countText];
+        const parts = [
+            `${keyText("tui.select.confirm")} toggle`,
+            `${keyText("app.models.enableAll")} all`,
+            `${keyText("app.models.clearAll")} clear`,
+            `${keyText("app.models.toggleProvider")} provider`,
+            `${keyText("app.models.reorderUp")}/${keyText("app.models.reorderDown")} reorder`,
+            `${keyText("app.models.save")} save`,
+            countText,
+        ];
         return this.isDirty
             ? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "(unsaved)")
             : theme.fg("dim", `  ${parts.join(" · ")}`);
@@ -180,13 +189,15 @@ export class ScopedModelsSelectorComponent extends Container {
             this.updateList();
             return;
         }
-        // Alt+Up/Down - Reorder enabled models
-        if (matchesKey(data, Key.alt("up")) || matchesKey(data, Key.alt("down"))) {
+        // Reorder enabled models
+        const reorderUp = kb.matches(data, "app.models.reorderUp");
+        const reorderDown = kb.matches(data, "app.models.reorderDown");
+        if (reorderUp || reorderDown) {
             if (this.enabledIds === null)
                 return;
             const item = this.filteredItems[this.selectedIndex];
             if (item && isEnabled(this.enabledIds, item.fullId)) {
-                const delta = matchesKey(data, Key.alt("up")) ? -1 : 1;
+                const delta = reorderUp ? -1 : 1;
                 const currentIndex = this.enabledIds.indexOf(item.fullId);
                 const newIndex = currentIndex + delta;
                 // Only move if within bounds
@@ -201,7 +212,7 @@ export class ScopedModelsSelectorComponent extends Container {
             return;
         }
         // Toggle on Enter
-        if (matchesKey(data, Key.enter)) {
+        if (kb.matches(data, "tui.select.confirm")) {
             const item = this.filteredItems[this.selectedIndex];
             if (item) {
                 this.enabledIds = toggle(this.enabledIds, item.fullId);
@@ -211,8 +222,8 @@ export class ScopedModelsSelectorComponent extends Container {
             }
             return;
         }
-        // Ctrl+A - Enable all (filtered if search active, otherwise all)
-        if (matchesKey(data, Key.ctrl("a"))) {
+        // Enable all (filtered if search active, otherwise all)
+        if (kb.matches(data, "app.models.enableAll")) {
             const targetIds = this.searchInput.getValue() ? this.filteredItems.map((i) => i.fullId) : undefined;
             this.enabledIds = enableAll(this.enabledIds, this.allIds, targetIds);
             this.isDirty = true;
@@ -220,8 +231,8 @@ export class ScopedModelsSelectorComponent extends Container {
             this.notifyChange();
             return;
         }
-        // Ctrl+X - Clear all (filtered if search active, otherwise all)
-        if (matchesKey(data, Key.ctrl("x"))) {
+        // Clear all (filtered if search active, otherwise all)
+        if (kb.matches(data, "app.models.clearAll")) {
             const targetIds = this.searchInput.getValue() ? this.filteredItems.map((i) => i.fullId) : undefined;
             this.enabledIds = clearAll(this.enabledIds, this.allIds, targetIds);
             this.isDirty = true;
@@ -229,8 +240,8 @@ export class ScopedModelsSelectorComponent extends Container {
             this.notifyChange();
             return;
         }
-        // Ctrl+P - Toggle provider of current item
-        if (matchesKey(data, Key.ctrl("p"))) {
+        // Toggle provider of current item
+        if (kb.matches(data, "app.models.toggleProvider")) {
             const item = this.filteredItems[this.selectedIndex];
             if (item) {
                 const provider = item.model.provider;
@@ -245,8 +256,8 @@ export class ScopedModelsSelectorComponent extends Container {
             }
             return;
         }
-        // Ctrl+S - Save/persist to settings
-        if (matchesKey(data, Key.ctrl("s"))) {
+        // Save/persist to settings
+        if (kb.matches(data, "app.models.save")) {
             this.callbacks.onPersist(this.enabledIds === null ? null : [...this.enabledIds]);
             this.isDirty = false;
             this.footerText.setText(this.getFooterText());

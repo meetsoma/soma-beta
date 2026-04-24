@@ -1,5 +1,5 @@
 import { Box, Container, getCapabilities, Image, Spacer, Text } from "@mariozechner/pi-tui";
-import { allToolDefinitions } from "../../../core/tools/index.js";
+import { createAllToolDefinitions } from "../../../core/tools/index.js";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
@@ -17,6 +17,7 @@ export class ToolExecutionComponent extends Container {
     args;
     expanded = false;
     showImages;
+    imageWidthCells;
     isPartial = true;
     toolDefinition;
     builtInToolDefinition;
@@ -27,14 +28,15 @@ export class ToolExecutionComponent extends Container {
     result;
     convertedImages = new Map();
     hideComponent = false;
-    constructor(toolName, toolCallId, args, options = {}, toolDefinition, ui, cwd = process.cwd()) {
+    constructor(toolName, toolCallId, args, options = {}, toolDefinition, ui, cwd) {
         super();
         this.toolName = toolName;
         this.toolCallId = toolCallId;
         this.args = args;
         this.toolDefinition = toolDefinition;
-        this.builtInToolDefinition = allToolDefinitions[toolName];
+        this.builtInToolDefinition = createAllToolDefinitions(cwd)[toolName];
         this.showImages = options.showImages ?? true;
+        this.imageWidthCells = options.imageWidthCells ?? 60;
         this.ui = ui;
         this.cwd = cwd;
         this.addChild(new Spacer(1));
@@ -164,6 +166,10 @@ export class ToolExecutionComponent extends Container {
         this.showImages = show;
         this.updateDisplay();
     }
+    setImageWidthCells(width) {
+        this.imageWidthCells = Math.max(1, Math.floor(width));
+        this.updateDisplay();
+    }
     invalidate() {
         super.invalidate();
         this.updateDisplay();
@@ -260,7 +266,7 @@ export class ToolExecutionComponent extends Container {
                     const spacer = new Spacer(1);
                     this.addChild(spacer);
                     this.imageSpacers.push(spacer);
-                    const imageComponent = new Image(imageData, imageMimeType, { fallbackColor: (s) => theme.fg("toolOutput", s) }, { maxWidthCells: 60 });
+                    const imageComponent = new Image(imageData, imageMimeType, { fallbackColor: (s) => theme.fg("toolOutput", s) }, { maxWidthCells: this.imageWidthCells });
                     this.imageComponents.push(imageComponent);
                     this.addChild(imageComponent);
                 }

@@ -49,6 +49,7 @@ export class AgentSessionRuntime {
     createRuntime;
     _diagnostics;
     _modelFallbackMessage;
+    rebindSession;
     constructor(_session, _services, createRuntime, _diagnostics = [], _modelFallbackMessage) {
         this._session = _session;
         this._services = _services;
@@ -71,9 +72,12 @@ export class AgentSessionRuntime {
     get modelFallbackMessage() {
         return this._modelFallbackMessage;
     }
+    setRebindSession(rebindSession) {
+        this.rebindSession = rebindSession;
+    }
     async emitBeforeSwitch(reason, targetSessionFile) {
         const runner = this.session.extensionRunner;
-        if (!runner?.hasHandlers("session_before_switch")) {
+        if (!runner.hasHandlers("session_before_switch")) {
             return { cancelled: false };
         }
         const result = await runner.emit({
@@ -83,45 +87,56 @@ export class AgentSessionRuntime {
         });
         return { cancelled: result?.cancel === true };
     }
-    async emitBeforeFork(entryId) {
+    async emitBeforeFork(entryId, options) {
         const runner = this.session.extensionRunner;
-        if (!runner?.hasHandlers("session_before_fork")) {
+        if (!runner.hasHandlers("session_before_fork")) {
             return { cancelled: false };
         }
         const result = await runner.emit({
             type: "session_before_fork",
             entryId,
+            ...options,
         });
         return { cancelled: result?.cancel === true };
     }
-    async teardownCurrent() {
-        await emitSessionShutdownEvent(this.session.extensionRunner);
+    async teardownCurrent(reason, targetSessionFile) {
+        await emitSessionShutdownEvent(this.session.extensionRunner, {
+            type: "session_shutdown",
+            reason,
+            targetSessionFile,
+        });
         this.session.dispose();
     }
     apply(result) {
-        if (process.cwd() !== result.services.cwd) {
-            process.chdir(result.services.cwd);
-        }
         this._session = result.session;
         this._services = result.services;
         this._diagnostics = result.diagnostics;
         this._modelFallbackMessage = result.modelFallbackMessage;
     }
-    async switchSession(sessionPath, cwdOverride) {
+    async finishSessionReplacement(withSession) {
+        if (this.rebindSession) {
+            await this.rebindSession(this.session);
+        }
+        if (withSession) {
+            await withSession(this.session.createReplacedSessionContext());
+        }
+    }
+    async switchSession(sessionPath, options) {
         const beforeResult = await this.emitBeforeSwitch("resume", sessionPath);
         if (beforeResult.cancelled) {
             return beforeResult;
         }
         const previousSessionFile = this.session.sessionFile;
-        const sessionManager = SessionManager.open(sessionPath, undefined, cwdOverride);
+        const sessionManager = SessionManager.open(sessionPath, undefined, options?.cwdOverride);
         assertSessionCwdExists(sessionManager, this.cwd);
-        await this.teardownCurrent();
+        await this.teardownCurrent("resume", sessionManager.getSessionFile());
         this.apply(await this.createRuntime({
             cwd: sessionManager.getCwd(),
             agentDir: this.services.agentDir,
             sessionManager,
             sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
         }));
+        await this.finishSessionReplacement(options?.withSession);
         return { cancelled: false };
     }
     async newSession(options) {
@@ -135,7 +150,7 @@ export class AgentSessionRuntime {
         if (options?.parentSession) {
             sessionManager.newSession({ parentSession: options.parentSession });
         }
-        await this.teardownCurrent();
+        await this.teardownCurrent("new", sessionManager.getSessionFile());
         this.apply(await this.createRuntime({
             cwd: this.cwd,
             agentDir: this.services.agentDir,
@@ -146,66 +161,82 @@ export class AgentSessionRuntime {
             await options.setup(this.session.sessionManager);
             this.session.agent.state.messages = this.session.sessionManager.buildSessionContext().messages;
         }
+        await this.finishSessionReplacement(options?.withSession);
         return { cancelled: false };
     }
-    async fork(entryId) {
-        const beforeResult = await this.emitBeforeFork(entryId);
+    async fork(entryId, options) {
+        const position = options?.position ?? "before";
+        const beforeResult = await this.emitBeforeFork(entryId, { position });
         if (beforeResult.cancelled) {
             return { cancelled: true };
         }
+        let targetLeafId;
+        let selectedText;
         const selectedEntry = this.session.sessionManager.getEntry(entryId);
-        if (!selectedEntry || selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
+        if (!selectedEntry) {
             throw new Error("Invalid entry ID for forking");
         }
+        if (position === "at") {
+            targetLeafId = selectedEntry.id;
+        }
+        else {
+            if (selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
+                throw new Error("Invalid entry ID for forking");
+            }
+            targetLeafId = selectedEntry.parentId;
+            selectedText = extractUserMessageText(selectedEntry.message.content);
+        }
         const previousSessionFile = this.session.sessionFile;
-        const selectedText = extractUserMessageText(selectedEntry.message.content);
         if (this.session.sessionManager.isPersisted()) {
             const currentSessionFile = this.session.sessionFile;
             if (!currentSessionFile) {
                 throw new Error("Persisted session is missing a session file");
             }
             const sessionDir = this.session.sessionManager.getSessionDir();
-            if (!selectedEntry.parentId) {
+            if (!targetLeafId) {
                 const sessionManager = SessionManager.create(this.cwd, sessionDir);
                 sessionManager.newSession({ parentSession: currentSessionFile });
-                await this.teardownCurrent();
+                await this.teardownCurrent("fork", sessionManager.getSessionFile());
                 this.apply(await this.createRuntime({
                     cwd: this.cwd,
                     agentDir: this.services.agentDir,
                     sessionManager,
                     sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile },
                 }));
+                await this.finishSessionReplacement(options?.withSession);
                 return { cancelled: false, selectedText };
             }
             const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
-            const forkedSessionPath = sourceManager.createBranchedSession(selectedEntry.parentId);
+            const forkedSessionPath = sourceManager.createBranchedSession(targetLeafId);
             if (!forkedSessionPath) {
                 throw new Error("Failed to create forked session");
             }
             const sessionManager = SessionManager.open(forkedSessionPath, sessionDir);
-            await this.teardownCurrent();
+            await this.teardownCurrent("fork", sessionManager.getSessionFile());
             this.apply(await this.createRuntime({
                 cwd: sessionManager.getCwd(),
                 agentDir: this.services.agentDir,
                 sessionManager,
                 sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile },
             }));
+            await this.finishSessionReplacement(options?.withSession);
             return { cancelled: false, selectedText };
         }
         const sessionManager = this.session.sessionManager;
-        if (!selectedEntry.parentId) {
+        if (!targetLeafId) {
             sessionManager.newSession({ parentSession: this.session.sessionFile });
         }
         else {
-            sessionManager.createBranchedSession(selectedEntry.parentId);
+            sessionManager.createBranchedSession(targetLeafId);
         }
-        await this.teardownCurrent();
+        await this.teardownCurrent("fork", sessionManager.getSessionFile());
         this.apply(await this.createRuntime({
             cwd: this.cwd,
             agentDir: this.services.agentDir,
             sessionManager,
             sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile },
         }));
+        await this.finishSessionReplacement(options?.withSession);
         return { cancelled: false, selectedText };
     }
     /**
@@ -235,17 +266,21 @@ export class AgentSessionRuntime {
         }
         const sessionManager = SessionManager.open(destinationPath, sessionDir, cwdOverride);
         assertSessionCwdExists(sessionManager, this.cwd);
-        await this.teardownCurrent();
+        await this.teardownCurrent("resume", sessionManager.getSessionFile());
         this.apply(await this.createRuntime({
             cwd: sessionManager.getCwd(),
             agentDir: this.services.agentDir,
             sessionManager,
             sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
         }));
+        await this.finishSessionReplacement();
         return { cancelled: false };
     }
     async dispose() {
-        await emitSessionShutdownEvent(this.session.extensionRunner);
+        await emitSessionShutdownEvent(this.session.extensionRunner, {
+            type: "session_shutdown",
+            reason: "quit",
+        });
         this.session.dispose();
     }
 }
@@ -258,9 +293,6 @@ export class AgentSessionRuntime {
 export async function createAgentSessionRuntime(createRuntime, options) {
     assertSessionCwdExists(options.sessionManager, options.cwd);
     const result = await createRuntime(options);
-    if (process.cwd() !== result.services.cwd) {
-        process.chdir(result.services.cwd);
-    }
     return new AgentSessionRuntime(result.session, result.services, createRuntime, result.diagnostics, result.modelFallbackMessage);
 }
 export { createAgentSessionFromServices, createAgentSessionServices, } from "./agent-session-services.js";

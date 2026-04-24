@@ -17,9 +17,9 @@
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
 import { formatSkillsForPrompt } from "./skills.js";
 /** Build the system prompt with tools, guidelines, and context */
-export function buildSystemPrompt(options = {}) {
+export function buildSystemPrompt(options) {
     const { customPrompt, selectedTools, toolSnippets, promptGuidelines, appendSystemPrompt, cwd, contextFiles: providedContextFiles, skills: providedSkills, } = options;
-    const resolvedCwd = cwd ?? process.cwd();
+    const resolvedCwd = cwd;
     const promptCwd = resolvedCwd.replace(/\\/g, "/");
     const now = new Date();
     const year = now.getFullYear();

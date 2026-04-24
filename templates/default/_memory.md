@@ -3,7 +3,7 @@ type: template
 name: memory
 description: Preload format — what the agent writes at exhale to brief the next session
 created: 2026-03-23
-updated: 2026-04-14
+updated: 2026-04-23
 ---
 **Step 1.5: Update living docs** — before the preload, update the sources it points to.
 The preload points to these — if they're stale, the preload is misleading.
@@ -68,6 +68,24 @@ tags: []
      TIE warnings to the tasks they affect. Don't list "pre-push hook broken"
      separately from "ship breathe fix" — connect them:
      "Breathe fix needs shipping, BUT pre-push hook is broken — debug that first." -->
+
+## Prior Preloads
+<!-- 3-5 most recent sessions, newest first. One line each.
+     Format: `<session-id>` (date) — what shipped + where state lives.
+     This gives next-self quick ancestry without opening every preload.
+     Typical source: `ls -t memory/preloads/ | head -5` (adjust to your layout).
+     Skip sessions that were pure experiments or rotated mid-work. -->
+
+## Kanban Snapshot
+<!-- If you track work in a kanban / ticket file, 3-8 lines here.
+     Current arc + in-progress + next-up. Not the full kanban — just
+     what the next-self needs to orient.
+     Format:
+       Arc: <current release or theme>
+       In progress: (none — or named ticket + phase)
+       Next up: <top 2-3 items>
+       Recently shipped: <ticket> (<session-id>)
+     Skip this section if you don't track tickets formally. -->
 
 ## Orient From
 <!-- Files to read if Next Session isn't enough. Include [line-ranges].

@@ -102,7 +102,7 @@ export class FooterDataProvider {
     refreshInFlight = false;
     refreshPending = false;
     disposed = false;
-    constructor(cwd = process.cwd()) {
+    constructor(cwd) {
         this.cwd = cwd;
         this.gitPaths = findGitPaths(cwd);
         this.setupGitWatcher();

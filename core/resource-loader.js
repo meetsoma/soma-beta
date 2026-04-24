@@ -15,7 +15,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
-import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { CONFIG_DIR_NAME } from "../config.js";
 import { loadThemeFromPath } from "../modes/interactive/theme/theme.js";
 import { isLocalPath } from "../utils/paths.js";
 import { createEventBus } from "./event-bus.js";
@@ -58,9 +58,9 @@ function loadContextFileFromDir(dir) {
     }
     return null;
 }
-export function loadProjectContextFiles(options = {}) {
-    const resolvedCwd = options.cwd ?? process.cwd();
-    const resolvedAgentDir = options.agentDir ?? getAgentDir();
+export function loadProjectContextFiles(options) {
+    const resolvedCwd = options.cwd;
+    const resolvedAgentDir = options.agentDir;
     const contextFiles = [];
     const seenPaths = new Set();
     const globalContext = loadContextFileFromDir(resolvedAgentDir);
@@ -129,8 +129,8 @@ export class DefaultResourceLoader {
     lastPromptPaths;
     lastThemePaths;
     constructor(options) {
-        this.cwd = options.cwd ?? process.cwd();
-        this.agentDir = options.agentDir ?? getAgentDir();
+        this.cwd = options.cwd;
+        this.agentDir = options.agentDir;
         this.settingsManager = options.settingsManager ?? SettingsManager.create(this.cwd, this.agentDir);
         this.eventBus = options.eventBus ?? createEventBus();
         this.packageManager = new DefaultPackageManager({

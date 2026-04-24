@@ -24,18 +24,30 @@ import { findInitialModel } from "./model-resolver.js";
 import { DefaultResourceLoader } from "./resource-loader.js";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
+import { isInstallTelemetryEnabled } from "./telemetry.js";
 import { time } from "./timings.js";
-import { allTools, bashTool, codingTools, createBashTool, createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, editTool, findTool, grepTool, lsTool, readOnlyTools, readTool, withFileMutationQueue, writeTool, } from "./tools/index.js";
+import { createBashTool, createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, withFileMutationQueue, } from "./tools/index.js";
 // Re-exports
 export * from "./agent-session-runtime.js";
-export { 
-// Pre-built tools (use process.cwd())
-readTool, bashTool, editTool, writeTool, grepTool, findTool, lsTool, codingTools, readOnlyTools, allTools as allBuiltInTools, withFileMutationQueue, 
+export { withFileMutationQueue, 
 // Tool factories (for custom cwd)
 createCodingTools, createReadOnlyTools, createReadTool, createBashTool, createEditTool, createWriteTool, createGrepTool, createFindTool, createLsTool, };
 // Helper Functions
 function getDefaultAgentDir() {
     return getAgentDir();
+}
+function getOpenRouterAttributionHeaders(model, settingsManager) {
+    if (!isInstallTelemetryEnabled(settingsManager)) {
+        return undefined;
+    }
+    if (model.provider !== "openrouter" && !model.baseUrl.includes("openrouter.ai")) {
+        return undefined;
+    }
+    return {
+        "HTTP-Referer": "https://pi.dev",
+        "X-OpenRouter-Title": "pi",
+        "X-OpenRouter-Categories": "cli-agent",
+    };
 }
 /**
  * Create an AgentSession with the specified options.
@@ -73,7 +85,7 @@ function getDefaultAgentDir() {
  * ```
  */
 export async function createAgentSession(options = {}) {
-    const cwd = options.cwd ?? process.cwd();
+    const cwd = options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd();
     const agentDir = options.agentDir ?? getDefaultAgentDir();
     let resourceLoader = options.resourceLoader;
     // Use provided or create AuthStorage and ModelRegistry
@@ -138,9 +150,7 @@ export async function createAgentSession(options = {}) {
         thinkingLevel = "off";
     }
     const defaultActiveToolNames = ["read", "bash", "edit", "write"];
-    const initialActiveToolNames = options.tools
-        ? options.tools.map((t) => t.name).filter((n) => n in allTools)
-        : defaultActiveToolNames;
+    const initialActiveToolNames = options.tools ? [...options.tools] : defaultActiveToolNames;
     let agent;
     // Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
     const convertToLlmWithBlockImages = (messages) => {
@@ -186,10 +196,13 @@ export async function createAgentSession(options = {}) {
             if (!auth.ok) {
                 throw new Error(auth.error);
             }
+            const openRouterAttributionHeaders = getOpenRouterAttributionHeaders(model, settingsManager);
             return streamSimple(model, context, {
                 ...options,
                 apiKey: auth.apiKey,
-                headers: auth.headers || options?.headers ? { ...auth.headers, ...options?.headers } : undefined,
+                headers: openRouterAttributionHeaders || auth.headers || options?.headers
+                    ? { ...openRouterAttributionHeaders, ...auth.headers, ...options?.headers }
+                    : undefined,
             });
         },
         onPayload: async (payload, _model) => {
@@ -247,6 +260,7 @@ export async function createAgentSession(options = {}) {
         customTools: options.customTools,
         modelRegistry,
         initialActiveToolNames,
+        allowedToolNames: options.tools,
         extensionRunnerRef,
         sessionStartEvent: options.sessionStartEvent,
     });

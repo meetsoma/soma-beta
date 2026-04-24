@@ -109,6 +109,9 @@ export async function runRpcMode(runtimeHost) {
         setWorkingMessage(_message) {
             // Working message not supported in RPC mode - requires TUI loader access
         },
+        setWorkingIndicator(_options) {
+            // Working indicator customization not supported in RPC mode - requires TUI loader access
+        },
         setHiddenThinkingLabel(_label) {
             // Hidden thinking label not supported in RPC mode - requires TUI message rendering access
         },
@@ -183,6 +186,9 @@ export async function runRpcMode(runtimeHost) {
                 output({ type: "extension_ui_request", id, method: "editor", title, prefill });
             });
         },
+        addAutocompleteProvider() {
+            // Autocomplete provider composition is not supported in RPC mode
+        },
         setEditorComponent() {
             // Custom editor components not supported in RPC mode
         },
@@ -207,24 +213,18 @@ export async function runRpcMode(runtimeHost) {
             // Tool expansion not supported in RPC mode - no TUI
         },
     });
+    runtimeHost.setRebindSession(async () => {
+        await rebindSession();
+    });
     const rebindSession = async () => {
         session = runtimeHost.session;
         await session.bindExtensions({
             uiContext: createExtensionUIContext(),
             commandContextActions: {
                 waitForIdle: () => session.agent.waitForIdle(),
-                newSession: async (options) => {
-                    const result = await runtimeHost.newSession(options);
-                    if (!result.cancelled) {
-                        await rebindSession();
-                    }
-                    return result;
-                },
-                fork: async (entryId) => {
-                    const result = await runtimeHost.fork(entryId);
-                    if (!result.cancelled) {
-                        await rebindSession();
-                    }
+                newSession: async (options) => runtimeHost.newSession(options),
+                fork: async (entryId, forkOptions) => {
+                    const result = await runtimeHost.fork(entryId, forkOptions);
                     return { cancelled: result.cancelled };
                 },
                 navigateTree: async (targetId, options) => {
@@ -236,12 +236,8 @@ export async function runRpcMode(runtimeHost) {
                     });
                     return { cancelled: result.cancelled };
                 },
-                switchSession: async (sessionPath) => {
-                    const result = await runtimeHost.switchSession(sessionPath);
-                    if (!result.cancelled) {
-                        await rebindSession();
-                    }
-                    return result;
+                switchSession: async (sessionPath, options) => {
+                    return runtimeHost.switchSession(sessionPath, options);
                 },
                 reload: async () => {
                     await session.reload();
@@ -451,6 +447,17 @@ export async function runRpcMode(runtimeHost) {
                 }
                 return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled });
             }
+            case "clone": {
+                const leafId = session.sessionManager.getLeafId();
+                if (!leafId) {
+                    return error(id, "clone", "Cannot clone session: no current entry selected");
+                }
+                const result = await runtimeHost.fork(leafId, { position: "at" });
+                if (!result.cancelled) {
+                    await rebindSession();
+                }
+                return success(id, "clone", { cancelled: result.cancelled });
+            }
             case "get_fork_messages": {
                 const messages = session.getUserMessagesForForking();
                 return success(id, "get_fork_messages", { messages });
@@ -478,7 +485,7 @@ export async function runRpcMode(runtimeHost) {
             // =================================================================
             case "get_commands": {
                 const commands = [];
-                for (const command of session.extensionRunner?.getRegisteredCommands() ?? []) {
+                for (const command of session.extensionRunner.getRegisteredCommands()) {
                     commands.push({
                         name: command.invocationName,
                         description: command.description,

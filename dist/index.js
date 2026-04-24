@@ -17,16 +17,14 @@ export { AgentSessionRuntime,
 // Factory
 createAgentSession, createAgentSessionFromServices, createAgentSessionRuntime, createAgentSessionServices, createBashTool, 
 // Tool factories (for custom cwd)
-createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, 
-// Pre-built tools (use process.cwd())
-readOnlyTools, } from "./core/sdk.js";
+createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, } from "./core/sdk.js";
 export { buildSessionContext, CURRENT_SESSION_VERSION, getLatestCompactionEntry, migrateSessionEntries, parseSessionEntries, SessionManager, } from "./core/session-manager.js";
 export { SettingsManager, } from "./core/settings-manager.js";
 // Skills
 export { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, } from "./core/skills.js";
 export { createSyntheticSourceInfo } from "./core/source-info.js";
 // Tools
-export { bashTool, bashToolDefinition, codingTools, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLocalBashOperations, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, editTool, editToolDefinition, findTool, findToolDefinition, formatSize, grepTool, grepToolDefinition, lsTool, lsToolDefinition, readTool, readToolDefinition, truncateHead, truncateLine, truncateTail, withFileMutationQueue, writeTool, writeToolDefinition, } from "./core/tools/index.js";
+export { createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLocalBashOperations, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, truncateLine, truncateTail, withFileMutationQueue, } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";
 // Run modes for programmatic SDK usage

@@ -1,9 +1,9 @@
 import { createInterface } from "node:readline";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
 import { readFileSync, statSync } from "fs";
 import path from "path";
+import { Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { resolveToCwd } from "./path-utils.js";
@@ -301,7 +301,4 @@ export function createGrepToolDefinition(cwd, options) {
 export function createGrepTool(cwd, options) {
     return wrapToolDefinition(createGrepToolDefinition(cwd, options));
 }
-/** Default grep tool using process.cwd() for backwards compatibility. */
-export const grepToolDefinition = createGrepToolDefinition(process.cwd());
-export const grepTool = createGrepTool(process.cwd());
 //# sourceMappingURL=grep.js.map

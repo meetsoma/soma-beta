@@ -178,9 +178,16 @@ export class SettingsSelectorComponent extends Container {
                 currentValue: config.showImages ? "true" : "false",
                 values: ["true", "false"],
             });
+            items.splice(2, 0, {
+                id: "image-width-cells",
+                label: "Image width",
+                description: "Preferred inline image width in terminal cells",
+                currentValue: String(config.imageWidthCells),
+                values: ["60", "80", "120"],
+            });
         }
         // Image auto-resize toggle (always available, affects both attached and read images)
-        items.splice(supportsImages ? 2 : 1, 0, {
+        items.splice(supportsImages ? 3 : 1, 0, {
             id: "auto-resize-images",
             label: "Auto-resize images",
             description: "Resize large images to 2000x2000 max for better model compatibility",
@@ -250,6 +257,9 @@ export class SettingsSelectorComponent extends Container {
                     break;
                 case "show-images":
                     callbacks.onShowImagesChange(newValue === "true");
+                    break;
+                case "image-width-cells":
+                    callbacks.onImageWidthCellsChange(parseInt(newValue, 10));
                     break;
                 case "auto-resize-images":
                     callbacks.onAutoResizeImagesChange(newValue === "true");

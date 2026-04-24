@@ -425,13 +425,49 @@ cmd_tokens() {
 
 # ── Main ──
 case "${1:-}" in
-  check)    cmd_check ;;
-  files)    cmd_files ;;
-  chain)    cmd_chain ;;
-  heat)     cmd_heat ;;
-  patterns) cmd_patterns ;;
-  vars)     cmd_vars ;;
-  tokens)   cmd_tokens ;;
+  check)
+    cmd_check
+    soma_next_steps \
+      "soma body heat:muscle + protocol heat state" \
+      "soma body vars:template variables ↔ resolved values" \
+      "soma body tokens:per-variable token cost (walks chain)"
+    ;;
+  files)
+    cmd_files
+    soma_next_steps \
+      "soma body check:health report for these files" \
+      "soma body chain:inheritance chain (project → parent → global)"
+    ;;
+  chain)
+    cmd_chain
+    soma_next_steps \
+      "soma body files:see files at each level" \
+      "soma body vars:what resolves where"
+    ;;
+  heat)
+    cmd_heat
+    soma_next_steps \
+      "soma body check:health on the files that hold these" \
+      "soma body patterns:recent session behavioral patterns"
+    ;;
+  patterns)
+    cmd_patterns
+    soma_next_steps \
+      "soma reflect --since 3d:recent session detail" \
+      "soma body heat:current muscle state"
+    ;;
+  vars)
+    cmd_vars
+    soma_next_steps \
+      "soma body tokens:cost audit per variable" \
+      "soma body chain:inheritance origin for each var"
+    ;;
+  tokens)
+    cmd_tokens
+    soma_next_steps \
+      "soma body vars:what each variable resolves to" \
+      "/body render --send:exact TUI-side token count"
+    ;;
   *)
     soma_header "soma body" "body file inspector"
     echo ""
@@ -444,6 +480,10 @@ case "${1:-}" in
     echo -e "  ${SOMA_GREEN}tokens${SOMA_NC}    per-variable token cost audit (walks chain)"
     echo ""
     echo -e "  ${SOMA_DIM}Runs outside the TUI. No API calls, no token cost.${SOMA_NC}"
+    soma_next_steps \
+      "soma body check:start here — health report" \
+      "soma tool:sibling surface — registered tools" \
+      "soma docs:sibling surface — doc search (pending SX-588)"
     soma_seams "soma-body.sh"
     echo ""
     ;;

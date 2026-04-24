@@ -1,9 +1,9 @@
 import { createInterface } from "node:readline";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
 import path from "path";
+import { Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { resolveToCwd } from "./path-utils.js";
@@ -295,7 +295,4 @@ export function createFindToolDefinition(cwd, options) {
 export function createFindTool(cwd, options) {
     return wrapToolDefinition(createFindToolDefinition(cwd, options));
 }
-/** Default find tool using process.cwd() for backwards compatibility. */
-export const findToolDefinition = createFindToolDefinition(process.cwd());
-export const findTool = createFindTool(process.cwd());
 //# sourceMappingURL=find.js.map

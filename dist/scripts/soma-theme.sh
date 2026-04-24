@@ -72,6 +72,27 @@ soma_fail() { echo -e "  ${SOMA_RED}✗${SOMA_NC} $*"; }
 soma_info() { echo -e "  ${SOMA_DIM}$*${SOMA_NC}"; }
 soma_val()  { echo -e "  ${SOMA_BLUE}$*${SOMA_NC}"; }
 
+# ── Next steps (progressive awareness) ──
+# Usage: soma_next_steps [label] "cmd1:hint1" "cmd2:hint2" ...
+#   Default label: "What next:"
+# Suppresses output when stdout is not a TTY (piped / redirected) — `soma X | jq ...`
+# stays clean. Interactive terminals get the scaffold.
+# Pattern: amps/muscles/cli-progressive-awareness.md
+soma_next_steps() {
+  [[ -t 1 ]] || return 0
+  local label="What next:"
+  # Optional: first arg is custom label if it contains no ":"
+  if [[ -n "${1:-}" && "$1" != *:* ]]; then
+    label="$1"; shift
+  fi
+  echo
+  echo -e "${SOMA_DIM}${label}${SOMA_NC}"
+  for arg in "$@"; do
+    local cmd="${arg%%:*}" hint="${arg#*:}"
+    printf "  ${SOMA_CYAN}%-30s${SOMA_NC} ${SOMA_DIM}%s${SOMA_NC}\n" "$cmd" "$hint"
+  done
+}
+
 # ── Summary ──
 # Usage: soma_summary <pass> <warn> <fail> [message]
 soma_summary() {

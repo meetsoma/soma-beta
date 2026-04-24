@@ -18,17 +18,17 @@ export function detectInstallMethod() {
     if (isBunBinary) {
         return "bun-binary";
     }
-    const resolvedPath = `${__dirname}\0${process.execPath || ""}`.toLowerCase();
-    if (resolvedPath.includes("/pnpm/") || resolvedPath.includes("/.pnpm/") || resolvedPath.includes("\\pnpm\\")) {
+    const resolvedPath = `${__dirname}\0${process.execPath || ""}`.toLowerCase().replace(/\\/g, "/");
+    if (resolvedPath.includes("/pnpm/") || resolvedPath.includes("/.pnpm/")) {
         return "pnpm";
     }
-    if (resolvedPath.includes("/yarn/") || resolvedPath.includes("/.yarn/") || resolvedPath.includes("\\yarn\\")) {
+    if (resolvedPath.includes("/yarn/") || resolvedPath.includes("/.yarn/")) {
         return "yarn";
     }
     if (isBunRuntime) {
         return "bun";
     }
-    if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/") || resolvedPath.includes("\\npm\\")) {
+    if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
         return "npm";
     }
     return "unknown";

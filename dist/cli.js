@@ -336,11 +336,15 @@ if (mapTarget) {
 // soma focus clear      → remove focus
 if (args[0] === "focus") {
 	const focusArgs = args.slice(1);
-	// Find soma-focus.sh — check .soma/amps/scripts/ first, then bundled scripts/
+	// Find soma-focus.sh — bundled first (matches general script-discovery
+	// order at line ~610). Previous order put .soma/amps/scripts/ first, which
+	// silently picked up stale project copies when the bundled one was newer
+	// (caught s01-d7bdf0 — stale `Install it alongside` error surfaced from
+	// a pre-v0.20 project-local copy).
 	const focusLocations = [
-		join(process.cwd(), ".soma", "amps", "scripts", "soma-focus.sh"),
-		join(process.cwd(), ".soma", "scripts", "soma-focus.sh"),
-		new URL("../scripts/soma-focus.sh", import.meta.url).pathname,
+		new URL("../scripts/soma-focus.sh", import.meta.url).pathname,   // bundled
+		join(process.cwd(), ".soma", "amps", "scripts", "soma-focus.sh"), // project
+		join(process.cwd(), ".soma", "scripts", "soma-focus.sh"),         // legacy project
 	];
 	let focusScript = null;
 	for (const loc of focusLocations) {
@@ -448,7 +452,10 @@ if (args[0] === "map") {
 	let handled = false;
 	// Try compiled core (co-located with node_modules for package resolution)
 	const agentDir = process.env.SOMA_CODING_AGENT_DIR || join(process.env.HOME || "", ".soma", "agent");
-	const compiledCore = join(agentDir, "core-compiled.js");
+	// Compiled core lives at dist/core/index.js (bundled by scripts/build-dist.mjs).
+	// Prior path "core-compiled.js" was stale and never resolved — silently skipped
+	// the content-cli handler and dead-ended at the doctor re-route below.
+	const compiledCore = join(agentDir, "dist", "core", "index.js");
 	try {
 		if (existsSync(compiledCore)) {
 			const core = await import(compiledCore);

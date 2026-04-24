@@ -8,7 +8,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
-_Nothing yet._
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.22.0] — 2026-04-24 — Namespaced meta-tools end-to-end + bridge CLI + init hardening
+
+### Fixed
+- **harden pairing flow — secret in header, umask, `curl --fail`, device-key shape-check (SX-audit, s01-d7bdf0)**
+- **`SOMAVERSE_DIR` consumers use `builds/local/extensions` (SX-616)**
+- **stale-ctx guard on footer render; no more pi-tui crashes post-`/reload` (SX-633)**
+- **wire `soma-addons/` + `_shared/` end-to-end; Tier 2 addon-ship through release script (SX-594 Phase 3 / gap-addon-ship.md, SX-610)**
+- **`AGENT_VERSION` reads `dist/manifest.json` not `package.json` (SX-624 revises SX-619)**
+- **refresh `docs/guides/code-navigator.md` example + cap inventory (pre-release audit stale-ref sweep, s01-e3e1ed)**
+- **always stamp `AGENT_VERSION` in settings.json even when user template provides version field (SX-620)**
+- **copy `package.json` into `dist/` so `AGENT_VERSION` stamps correctly (SX-619, superseded by SX-624 for runtime path)**
+- **backport v0.21 cache economics to bundled defaults (SX-600)**
+- **health check reads Pi version from `dist/manifest.json` (authoritative) instead of `CORE_DIR/node_modules` (stale-prone) (SX-622)**
+- **ship `templates/` to `dist/` so `body/` scaffolds fully (SX-594)**
+- **smart partial-state handling + rootName + doctor bail on `soma init` (SX-592)**
+
+### Added
+- **`soma bridge` CLI — `start`/`stop`/`restart`/`status`/`logs`/`config`/`setup` (SX-522)** — first-class bridge daemon lifecycle. Works standalone without Somaverse; mirrored by `somaverse:bridge.*` (7 caps) + `somaverse:auth.*` (3 caps) for agent-side automation.
+- **`soma:agent.*` meta-tool — `delegate`/`children` collapsed (SX-609)** — 7 caps: `delegate`, `list`, `tail`, `steer`, `kill`, `harvest`, `focus` (focus op recovered from original plan). Extension shrank 606→330 lines.
+- **`soma:focus.*` / `soma:new.*` / `soma:terminals.*` — 11 new caps wrapping bundled CLIs.** Also fixed `soma focus` dispatcher's inverted discovery order.
+- **`soma-install.sh dev` cross-repo extension union + `node_modules` symlink (SX-629)** — reproducible end-to-end; fixed a latent Pi 0.66.1→0.69.0 drift.
+- **`soma:docs.*` for bundled docs search + retrieval (SX-594 Phase 3 Step C + SX-588 + SX-596)**
+- **progressive-awareness entry point for meta-tools (SX-594)** — bare-prefix family discovery + `op='help'` block for every meta-tool.
+- **`soma:body.*` (slots/cost/audit) from `dev:body.*` move (SX-594 Phase 3 Step B)**
+- **family-level capability discovery via bare-prefix call (SX-594)**
+- **register `soma:*` meta-tool + `soma:browser.*` (17 caps, SX-594 Phase 2 Step C)** — direct-CDP default; bridge required only for advanced ops (evaluate, styles, emulate, performance).
+- **v0.22.0 version infrastructure + `soma-release --vbump` / `--vaudit` + dev-install package.json symlink (SX-622)**
+- **hash-based bundled template drift refresh (SX-621)** — doctor auto-refreshes pristine-older body templates to current bundled; warns with diff path for customized files. Keyed off `migrations/template-hashes.json` shipped with the agent.
+- **Pi runtime upgrade 0.67.68 → 0.69.0 (SX-623)** — 42 upstream commits (17 coding-agent fixes, 4 new features, 5 ai fixes, 2 tui fixes). Non-breaking: tool registration + extension API unchanged. Internal refactor: cwd-singleton tool filtering replaced by name-based allowlists (same behavior for extensions that register unique names). Notable improvements: symlink session resolution, skills dedup, xterm uppercase input, shell-path uses session cwd, OpenAI-compatible prompt caching (anthropic-style cache_control).
+- **teach `verify` + `symlink` commands about `somaverse-tools` + addons (SX-613)**
+- **progressive-awareness retrofit across 4 commands (SX-590)** — `soma body`, `soma tool`, `soma concepts`, `soma-dev status` now emit a curated `What next:` block after every state. Bare command == `--help`. Suppressed when piped (isatty check). Helper `soma_next_steps` added to `scripts/soma-theme.sh`; parallel `next_steps` in `scripts/_dev/soma-dev/lib/colors.sh`. Muscle: `amps/muscles/cli-progressive-awareness.md` (heat 3).
+- **`dev:cli.*` addon — 17 soma-shell capabilities (SX-585)** — wraps `soma plans`/`reflect`/`trace`/`concepts`/`threads`/`blog-audit`/`blog-graph`/`body`/`protocol-audit`/`compat` + pro (`refactor`/`github`/`scrape`/`seam`) + dev (`dev`/`deploy`) + `cli.raw` escape. Agents see the CLI surface via `dev(op='list', prefix='dev:cli.')`. Zero cache bust (addon lives outside cached prefix).
+- **`docs/amps.md` + `docs/migrating.md` seeded from website (SX-586)** — the two website-only docs now have agent-side sources. Next `sync-to-website.sh` run is a no-op (zero byte drift verified). Future edits happen agent-side.
+
+### Changed
+- **SX-594 wrapper sweep — archived deprecation shims (SX-601)** — `workspace_*`, `plugin_state_*`, flat `browser_*`, `code_*`, `dev:ai.*`, `dev:body.*`, `file_outline` no longer register at boot. The cached prompt no longer carries the double surface. Wrappers moved to `_archive/sx594-flat-wrappers/` in both agent + somaverse repos.
+- **Tier C stale-reference sweep across muscles / docs / MAPs (SX-628)** — remaining references to archived flat tool names cleaned up.
+
+### Changed
+- **`ai_*` → `dev:ai.*` addon extraction (SX-591 Phase A)** — 5 flat Pi-registered tools (`ai_status`, `ai_load`, `ai_index`, `ai_search`, `ai_embed`) removed from the cached prompt surface; same capabilities behind the `dev` meta-tool. Call via `dev(op='call', cap='dev:ai.search', args={...})`. ~3KB reduction in `cache_creation_input_tokens` per session on cold boot. Pilot for the v0.22.x namespaced-meta-tools arc (SX-594).
 
 ## [0.21.1.1] — 2026-04-22 — Same-cycle audit patches
 

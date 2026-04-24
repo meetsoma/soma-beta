@@ -102,14 +102,25 @@ case "${1:-}" in
 		;;
 	--extensions)
 		MODE="extensions" EXT_DIR="$EXT_DIR" python3 "$EXTRACTOR"
+		soma_next_steps \
+			"soma tool:flat list of all tools with one-liners" \
+			"soma tool <name>:full guidance for one tool"
 		;;
 	"")
 		echo
 		echo -e "${SOMA_BOLD}σ  Soma tool registry${SOMA_NC}  ${SOMA_DIM}source: ${EXT_DIR}${SOMA_NC}"
 		echo
 		MODE="list" EXT_DIR="$EXT_DIR" python3 "$EXTRACTOR"
+		soma_next_steps \
+			"soma tool <name>:full guidance for one tool (e.g. soma tool delegate)" \
+			"soma tool --extensions:group by extension file (see where each lives)" \
+			"soma docs:sibling surface — doc search (pending SX-588)" \
+			"capabilities tool:in-session runtime view (after _tools.md overrides)"
 		;;
 	*)
 		MODE="detail" EXT_DIR="$EXT_DIR" TOOL_NAME="$1" python3 "$EXTRACTOR"
+		soma_next_steps \
+			"soma tool:back to flat list" \
+			"soma docs \"$1\":doc context for this tool (pending SX-588)"
 		;;
 esac

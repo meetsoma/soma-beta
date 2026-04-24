@@ -12,6 +12,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
@@ -43,7 +44,7 @@ function deepMergeSettings(base, overrides) {
 export class FileSettingsStorage {
     globalSettingsPath;
     projectSettingsPath;
-    constructor(cwd = process.cwd(), agentDir = getAgentDir()) {
+    constructor(cwd, agentDir) {
         this.globalSettingsPath = join(agentDir, "settings.json");
         this.projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
     }
@@ -140,7 +141,7 @@ export class SettingsManager {
         this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
     }
     /** Create a SettingsManager that loads from files */
-    static create(cwd = process.cwd(), agentDir = getAgentDir()) {
+    static create(cwd, agentDir = getAgentDir()) {
         const storage = new FileSettingsStorage(cwd, agentDir);
         return SettingsManager.fromStorage(storage);
     }
@@ -365,7 +366,17 @@ export class SettingsManager {
         this.save();
     }
     getSessionDir() {
-        return this.settings.sessionDir;
+        const sessionDir = this.settings.sessionDir;
+        if (!sessionDir) {
+            return sessionDir;
+        }
+        if (sessionDir === "~") {
+            return homedir();
+        }
+        if (sessionDir.startsWith("~/")) {
+            return join(homedir(), sessionDir.slice(2));
+        }
+        return sessionDir;
     }
     getDefaultProvider() {
         return this.settings.defaultProvider;
@@ -628,6 +639,21 @@ export class SettingsManager {
         }
         this.globalSettings.terminal.showImages = show;
         this.markModified("terminal", "showImages");
+        this.save();
+    }
+    getImageWidthCells() {
+        const width = this.settings.terminal?.imageWidthCells;
+        if (typeof width !== "number" || !Number.isFinite(width)) {
+            return 60;
+        }
+        return Math.max(1, Math.floor(width));
+    }
+    setImageWidthCells(width) {
+        if (!this.globalSettings.terminal) {
+            this.globalSettings.terminal = {};
+        }
+        this.globalSettings.terminal.imageWidthCells = Math.max(1, Math.floor(width));
+        this.markModified("terminal", "imageWidthCells");
         this.save();
     }
     getClearOnShrink() {

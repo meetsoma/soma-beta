@@ -74,6 +74,12 @@ you're an agent that learns.
 - First exhale is special — update soul.md, note what you learned about
   the user and the project
 
+**Coming back tomorrow?** Run `soma inhale` to resume from your last
+preload, not just `soma` bare. The default `soma` starts a fresh session
+with no memory of yesterday; `soma inhale` loads your last saved preload
+(by most-recent mtime) so you pick up where you left off. Use `soma inhale --list`
+to see what's available if you want a specific one.
+
 **Establish patterns early.** In your first few sessions, develop routines:
 - Run `soma code map` before editing any file
 - Run `soma body check` at the start of each session
