@@ -79,9 +79,10 @@ shift
 case "$KIND" in
 	muscle|muscles)    KIND="muscle"; DIR="muscles" ;;
 	protocol|protocols) KIND="protocol"; DIR="protocols" ;;
+	child|children)    KIND="child"; DIR="children" ;;
 	*)
 		echo "unknown kind: $KIND" >&2
-		echo "use: muscle | protocol" >&2
+		echo "use: muscle | protocol | child" >&2
 		exit 2
 		;;
 esac
@@ -134,7 +135,12 @@ else
 	fi
 fi
 
-TARGET_DIR="$BASE/amps/$DIR"
+# children live under body/, not amps/ (SX-663)
+if [[ "$KIND" == "child" ]]; then
+	TARGET_DIR="$BASE/body/$DIR"
+else
+	TARGET_DIR="$BASE/amps/$DIR"
+fi
 TARGET_FILE="$TARGET_DIR/$NAME.md"
 
 # ── Resolve template ───────────────────────────────────────────────────────

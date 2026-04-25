@@ -10,6 +10,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.22.1] — 2026-04-25
+
+### Added
+- **soma:new.child cap + bundled _child-template.md (SX-663)**
+- **progressive teach + child monitor improvements (SX-665, SX-666)**
+- **cache-TTL rollback on aborted/errored turns (SX-660)**
+- **add Phase 1.5 commit-message lint (G1, SX-667)**
+- **delegate progressive teaching (SX-665)** — `soma:agent.delegate` bare call (or `{help: true}`) returns a structured help payload: roles available (auto-discovered from `body/children/*.md`), models, recent children, examples, and a notice that async children don't yet ping on completion (see SX-664). Tool teaches itself; saves a tool round-trip when the parent doesn't remember the surface.
+- **child monitor improvements (SX-666)** — `soma:agent.list` now defaults to last-7-days (registry can grow long); accepts `{active_only: true}` to filter to running/spawning/completed-not-harvested; accepts `{cleanup: true}` to remove aborted/completed entries >24h old. Pass `{all: true}` to override the 7-day default.
+- **`soma:new.child` cap (SX-663)** — scaffold a new child role at `.soma/body/children/<name>.md` from `_child-template.md`, matching `soma:new.muscle` / `soma:new.protocol` pattern. Then edit the scaffold (set summary, default-model, inherits, guidelines), then `delegate({role:'<name>', task:'...'})`. Bundled `_child-template.md` ships with `soma init`.
+- **`keepalive.rollbackOnAbort` setting (SX-660, opt-in)** — when `true`, `lastActivityTs` rolls back on aborted/errored turns so the cache-TTL counter doesn't overstate after a Curtis-aborted long-running tool call. Default `false` (no behavior change). Empirical evidence: aborted assistant messages have zero usage — API request never round-trips, so cache wasn't actually refreshed at the optimistic turn_start reset. Opt in via `.soma/settings.json` `keepalive.rollbackOnAbort: true`. See `releases/plans/active/agent-infra/README.md` § SX-660.
+- **Pi auto-fix loop on isolated worktree (SX-654)**
+- **prepare + ship orchestrator with checklog pattern (SX-653)**
+- **collapse agent + thin-CLI version trains (SX-659)**
+- **Pi changelog parser utility (Bucket 2 / SX-653 dep)**
+- **version-aware path interpolation (SX-656)** — 5 new template vars (`current_version`, `current_series`, `active_plans_dir`, `active_index`, `active_release_dir`) derived from agent_version or `settings.releases.activeSeries` override. New `# Active Release` block in `body/_mind.md`. Eliminates the stale-reference drift on version bumps.
+- **externalize overlay manifest + bootstrap-clean verifier (Bucket 2 G+J / SX-653 deps)**
+
+### Fixed
+- **cleanup mode prunes all finished entries, no time gate (SX-666 amend)**
+- **triage 6 pre-existing test failures (32 assertions)**
+- **count cache TTL from turn_start, not turn_end** — `state.lastActivityTs` was reset at `turn_end`, making `cacheRemaining()` overstate by however long the turn took. Anthropic's prompt-cache TTL counts from cache write (= turn_start). Validated against session JSONL: two invalidations both fell within the 300s window measured from turn_end but BOTH past 300s when measured from turn_start. Bumped `keepaliveThresholdSeconds` 45 → 90 as safety margin.
+- **migrate to unscoped 'typebox' package (SX-655)** — Pi 0.69.0 renamed `@sinclair/typebox` 0.34.x → `typebox` 1.x. Migrated 6 imports and added `'typebox'` to all three external arrays in `scripts/build-dist.mjs` (was missed; build size doubled to 611 KB before the fix, recovered to 286.4 KB).
+
+
 ## [0.22.0] — 2026-04-24 — Namespaced meta-tools end-to-end + bridge CLI + init hardening
 
 ### Fixed

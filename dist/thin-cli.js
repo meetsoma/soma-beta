@@ -1142,8 +1142,26 @@ async function projectDoctor() {
           const heatLine = projRaw.match(/^heat:.*$/m);
           const loadsLine = projRaw.match(/^loads:.*$/m);
           let updated = bundledRaw;
-          if (heatLine) updated = updated.replace(/^heat:.*$/m, heatLine[0]);
-          if (loadsLine) updated = updated.replace(/^loads:.*$/m, loadsLine[0]);
+          // Build lines to inject into frontmatter if bundled lacks them
+          const inject = [];
+          if (heatLine) {
+            if (/^heat:.*$/m.test(updated)) {
+              updated = updated.replace(/^heat:.*$/m, heatLine[0]);
+            } else {
+              inject.push(heatLine[0]);
+            }
+          }
+          if (loadsLine) {
+            if (/^loads:.*$/m.test(updated)) {
+              updated = updated.replace(/^loads:.*$/m, loadsLine[0]);
+            } else {
+              inject.push(loadsLine[0]);
+            }
+          }
+          if (inject.length > 0) {
+            // Insert before the closing --- of frontmatter
+            updated = updated.replace(/^---\n([\s\S]*?)\n---/, `---\n$1\n${inject.join('\n')}\n---`);
+          }
           writeFileSync(join(protoDir, f), updated);
           staleUpdated++;
         }
