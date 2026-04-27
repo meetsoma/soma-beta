@@ -8,11 +8,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+### Added
+- **tree-hygiene gate (Phase 0.5, SX-712)** — `soma-release-prepare.sh` halts if `repos/agent/` has uncommitted files other than ` M CHANGELOG.md`. Closes the agent-spawned-files-leaking-into-soma-beta hole observed s01-030d41. Override with `--skip-tree-hygiene` (writes audit trail). `.releaseignore` widened to cover `.soma/`, `.husky/`, `node_modules/`.
+- **`soma:agent.list` role filter (SX-701)** — pass `{role: 'librarian'}` (or any role string) to filter children by role. Stacks with existing `active_only`/`all`/`cleanup` filters. Useful when a parent has spawned multiple roles and wants to inspect just one cohort.
+- **somadian drift discipline — verify + lift + pre-commit gate (SOMADIAN-002, s01-ef2bdc)** — three scripts that enforce byte-identical shared code across the 4 somadian bins (cloud / enterprise / local / sidecar): `somadian-verify` detects drift, `somadian-mirror` lifts a canonical bin to the others, and `install-hooks.sh` wires a pre-commit gate that blocks divergent commits. Closes the silent-drift hole.
+- **namespace-rooted workspace target path (s01-ef2bdc)** — `soma-workspace-migrate-legacy.sh` now writes to `~/.soma/<namespace>/workspaces/__legacy__/...` (was `~/.soma/workspaces/...`). Aligns with first-name-wins namespace shape (SOMAVERSE-019).
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
+- **soma-somaverse-deploy.sh — closes the build-vs-stamp race for somaverse (s01-680a9c, SOMAVERSE-009)** — mirrors `soma-somadian-deploy.sh` for the somaverse side. Enforces commit → build → deploy → verify ordering. The somaverse build embeds `git rev-parse HEAD` as the cache-buster (`main.js?v=<sha>`); building with uncommitted changes makes the deployed bundle report an older sha than its actual contents. Caught s01-680a9c cycle 10 mid-deploy. Builds: `local` (build-only), `enterprise` (→ arzadon.somaverse.ai), `vps` (→ somaverse.ai). End-to-end smoke verified live on enterprise build.
+- **soma-somadian-deploy.sh — closes the build-vs-rsync race (s01-1bf0bb Cycle 15)** — enforces commit→rsync→build→deploy→verify order. Includes `rollback` command. Future deploys won't have stamp-vs-source mismatch. The Cycle 13 build had this race (binary had Cycle 13.5 fix but git_sha stamp was Cycle 13 commit).
+- **soma-voice-switch.sh — voice backend mutex orchestrator (s01-1bf0bb W-3c)** — top-level orchestrator wraps the 3 individual lifecycle scripts and applies the mutex matrix (`use voxtral` kills openvoice + tts-server, starts voxtral; etc.). Used by `somaverse/.../server/bridge.ts` `POST /voice/use-backend` (pane wiring) AND `somaverse-addons/voice.ts` cap (agent surface) — single source of truth. `status` returns JSON for machine consumption.
+- **voice-backend lifecycle scripts (s01-1bf0bb)** — 3 dev:* scripts in `scripts/_dev/`:
+  - `soma-voxtral.sh` — local mlx Voxtral TTS (port 18795). macOS arm64 only; sweeps orphan procs.
+  - `soma-openvoice.sh` — OpenVoice V2 voice-clone server (port 18793). Mirrors soma-racecar pattern.
+  - `soma-tts-server.sh` — soma-voice/server/tts-server.py (port 18790, edge-tts + clone routing).
+  All 3 build-excluded from npm tarball. Companion: somaverse `somaverse-addons/voice.ts` mutex cap.
+  Plan: `.soma/releases/sidecar/consolidated-plan/07-smallest-wedge.md` § W-2.
+- **`dev:*` namespace foundation (SX-694)** — new top-level meta-tool family for dev-only operations (`dev:hub.*`, `dev:release.*`, `dev:audit.*`, `dev:lint.*`). Stripped from end-user beta builds via `soma-release.sh` Step 3; verified by `verify-bootstrap-clean.sh` Test 5 (NEW). Dogfood works locally; end users never see `dev:*`.
+- **`dev:hub.*` x5 caps (SX-695, SX-696)** — read-only audit-grade introspection of community-tier content: `dev:hub.list` (items by type), `dev:hub.read` (raw markdown), `dev:hub.canonical` (paths), `dev:hub.diff` (vs workspace/fallback), `dev:hub.audit` (drift report). Replaces 5-step shell pipelines with a single cap call.
+- **`dev:audit.deps` + `dev:audit.ci` caps** — dependency + CI-config audits surfaced as caps under the new `dev:*` namespace.
+- **`soma:code.history` cap (SX-700)** — `git log` for a file as a structured cap (sha + date + author + subject). Replaces 6 raw `git log --format` shell calls observed in a single session. Cap-only addition; zero cache-bust cost.
+- **3 missing roles synced + 3 drift fixes** — community-tier `body/children/<role>.md` content reconciled against canonical: 3 roles re-synced and 3 drifted definitions corrected.
+- **`soma-dev switch` rewritten for worktree-on-main (SX-686)** — the legacy `soma-switch.sh` managed symlinks pre-SX-652. Replaced with a worktree-aware `soma-dev switch [dev|main|help]`: flips `~/.soma/agent` between branches (detached HEAD on dev since it's checked out in `repos/agent`), rebuilds `dist/`, ff-pulls main. `paths.sh` now exports `AGENT_RUNTIME` (canonical); `AGENT_STABLE` retained as deprecated alias.
+- **frozen-protocols fallback warning (SX-691)** — stepping stone before SX-691-full removal: when `build-dist.mjs` falls back to `repos/agent/.soma/protocols/` (frozen at v0.6.6), it now logs a triple-warning and labels the source `agent .soma/ (FROZEN v0.6.6)` so anyone hitting the fallback sees they're shipping stale content. Fully removed in the SX-691 fix below.
+- **release-please proposer workflow + config (SX-667)** — `.github/workflows/release-please.yml` opens release PRs from conventional commits. Manual-trigger only (workflow_dispatch) until first proposer-output validation. Activates on default branch after next release sync.
+- **`gh release create` as Step 6.5 of `soma-release-ship.sh` (S4, SX-667)** — auto-publishes a GitHub Release with generated notes on every release. Idempotent + non-fatal.
+- **Full Step 4 log on failure (S2, SX-667)** — `soma-release-ship.sh` now captures full `soma-release.sh` output to `/tmp/soma-release-step4-v$VERSION.log` and dumps the entire log on failure (was `tail -10`).
+
+### Fixed
+- **`body/STATE.md` now scaffolds on fresh init (SX-669 follow-through)** — SX-669 (s01-88d4bd) retired the root `.soma/STATE.md` scaffold and declared `body/STATE.md` the canonical state slot. The migration comment in `core/init.ts:608` said `body/STATE.md` would be created by `templates/default/body/STATE.md` (handled by `scaffoldBody`) — but no `STATE.md` was ever added to `templates/default/`. Result: fresh init never created `STATE.md` anywhere, but the `_memory.md` preload template still told users to "Update STATE.md if branches, versions, or known bugs changed." Latent for ~6 weeks. Caught by sandbox smoke-test s01-b97ce5. Now ships a generic skeleton (Versions / Services / Tools / Known bugs / Recent shifts).
+- **`soma-release-prepare.sh` commit-msg-lint regex synced with `.git-hooks/commit-msg` (SX-702 follow-through)** — SX-702 fixed the hook to allow `.` in scope (`[a-z0-9_.-]+`) so dotted cap-name scopes like `agent.list` and `code.history` would pass. The companion regex in the orchestrator at `soma-release-prepare.sh:281` was missed and still rejected dots. Result: every dotted-scope commit was flagged NEEDS-REVIEW by the orchestrator even though the hook accepted it. Synced.
+- **`soma-sandbox.sh --main` worktree-aware (s01-b97ce5)** — pre-SX-652 the main branch lived at `$MEETSOMA/repos/agent-stable`. Post-SX-652 it lives at `$HOME/.soma/agent` (worktree-on-main). The `--main` source path was never updated and silently failed (`agent-stable not found`). Now points at the canonical runtime worktree.
+- **`soma-dev sandbox` wrapper repaired (s01-b97ce5)** — the wrapper at `scripts/_dev/soma-dev/commands/sandbox.sh` redirected to `$SOMA_DIR/amps/scripts/internal/soma-sandbox.sh`, a path that moved during s01-c6944c consolidation. Wrapper was missed; `soma-dev sandbox` was silently broken for ~5 weeks. Now forwards to `scripts/_dev/sandbox/soma-sandbox.sh` (canonical kit).
+- **`soma-new` no longer pollutes agent install with spawned content (SX-710)** — `resolve_soma_dir()` walks up from `$PWD` looking for any `.soma/`; when invoked from inside `~/.soma/agent/`, it would resolve to the install's own dogfood `.soma/` (source-controlled, not a valid user-content target). Any `soma:new.muscle` / `soma:new.protocol` / `soma:new.child` call from inside the install would write into `~/.soma/agent/.soma/amps/...`. Fix: skip `~/.soma/agent/.soma` (symlink-safe via `pwd -P`) and continue the walk-up. Latent bug — no pollution found today, but the class is now closed.
+- **`build-dist.mjs` removes v0.6.6 protocols fallback entirely (SX-691 full)** — the fallback silently shipped frozen v0.6.6 protocols when `repos/community/` wasn't cloned alongside `repos/agent/`. 5 core protocols had drifted between canonical and frozen (verified by `dev:hub.audit`). Build now exits 1 with a clear pointer (`gh repo clone meetsoma/community`) instead of shipping stale.
+- **commit-msg lint allows `.` in scope (SX-702)** — conventional-commit scope regex was `[a-z0-9_-]+`, rejecting dotted scopes like `agent.list` and `code.history` (which match cap names). Caught when `feat(agent.list): ...` was silently rejected and `git push` said "Everything up-to-date" — cost ~2 min to diagnose. Fix: add `.` to the scope class.
+- **commit-msg lint accepts `revert` type** — was missing from `VALID_TYPES`; needed for `git revert` commits to pass the gate.
+- **GitHub repo URL reverted to canonical `meetsoma/soma-agent` (SX-704)** — a prior "canonicalization" (71c2c62) flipped the URL the wrong direction. `gh api` confirmed the canonical name IS `meetsoma/soma-agent`. Both URLs resolve via GitHub redirect, but if the redirect ever drops, the previous direction would break. Reverted in 6 source files + 4 `.soma/` files + 2 git remotes.
+- **`soma-channel-guard` hook resolves through symlinks (SX-693)** — the hook is symlinked into each public repo's `.git/hooks/pre-push`. `dirname $0` resolved to `.git/hooks/`, which broke the relative `source _lib/find-root.sh`. Fix: walk through `readlink` until `$0` is no longer a symlink. Affects all 6 public repos using the hook.
+- **`test-doctor` version-equality assertion inverted (SX-659 align)** — the test asserted `agent_version != cli_version`; SX-659 (v0.22.1) collapsed the two version trains so they're intentionally equal now. Test was failing because reality finally matched the spec. Inverted: pass when versions match, fail on drift.
+- **`soma-release-ship.sh` Step 6 (main-sync) hardened (SX-685)** — dropped three buggy operations silently misbehaving under SX-652 worktree-on-main: `git push origin v$VERSION` (no `origin` remote, only `meetsoma`), `git branch -f main` (fatal under worktree-on-main), `git push --force-with-lease meetsoma main:main` (would silently rewind remote main from a stale local ref). Step 6 is now just the agent-repo tag push; main sync is owned by `soma-release.sh` Step 6.
+- **`soma-release-ship.sh` Step 7 worktree detection** — `-d "$HOME/.soma/agent/.git"` was wrong under worktree-on-main (worktrees use a gitfile, not a directory). Silently skipped runtime-pull on every release. Fixed to `-e` (matches dir / file / symlink).
+
+### Changed
+_(no other behavior changes this release — see Added/Fixed.)_
+
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.22.1] — 2026-04-25
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **soma:new.child cap + bundled _child-template.md (SX-663)**
 - **progressive teach + child monitor improvements (SX-665, SX-666)**
 - **cache-TTL rollback on aborted/errored turns (SX-660)**
@@ -52,6 +97,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 - **smart partial-state handling + rootName + doctor bail on `soma init` (SX-592)**
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`soma bridge` CLI — `start`/`stop`/`restart`/`status`/`logs`/`config`/`setup` (SX-522)** — first-class bridge daemon lifecycle. Works standalone without Somaverse; mirrored by `somaverse:bridge.*` (7 caps) + `somaverse:auth.*` (3 caps) for agent-side automation.
 - **`soma:agent.*` meta-tool — `delegate`/`children` collapsed (SX-609)** — 7 caps: `delegate`, `list`, `tail`, `steer`, `kill`, `harvest`, `focus` (focus op recovered from original plan). Extension shrank 606→330 lines.
 - **`soma:focus.*` / `soma:new.*` / `soma:terminals.*` — 11 new caps wrapping bundled CLIs.** Also fixed `soma focus` dispatcher's inverted discovery order.
@@ -82,6 +128,7 @@ Micro-release caught during a post-ship audit of `v0.21.0..HEAD`. Three
 findings with real code impact; two dead-code + hygiene tidy-ups.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 
 - **`soma model-sync` — audit + set `defaultModel` across all scopes.** New
   bundled script `scripts/soma-model-sync.sh`. Audits global
@@ -135,6 +182,7 @@ delegation surface (Phase B ops), ship background delegation to npm users
 so the delta-diff and `/reload` signal can actually fire.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 
 - **`children` tool — Phase B ops (SX-553)** — `tail` / `steer` / `kill` /
   `harvest` on top of `list`. `tail` uses the driver's capture; `steer`
@@ -235,6 +283,7 @@ Release notes: `.soma/releases/v0.20.x/v0.21.1/release-notes.md`.
 ## [0.21.0] — 2026-04-22 — Cache Economics + Discoverability + Self-Knowledge
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **suppress preventive OAuth-billing warning at boot (SX-566)**
 - **test-audit command + hygiene rule engine (SX-564)**
 - **swap Pi's π terminal-title glyph for Soma's σ**
@@ -286,6 +335,7 @@ reload/resume/fork. A new `/rebuild` command forces explicit recompile
 when body edits should be picked up.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`/rebuild` command (SX-495)** — forces recompile of the system prompt and deletes the disk cache. Optional — only run it if you've edited `body/*.md` mid-session AND you want the change to apply right now. Otherwise `/reload` keeps the prompt sticky and body edits land naturally on your next session.
 - **Disk-backed prompt cache (SX-495)** — `.soma/state/.session-prompt-cache.json` written on first compile, restored on subsequent reloads. Eliminates the ~$1 cache-invalidation cost per `/reload`.
 - **Severity-aware change indicator on statusline line 3** — replaced the intrusive "Changes detected" toast with a subtle third-line tag. Labels: `🔄 /reload` (extensions/*.ts + core/*.ts; picked up by jiti re-import — confirmed in Pi's `extensions.md`), `📝 /rebuild?` (body/*.md — the `?` denotes optional), `⚠ relaunch` (dist/* or core/*.js — Pi's static imports are frozen at process boot, `/reload` can't help; `/exit` and run `soma` again). Signal writer + reader updated; legacy `severity: restart` still read for back-compat. Parser handles both YAML and JSON payloads (SX-497 will unify writers).
@@ -313,6 +363,7 @@ plumbing, softens the restart alert. Three Soma tools added (`context_status`,
 corrected in dev mode.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **Soma tool registry** (`core/tool-registry.ts`) with `somaRegisterTool()` helper — the man-in-the-middle between extension-defined tools and Pi's registry. Preserves `promptSnippet` + `promptGuidelines` in the compiled system prompt (Pi's `ToolInfo` strips them).
 - **`_tools.md` configuration** (project → parent → global body chain). Sections: **Disabled** (opt-out list), **Overrides** (per-tool field tweaks), **Custom** (parsed; registration lands v0.20.3). Hardwired set (`delegate`) cannot be disabled.
 - **`context_status` tool** — returns `{percent, tokens, contextWindow}` so the agent can ground its runway decisions instead of estimating.
@@ -362,6 +413,7 @@ hatch: `SOMA_LEGACY_PROMPT=1` forces the old full-replacement path. Kept alive
 until Phase 1c.2 (planned deletion of ~300 LOC rebuild path).
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **smarter randomizer + version-aware skeletons + CLI integration**
 - **three-layer version snapshot + update check (SX-489)**
 
@@ -470,6 +522,7 @@ human-editable scratchpad, and roles can declare where their canonical
 file lives (source-of-truth) + where artifacts go (paths block).
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **Three more roles**: `planner` (writes plan files, `[read, bash, write]`), `doc_writer` (markdown-only edits, `[read, edit, write]`), `reflector` (journal entries under `memory/journal/`, `[read, write]`). 7 roles total. Researcher deferred to v0.20.2 pending search integration.
 - **`source-of-truth` frontmatter field** on roles. Project-root-relative or absolute path to the canonical role file. When set, `discoverRole` re-reads from there and `apply` writes amendments there — fixes the runtime-copy vs git-source drift v0.20.1 highlighted. Missing file → stderr warning + fallback to chain-walked copy.
 - **`paths:` frontmatter block** on roles. Per-role artifact paths (`invocations`, `proposals`, `proposalsApplied`, `scratchpad`) with `{role}` templating. Absent block = hardcoded defaults (zero migration). All paths live under `memory/` so writes stay cache-safe.
@@ -498,6 +551,7 @@ MLR parsed into structured objects, cost/token tracking, and CLI paths (`childre
 `children health`) for driving delegations outside the TUI.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **Structured model chain in role frontmatter** (`model-chain:` list of entries with `id`, `class`, `cooldown-on-rate-limit`). Scalar `default-model: <id>` still works (1-entry chain back-compat).
 - **Model policies** (`model-policy:` — `order` | `free-only` | `paid-only` | `prefer-free`). Runtime walks the chain per-policy, skipping unavailable or cooldown'd models.
 - **Health cache + cooldown** at `.soma/state/model-health.json`. Rate-limited or dead models get marked and skipped for a TTL (default 1h). Survives across sessions.
@@ -523,6 +577,7 @@ T1 scalar back-compat, T3 chain gemma→qwen→haiku fall-through, T4 cooldown s
 **Delegation MVP. Team Soma begins.** The `delegate` Pi tool spawns an in-process child agent via `pi-agent-core.Agent`, running a role-tuned system prompt while inheriting parent soul/voice/ecosystem. Foundation for everything in v0.20.x.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`delegate` tool** (registered via `extensions/soma-delegate.ts`). Called as `delegate(task, role?, model?)`. Spawns `pi-agent-core.Agent` in-process, tool budget enforced (`max-tool-calls`), returns summary + cost + MLR.
 - **Role files** in `body/children/`: `_child.md` (sub-compiler template), `_child-template.md` (scaffold for new roles), `general.md` (starter role: Sonnet, full tools, budget 25/$0.25).
 - **Role discovery via body chain.** `discoverRole` walks `body/children/<role>.md` across the soma chain (project → parent → global) so a workspace can ship roles its child projects inherit.
@@ -552,6 +607,7 @@ Curator loop + specialized child roles (verifier, builder, curator). Closes the 
 > Shipped on `dev-2x` branch. Merged to `dev` at tag time. Follows v0.20.0 (delegation MVP) + v0.20.0.1 (delegation hardening).
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **Three role files** in `body/children/`: `verifier.md` (read-only, `read + bash`, PASS/FAIL + evidence), `builder.md` (write-capable, `read + bash + edit + write`, bounded edits with verify-after), `curator.md` (meta-role, `read + write`, proposes amendments). All bound to `claude-haiku-4-5` by default with per-role budgets.
 - **MLR queue reader** `scanMLRQueue(role, somaDir, sinceTs?)` in `core/delegate-core.ts`. Scans `memory/children/<role>/invocations.jsonl`, flattens `mlr.{what_worked, what_struggled, missing_capability, suggested_amendments}` into structured amendment candidates.
 - **Amendment classifier** `classifyAmendment(entry, evidence)` returns `auto-apply` | `propose` | `human-only` | `skip`. Auto-apply requires `accumulated_knowledge` section + ≥2 distinct invocations + text < 200 chars. `default-tools`/`budget`/`success_criteria` → `propose`. Identity/soul/voice/inherits → `human-only`.
@@ -616,6 +672,7 @@ Shipping integrity release. Fixes a critical bug where `npm install -g meetsoma@
 - **`soma check-updates`** preserves the old "report-only" behavior that `soma update` used to have, for when you just want to see what's available without updating.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **Periodic update check inside the agent.** `soma-statusline.ts` runs a silent `git fetch` every 30 minutes while the agent is running. If behind, shows `⬆ update` in the statusline and writes to `~/.soma/config.json` so the next `soma` boot prints a one-line notice. Zero network latency at CLI launch.
 - **Pre-publish smoke test.** `soma-npm-publish.sh` now packs the tarball, extracts it to a clean temp dir, and runs `node dist/thin-cli.js --version` before allowing npm publish. Aborts if the tarball has broken imports or contains forbidden content (`dist/core/`, `.ts`, `node_modules/`, etc.). Also integrated into `soma-dev pipeline` so dev cycles catch breakage early.
 - **Docker e2e sandbox** (`soma-sandbox-docker.sh local`) now reliably tests our local bundle. Previous Dockerfile had a broken `COPY ... local-pkg*` glob that created a file literally named `local-pkg*`, so the sandbox was silently falling through to the registry version. Fixed — 24/24 tests pass in clean `node:22-slim` container.
@@ -630,6 +687,7 @@ Shipping integrity release. Fixes a critical bug where `npm install -g meetsoma@
 ## [0.12.2] — 2026-04-17
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`soma model` command** — Switch your default model from the CLI. Fuzzy matching (`soma model opus`), interactive selection when multiple matches, persistent save to settings. Subcommands: `soma model <pattern> set` (save without starting), `soma model <pattern> start` (save + start session), `soma model --list [search]` (browse models).
 - **Claude Opus 4.7 support** — Available via `/model` in-session or `soma model opus-4-7 set` from CLI. Includes adaptive thinking support.
 - **`soma-dev check-upstream`** — Detect and audit Pi runtime updates. Checks changelog, extension surface, provider diffs, patch compatibility. Supports `--audit` (full analysis) and `--json` (machine-readable).
@@ -671,6 +729,7 @@ control your workspace remotely, and pair with your browser — all through
 a secure relay. Data stays on your machine. The shard is just the pipe.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`soma login`** — Pair your agent with Somaverse. Creates a pairing code, opens your browser, and saves your device key. One command to connect.
 - **Hub-connect extension** — Connects your agent to the Somaverse hub as a provider. Your browser pairs with it automatically. Works alongside bridge-connect (local + cloud simultaneously).
 - **Workspace proxy** — All 28 workspace + browser tools work through the hub relay. Your agent controls the workspace even from a remote machine.
@@ -700,6 +759,7 @@ a secure relay. Data stays on your machine. The shard is just the pipe.
 - **sync-docs.sh** — prefers `agent/` (dev) over `agent-stable/` (main) for Phase 5 doc sync.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **Image budget** — auto-compact when screenshots accumulate. Soft notify at 8 images, hard auto-compact at 10. Counts all image sources (browser_screenshot, Read tool, user-pasted). Counter resets on compact. Visible in `/status`.
 - **`imageBudget` settings** — `softAt` and `hardAt` configurable via `settings.json`. Set `hardAt: 0` to disable.
 - **`breathe.maxTokens` setting** — caps the effective context window for breathe threshold calculations. Fixes breathe being dormant on 1M-context models where 50% = 500K tokens.
@@ -738,6 +798,7 @@ a secure relay. Data stays on your machine. The shard is just the pipe.
 - **Error display** — build-time error-sanitizer patch converts raw JSON API errors to human-readable messages. Billing errors show progressive messages. Retryable errors (overloaded, 500) pass through untouched.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`soma-dev verify upstream`** — detects dist/ vs node_modules/ drift by fingerprinting key runtime files. Prevents the 0.64→0.66 invisible drift.
 - **Runtime integrity tests** — test-hygiene.sh now checks telemetry disable, boot decomposition, billing removal, error cascade flag, verify-upstream existence.
 - **Release pipeline gate** — `soma-release.sh` now blocks on dist/ upstream drift detection before building.
@@ -756,6 +817,7 @@ a secure relay. Data stays on your machine. The shard is just the pipe.
 - **Pipeline** — remove `streamingBehavior` (not in Pi types), fix `focus --help` without seam.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **Cache health tracking** — statusline tracks cacheRead, cacheWrite, cost per session. Alerts on cache invalidations (>50K token writes). Footer shows ✓cache / Ninv indicator.
 - **Idle session detection** — auto-shutdown after configurable idle period with no user input.
 
@@ -767,6 +829,7 @@ a secure relay. Data stays on your machine. The shard is just the pipe.
 Identity overhaul + first-run experience. soul.md replaces SOMA.md as default. Minimal boot for new projects. 11 bundled scripts. Critical doctor fix.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`soma session`** — session maintenance tool. `strip-images` removes base64 image data from JSONL (16MB → 2.6MB), `list` shows all sessions with sizes, `stats` analyzes image payload.
 - **test-install-flows.sh** — 36-assertion E2E test suite covering fresh init, v0.6→current upgrade, edge cases (corrupt settings, missing version, empty body/).
 - **Discovery marker: `body`** — `findSomaDir()` now detects projects with only `body/soul.md` (no SOMA.md).
@@ -801,6 +864,7 @@ Identity overhaul + first-run experience. soul.md replaces SOMA.md as default. M
 Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 25 commits since v0.9.0.
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **v0.8.1→v0.9.0 migration map** — settings additions (inherit, keepalive, heat.autoDetectBump), script routing syntax, AMPS consolidation notes. Chains with existing migration maps.
 - **soma-health.sh** — project health dashboard script.
 - **Docker sandbox** — `soma-sandbox.sh` can now use Docker for isolated E2E testing (21/21 tests pass).
@@ -830,6 +894,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.9.0] — 2026-04-04
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`{{inbox_summary}}` template variable** — scans `.soma/inbox/` at boot, injects unread message summary into system prompt. File-based async messaging between agents.
 - **`{{scripts_table}}` in default `_mind.md`** — agents can now see their discovered scripts in the system prompt.
 - **`preload.autoInject` setting** — auto-inject most recent preload on fresh boot (default: true). No longer requires `soma inhale` CLI command for preload loading.
@@ -852,6 +917,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.8.1] — 2026-04-02
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **Unified warm content format** — `## TL;DR` replaces `<!-- digest:start/end -->` across all AMPS. Protocols, muscles, and automations all use the same format. Code accepts both during transition.
 - **`extractTldr()`** — shared utility for extracting TL;DR sections, used by protocols, muscles, and automations.
 - **MAP = automation alias** — `map` accepted as type alias in `/hub install`, `/hub fork`, `/hub share`. MAPs are a type of automation.
@@ -869,6 +935,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.8.0] — 2026-04-02
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **`soma doctor`** — project health check and migration from CLI. Tier 1 auto-fixes (settings, body, protocols) run silently on every boot. TUI `/soma doctor` provides interactive Tier 2+ migration with `compareTemplates()` analysis.
 - **`soma status` / `soma health`** — quick project health check (renamed from old `soma doctor`).
 - **`soma --version`** — shows both agent and CLI versions.
@@ -901,6 +968,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.7.1] — 2026-04-01
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **`soma --help` rewrite** — Soma-branded help with session commands, project commands, options, and TUI slash commands. Replaces generic Pi help output.
 - **`soma --help scripts`** — show installed scripts with descriptions. Works from CLI and inside sessions.
@@ -920,6 +988,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.7.0] — 2026-04-01
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard** — warns when no preload exists (suggests `/exhale`), warns when preload is stale (>5 tool calls since write). Use `/inhale --force` to override.
 - **Slash command usage hints** — 10 commands now include `Usage:` patterns in their descriptions: `/pin`, `/kill`, `/auto-commit`, `/inhale`, `/install`, `/auto-breathe`, `/hub`, `/scratch`, `/keepalive`, `/soul-space`, `/soma`.
@@ -946,6 +1015,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.6.7] — 2026-03-30
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **`/soma doctor`** — migration command. Detects version mismatch on boot, prompts to run migration script with confirmation, shows output, reloads settings. Post-migration guidance for body file review.
 - **Boot migration check** — notifies when project `.soma/` version is behind agent version.
@@ -972,6 +1042,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.6.6] — 2026-03-29
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **Init UX** — prompt before auto-scaffolding (`ctx.ui.confirm`), parent .soma/ inheritance when user declines, `scaffoldBody` templateDir priority chain. (SX-164, SX-165, SX-241)
@@ -998,6 +1069,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.6.5] — 2026-03-28
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **`soma inhale --list`** — show available preloads with age and staleness markers from CLI.
@@ -1033,6 +1105,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.6.4] — 2026-03-23
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1096,6 +1169,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.6.3] — 2026-03-22
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1152,6 +1226,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.6.2] — 2026-03-21
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1245,6 +1320,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.6.0] — 2026-03-20
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1450,6 +1526,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.5.2] — 2026-03-15
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1512,6 +1589,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.5.1] — 2026-03-14
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1591,6 +1669,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.5.0] — 2026-03-12
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1653,6 +1732,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.4.0] — 2026-03-11
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1702,6 +1782,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.3.0] — 2026-03-10
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**
@@ -1748,6 +1829,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 ## [0.2.0] — 2026-03-09
 
 ### Added
+- **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
 - **rewrite DNA.md — self-awareness, owner's manual, link to docs for deep reference**
 - **/inhale guard + stale warning, slash command usage hints**
 - **prompt before auto-init + parent inheritance (SX-164, SX-165, SX-241)**

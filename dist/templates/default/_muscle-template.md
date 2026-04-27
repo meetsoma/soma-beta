@@ -3,6 +3,7 @@ name: {{name}}
 type: muscle
 status: active
 description: "{{description}}"
+heat: 0
 heat-default: warm
 triggers: [{{triggers}}]
 applies-to: [any]
@@ -15,6 +16,13 @@ author: {{author}}
 license: MIT
 tier: workspace
 ---
+
+<!-- Loading note: this muscle auto-warms for 48 hours after `created` via
+     the cold-start boost in core/utils.ts (effective_heat = max(raw_heat,
+     digestThreshold + 3) for muscles created within COLD_START_WINDOW_MS).
+     After 48h, it decays to its raw heat unless triggered (focus / file-edit /
+     script match) or manually pinned. To guarantee long-term warm-loading,
+     bump `heat:` to >= 1 (warm) or >= 5 (hot). Per docs/heat-system.md. -->
 
 # {{title}}
 

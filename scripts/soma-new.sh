@@ -35,14 +35,33 @@ source "$SCRIPT_DIR/soma-theme.sh" 2>/dev/null || {
 }
 
 # ── Resolve the project's .soma/ dir (prefer env var from cli.js) ──────────
+#
+# SX-710 (s01-030d41): when $PWD is under the agent install dir
+# ($HOME/.soma/agent/...), the walk-up finds the install's own dogfood
+# .soma/ first — which is source-controlled, immutable from a user-content
+# perspective. Writing user-spawned muscles/protocols there is wrong.
+# Skip that candidate and keep walking. If walk reaches /, return empty.
 resolve_soma_dir() {
 	if [[ -n "${SOMA_PROJECT_DIR:-}" && -d "$SOMA_PROJECT_DIR" ]]; then
 		echo "$SOMA_PROJECT_DIR"; return
 	fi
+	# Resolve install dogfood .soma/ once for comparison (symlink-safe)
+	local install_soma=""
+	if [[ -d "$HOME/.soma/agent/.soma" ]]; then
+		install_soma="$(cd "$HOME/.soma/agent/.soma" && pwd -P)"
+	fi
 	local dir="$PWD"
 	while [[ "$dir" != "/" ]]; do
 		if [[ -d "$dir/.soma" ]]; then
-			echo "$dir/.soma"; return
+			local candidate="$dir/.soma"
+			local resolved
+			resolved="$(cd "$candidate" && pwd -P)"
+			if [[ -n "$install_soma" && "$resolved" == "$install_soma" ]]; then
+				# Skip agent install's dogfood — keep walking
+				dir="$(dirname "$dir")"
+				continue
+			fi
+			echo "$candidate"; return
 		fi
 		dir="$(dirname "$dir")"
 	done
