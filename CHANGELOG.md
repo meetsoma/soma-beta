@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.23.0] — 2026-04-27
+
 ### Added
 - **tree-hygiene gate (Phase 0.5, SX-712)** — `soma-release-prepare.sh` halts if `repos/agent/` has uncommitted files other than ` M CHANGELOG.md`. Closes the agent-spawned-files-leaking-into-soma-beta hole observed s01-030d41. Override with `--skip-tree-hygiene` (writes audit trail). `.releaseignore` widened to cover `.soma/`, `.husky/`, `node_modules/`.
 - **`soma:agent.list` role filter (SX-701)** — pass `{role: 'librarian'}` (or any role string) to filter children by role. Stacks with existing `active_only`/`all`/`cleanup` filters. Useful when a parent has spawned multiple roles and wants to inspect just one cohort.
@@ -52,7 +56,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 ### Changed
 _(no other behavior changes this release — see Added/Fixed.)_
 
-<!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.22.1] — 2026-04-25
 
