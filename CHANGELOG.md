@@ -8,6 +8,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.24.0] — 2026-05-01
+
+### Fixed
+- **add required Actions section to v0.23.0-to-v0.23.1.md**
+- **bump pi-* to 0.71.0 — clears CVE-2026-41686 (GHSA-p7fg-763f-g4gf)**
+- **Bump pi-* deps 0.71.0 + clear CVE-2026-41686 (GHSA-p7fg-763f-g4gf)** — upgraded `@mariozechner/pi-{ai,coding-agent,tui,agent-core}` from `^0.69.0` to `^0.71.0`. Clears `@anthropic-ai/sdk` advisory (affects `>=0.79.0 <0.91.1`). Also picks up: cache-control model-compat awareness, fine-grained tool streaming beta, empty tools array fix, stream truncation detection. fast-xml-parser (AWS Bedrock SDK transitive) remains at moderate — not reachable through soma's Anthropic provider path.
+
 ### Added
 - **soma:github.* v2 (SX-720)** — 21 caps total. API-mode (metadata; 13 caps including new audit/releases/diff/compare/file_diff parity wires) + new local-mode (tarball + soma-code shim; 8 caps): `local_path`, `local_map`, `local_find`, `local_refs`, `local_blast`, `local_structure`, `cache_list`, `cache_clean`. Treat any GitHub repo as local: fetch tarball ~1–5s to `~/.soma/cache/gh/<owner>--<repo>--<sha>/`, then run soma-code (12 langs, full ripgrep regex, DEF/IMP/USE refs, blast radius). Architectural pivot from "per-file API" to "fetch-once-then-local-toolchain." Plan: `releases/v0.23.x/plans/github-tool-10x.md`. Commits: `e7ff177`, `907013a`, `96a511c`. Guide: `docs/_dev/github-scanner.md`.
 - **dev:kanban.* (SX-720)** — dev-only ticket audit caps. `dev:kanban.audit({ticket})`, `dev:kanban.audit_batch({tickets|all_open|all, mode?})`, `dev:kanban.audit_open()`. Triangulates kanban + git log + soma:code.* + sessions/preloads + cross-project trees (somaverse/somadian/website). Verdicts: SHIPPED / STALE / **STALE-CROSS-PROJECT** / STILL-VALID / NEEDS-REPRO / UNCLEAR. Used to close SX-588/SX-589/SX-642 in same session. Build-excluded from npm tarball. Commit: `4d667a3`. Guide: `docs/_dev/kanban-audit.md`.
@@ -33,7 +42,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 - rewrite CHANGELOG promotion regex for our actual format (2034516)
 - manually promote [Unreleased] → [0.23.0] (orchestrator regex bug) (2b578f4)
 
-<!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.23.0] — 2026-04-27
 
