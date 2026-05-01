@@ -14,8 +14,9 @@
 import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { streamSimple } from "@mariozechner/pi-ai";
-import { getAgentDir, getDocsPath } from "../config.js";
+import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
+import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
 import { AuthStorage } from "./auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import { convertToLlm } from "./messages.js";
@@ -36,18 +37,26 @@ createCodingTools, createReadOnlyTools, createReadTool, createBashTool, createEd
 function getDefaultAgentDir() {
     return getAgentDir();
 }
-function getOpenRouterAttributionHeaders(model, settingsManager) {
+function getAttributionHeaders(model, settingsManager) {
     if (!isInstallTelemetryEnabled(settingsManager)) {
         return undefined;
     }
-    if (model.provider !== "openrouter" && !model.baseUrl.includes("openrouter.ai")) {
-        return undefined;
+    if (model.provider === "openrouter" || model.baseUrl.includes("openrouter.ai")) {
+        return {
+            "HTTP-Referer": "https://pi.dev",
+            "X-OpenRouter-Title": "pi",
+            "X-OpenRouter-Categories": "cli-agent",
+        };
     }
-    return {
-        "HTTP-Referer": "https://pi.dev",
-        "X-OpenRouter-Title": "pi",
-        "X-OpenRouter-Categories": "cli-agent",
-    };
+    if (model.provider === "cloudflare-workers-ai" ||
+        model.provider === "cloudflare-ai-gateway" ||
+        model.baseUrl.includes("api.cloudflare.com") ||
+        model.baseUrl.includes("gateway.ai.cloudflare.com")) {
+        return {
+            "User-Agent": "pi-coding-agent",
+        };
+    }
+    return undefined;
 }
 /**
  * Create an AgentSession with the specified options.
@@ -128,7 +137,7 @@ export async function createAgentSession(options = {}) {
         });
         model = result.model;
         if (!model) {
-            modelFallbackMessage = `No models available. Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}. Then use /model to select a model.`;
+            modelFallbackMessage = formatNoModelsAvailableMessage();
         }
         else if (modelFallbackMessage) {
             modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
@@ -150,7 +159,12 @@ export async function createAgentSession(options = {}) {
         thinkingLevel = "off";
     }
     const defaultActiveToolNames = ["read", "bash", "edit", "write"];
-    const initialActiveToolNames = options.tools ? [...options.tools] : defaultActiveToolNames;
+    const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
+    const initialActiveToolNames = options.tools
+        ? [...options.tools]
+        : options.noTools
+            ? []
+            : defaultActiveToolNames;
     let agent;
     // Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
     const convertToLlmWithBlockImages = (messages) => {
@@ -196,12 +210,16 @@ export async function createAgentSession(options = {}) {
             if (!auth.ok) {
                 throw new Error(auth.error);
             }
-            const openRouterAttributionHeaders = getOpenRouterAttributionHeaders(model, settingsManager);
+            const providerRetrySettings = settingsManager.getProviderRetrySettings();
+            const attributionHeaders = getAttributionHeaders(model, settingsManager);
             return streamSimple(model, context, {
                 ...options,
                 apiKey: auth.apiKey,
-                headers: openRouterAttributionHeaders || auth.headers || options?.headers
-                    ? { ...openRouterAttributionHeaders, ...auth.headers, ...options?.headers }
+                timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
+                maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+                headers: attributionHeaders || auth.headers || options?.headers
+                    ? { ...attributionHeaders, ...auth.headers, ...options?.headers }
                     : undefined,
             });
         },
@@ -234,7 +252,7 @@ export async function createAgentSession(options = {}) {
         followUpMode: settingsManager.getFollowUpMode(),
         transport: settingsManager.getTransport(),
         thinkingBudgets: settingsManager.getThinkingBudgets(),
-        maxRetryDelayMs: settingsManager.getRetrySettings().maxDelayMs,
+        maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
     });
     // Restore messages if session has existing data
     if (hasExistingSession) {
@@ -260,7 +278,7 @@ export async function createAgentSession(options = {}) {
         customTools: options.customTools,
         modelRegistry,
         initialActiveToolNames,
-        allowedToolNames: options.tools,
+        allowedToolNames,
         extensionRunnerRef,
         sessionStartEvent: options.sessionStartEvent,
     });

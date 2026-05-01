@@ -64,6 +64,7 @@ const noOpUIContext = {
     onTerminalInput: () => () => { },
     setStatus: () => { },
     setWorkingMessage: () => { },
+    setWorkingVisible: () => { },
     setWorkingIndicator: () => { },
     setHiddenThinkingLabel: () => { },
     setWidget: () => { },
@@ -77,6 +78,7 @@ const noOpUIContext = {
     editor: async () => undefined,
     addAutocompleteProvider: () => { },
     setEditorComponent: () => { },
+    getEditorComponent: () => undefined,
     get theme() {
         return theme;
     },
@@ -284,7 +286,7 @@ export class ExtensionRunner {
     getShortcutDiagnostics() {
         return this.shortcutDiagnostics;
     }
-    invalidate(message = "This extension instance is stale after session replacement or reload.") {
+    invalidate(message = "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().") {
         if (!this.staleMessage) {
             this.staleMessage = message;
             this.runtime.invalidate(message);
@@ -501,6 +503,45 @@ export class ExtensionRunner {
             }
         }
         return result;
+    }
+    async emitMessageEnd(event) {
+        const ctx = this.createContext();
+        let currentMessage = event.message;
+        let modified = false;
+        for (const ext of this.extensions) {
+            const handlers = ext.handlers.get("message_end");
+            if (!handlers || handlers.length === 0)
+                continue;
+            for (const handler of handlers) {
+                try {
+                    const currentEvent = { ...event, message: currentMessage };
+                    const handlerResult = (await handler(currentEvent, ctx));
+                    if (!handlerResult?.message)
+                        continue;
+                    if (handlerResult.message.role !== currentMessage.role) {
+                        this.emitError({
+                            extensionPath: ext.path,
+                            event: "message_end",
+                            error: "message_end handlers must return a message with the same role",
+                        });
+                        continue;
+                    }
+                    currentMessage = handlerResult.message;
+                    modified = true;
+                }
+                catch (err) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    const stack = err instanceof Error ? err.stack : undefined;
+                    this.emitError({
+                        extensionPath: ext.path,
+                        event: "message_end",
+                        error: message,
+                        stack,
+                    });
+                }
+            }
+        }
+        return modified ? currentMessage : undefined;
     }
     async emitToolResult(event) {
         const ctx = this.createContext();

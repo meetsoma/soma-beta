@@ -11,6 +11,7 @@
  * Contact for commercial licensing: meetsoma@gravicity.ai
  */
 
+import { APP_NAME } from "../config.js";
 export const BUILTIN_SLASH_COMMANDS = [
     { name: "settings", description: "Open settings menu" },
     { name: "model", description: "Select model (opens selector UI)" },
@@ -26,12 +27,12 @@ export const BUILTIN_SLASH_COMMANDS = [
     { name: "fork", description: "Create a new fork from a previous user message" },
     { name: "clone", description: "Duplicate the current session at the current position" },
     { name: "tree", description: "Navigate session tree (switch branches)" },
-    { name: "login", description: "Login with OAuth provider" },
-    { name: "logout", description: "Logout from OAuth provider" },
+    { name: "login", description: "Configure provider authentication" },
+    { name: "logout", description: "Remove provider authentication" },
     { name: "new", description: "Start a new session" },
     { name: "compact", description: "Manually compact the session context" },
     { name: "resume", description: "Resume a different session" },
     { name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes" },
-    { name: "quit", description: "Quit pi" },
+    { name: "quit", description: `Quit ${APP_NAME}` },
 ];
 //# sourceMappingURL=slash-commands.js.map

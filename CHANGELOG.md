@@ -8,6 +8,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+### Added
+- **soma:github.* v2 (SX-720)** — 21 caps total. API-mode (metadata; 13 caps including new audit/releases/diff/compare/file_diff parity wires) + new local-mode (tarball + soma-code shim; 8 caps): `local_path`, `local_map`, `local_find`, `local_refs`, `local_blast`, `local_structure`, `cache_list`, `cache_clean`. Treat any GitHub repo as local: fetch tarball ~1–5s to `~/.soma/cache/gh/<owner>--<repo>--<sha>/`, then run soma-code (12 langs, full ripgrep regex, DEF/IMP/USE refs, blast radius). Architectural pivot from "per-file API" to "fetch-once-then-local-toolchain." Plan: `releases/v0.23.x/plans/github-tool-10x.md`. Commits: `e7ff177`, `907013a`, `96a511c`. Guide: `docs/_dev/github-scanner.md`.
+- **dev:kanban.* (SX-720)** — dev-only ticket audit caps. `dev:kanban.audit({ticket})`, `dev:kanban.audit_batch({tickets|all_open|all, mode?})`, `dev:kanban.audit_open()`. Triangulates kanban + git log + soma:code.* + sessions/preloads + cross-project trees (somaverse/somadian/website). Verdicts: SHIPPED / STALE / **STALE-CROSS-PROJECT** / STILL-VALID / NEEDS-REPRO / UNCLEAR. Used to close SX-588/SX-589/SX-642 in same session. Build-excluded from npm tarball. Commit: `4d667a3`. Guide: `docs/_dev/kanban-audit.md`.
+- **soma:docs.* upgrade (SX-720)** — 5 caps total. New: `whats_new({version?, limit?: 3})` reads `docs/whats-new.md` (agent-facing changelog); `guide({name})` resolves `guides/` then `_dev/`. Improved: `list` is now recursive (catches `guides/` and `_dev/`), groups by section, extracts TL;DR per entry; `show` accepts subdir paths. New `docs/whats-new.md` populated with v0.23.1 + v0.23.0 sections (action-oriented invocation hints). New `docs/_dev/` subdir convention (build-excluded; gated by filesystem presence). Commits: `75b78f9`, `a7fe2f8`.
+- **Heat-system docs: cold-start boost (SX-708)** — added `## New Muscle Visibility (cold-start boost)` section to `docs/heat-system.md` (formula, code excerpt from `core/utils.ts:215-225`, scope, budget-overflow detail, verifying checklist). Mirrored to `docs/muscles.md` `## Heat & Loading Tiers`. Commit: `e4fdbe2`.
+- v3.1 — Tier 1 wins from ripgrep study (0be844f)
+- v3 agent-first redesign — never hangs, self-correcting, auto-detects (28a5850)
+- add Phase 5.6 version-truth gate (5798e66)
+- add Phase 5.5 website-readiness gate (6478fc3)
+
+### Changed
+- **breathe.auto now opt-in by default (SX-718)** — proactive auto-rotation at `rotateAt%` (default 70%) wipes user input mid-compose with no warning. Existing users with `breathe.auto: true` are flipped once via Tier 1 migration `breathe-auto-off-v0.23.1`; sentinel recorded in `settings.migrations[]` so re-enable is respected. Migration map: `migrations/phases/v0.23.0-to-v0.23.1.md`. Also introduces the reusable `applyOnce(id, fn)` pattern + `settings.migrations[]` tracker for future one-time semantic migrations beyond `addIfMissing`.
+- Phase 5.5 calls test-release-surfaces.sh (closes SX-510) (a6302c1)
+- meetsoma@0.23.0 (18f9c1d)
+
+### Fixed
+- soma-github: follow 301 redirects on moved repos (curl -sL) (`96a511c`)
+- SX-713 inhale stale-after-reload — consume message:send via route (cf18064)
+- SX-717 default path + clarify legacy soma:code.find description (2a313fc)
+- SX-716 walk up looking for agent package.json on fallback A (17b9f1e)
+- SX-715 auto-detect github.com remote name + surface fetch errors (53cbed7)
+- SX-714 persist version bump in no-fixes branch (86213f2)
+- rewrite CHANGELOG promotion regex for our actual format (2034516)
+- manually promote [Unreleased] → [0.23.0] (orchestrator regex bug) (2b578f4)
+
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.23.0] — 2026-04-27

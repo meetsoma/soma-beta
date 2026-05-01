@@ -122,6 +122,7 @@ export async function createAgentSessionFromServices(options) {
         thinkingLevel: options.thinkingLevel,
         scopedModels: options.scopedModels,
         tools: options.tools,
+        noTools: options.noTools,
         customTools: options.customTools,
         sessionStartEvent: options.sessionStartEvent,
     });

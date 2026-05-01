@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "fs";
+import { spawnSync } from "child_process";
+import { existsSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { dirname, join, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 // =============================================================================
 // Package Detection
@@ -33,22 +34,133 @@ export function detectInstallMethod() {
     }
     return "unknown";
 }
-export function getUpdateInstruction(packageName) {
-    const method = detectInstallMethod();
+function getSelfUpdateCommandForMethod(method, packageName) {
     switch (method) {
         case "bun-binary":
-            return `Download from: https://github.com/badlogic/pi-mono/releases/latest`;
+            return undefined;
         case "pnpm":
-            return `Run: pnpm install -g ${packageName}`;
+            return {
+                command: "pnpm",
+                args: ["install", "-g", packageName],
+                display: `pnpm install -g ${packageName}`,
+            };
         case "yarn":
-            return `Run: yarn global add ${packageName}`;
+            return {
+                command: "yarn",
+                args: ["global", "add", packageName],
+                display: `yarn global add ${packageName}`,
+            };
         case "bun":
-            return `Run: bun install -g ${packageName}`;
+            return {
+                command: "bun",
+                args: ["install", "-g", packageName],
+                display: `bun install -g ${packageName}`,
+            };
         case "npm":
-            return `Run: npm install -g ${packageName}`;
-        default:
-            return `Run: npm install -g ${packageName}`;
+            return {
+                command: "npm",
+                args: ["install", "-g", packageName],
+                display: `npm install -g ${packageName}`,
+            };
+        case "unknown":
+            return undefined;
     }
+}
+function readCommandOutput(command, args) {
+    const result = spawnSync(command, args, {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 2000,
+        // Windows package managers are commonly .cmd shims. Use the shell so Node can execute them;
+        // command and args are fixed literals from getGlobalPackageRoots(), not user input.
+        shell: process.platform === "win32",
+    });
+    if (result.status !== 0)
+        return undefined;
+    const stdout = result.stdout.trim();
+    return stdout || undefined;
+}
+function getGlobalPackageRoots(method) {
+    switch (method) {
+        case "npm": {
+            const root = readCommandOutput("npm", ["root", "-g"]);
+            return root ? [root] : [];
+        }
+        case "pnpm": {
+            const root = readCommandOutput("pnpm", ["root", "-g"]);
+            return root ? [root, dirname(root)] : [];
+        }
+        case "yarn": {
+            const dir = readCommandOutput("yarn", ["global", "dir"]);
+            return dir ? [dir, join(dir, "node_modules")] : [];
+        }
+        case "bun": {
+            const bunBin = readCommandOutput("bun", ["pm", "bin", "-g"]);
+            const roots = [join(homedir(), ".bun", "install", "global", "node_modules")];
+            if (bunBin) {
+                roots.push(join(dirname(dirname(bunBin)), "install", "global", "node_modules"));
+            }
+            return roots;
+        }
+        case "bun-binary":
+        case "unknown":
+            return [];
+    }
+}
+function normalizeExistingPathForComparison(path) {
+    const resolvedPath = resolve(path);
+    if (!existsSync(resolvedPath)) {
+        return undefined;
+    }
+    let normalizedPath;
+    try {
+        normalizedPath = realpathSync(resolvedPath);
+    }
+    catch {
+        return undefined;
+    }
+    if (process.platform === "win32") {
+        normalizedPath = normalizedPath.toLowerCase();
+    }
+    return normalizedPath;
+}
+function isManagedByGlobalPackageManager(method) {
+    const packageDir = normalizeExistingPathForComparison(getPackageDir());
+    if (!packageDir) {
+        return false;
+    }
+    return getGlobalPackageRoots(method).some((root) => {
+        const normalizedRoot = normalizeExistingPathForComparison(root);
+        return (normalizedRoot !== undefined &&
+            (packageDir === normalizedRoot ||
+                packageDir.startsWith(normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`)));
+    });
+}
+export function getSelfUpdateCommand(packageName) {
+    const method = detectInstallMethod();
+    const command = getSelfUpdateCommandForMethod(method, packageName);
+    if (!command || !isManagedByGlobalPackageManager(method)) {
+        return undefined;
+    }
+    return command;
+}
+export function getSelfUpdateUnavailableInstruction(packageName) {
+    const method = detectInstallMethod();
+    if (method === "bun-binary") {
+        return `Download from: https://github.com/badlogic/pi-mono/releases/latest`;
+    }
+    if (getSelfUpdateCommandForMethod(method, packageName)) {
+        return `This installation is not managed by a global ${method} install. Update it with the package manager, wrapper, or source checkout that provides it.`;
+    }
+    return `Update ${packageName} using the package manager, wrapper, or source checkout that provides this installation.`;
+}
+export function getUpdateInstruction(packageName) {
+    const method = detectInstallMethod();
+    const command = getSelfUpdateCommandForMethod(method, packageName);
+    if (command) {
+        return `Run: ${command.display}`;
+    }
+    return getSelfUpdateUnavailableInstruction(packageName);
 }
 // =============================================================================
 // Package Asset Paths (shipped with executable)
@@ -151,15 +263,23 @@ export function getInteractiveAssetsDir() {
 export function getBundledInteractiveAssetPath(name) {
     return join(getInteractiveAssetsDir(), name);
 }
-// =============================================================================
-// App Config (from package.json piConfig)
-// =============================================================================
 const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
-export const APP_NAME = pkg.piConfig?.name || "pi";
+const piConfigName = pkg.piConfig?.name;
+export const PACKAGE_NAME = pkg.name || "@mariozechner/pi-coding-agent";
+export const APP_NAME = piConfigName || "pi";
+export const APP_TITLE = piConfigName ? APP_NAME : "π";
 export const CONFIG_DIR_NAME = pkg.piConfig?.configDir || ".pi";
-export const VERSION = pkg.version;
+export const VERSION = pkg.version || "0.0.0";
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
+export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
+export function expandTildePath(path) {
+    if (path === "~")
+        return homedir();
+    if (path.startsWith("~/"))
+        return homedir() + path.slice(1);
+    return path;
+}
 const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId) {
@@ -173,12 +293,7 @@ export function getShareViewerUrl(gistId) {
 export function getAgentDir() {
     const envDir = process.env[ENV_AGENT_DIR];
     if (envDir) {
-        // Expand tilde to home directory
-        if (envDir === "~")
-            return homedir();
-        if (envDir.startsWith("~/"))
-            return homedir() + envDir.slice(1);
-        return envDir;
+        return expandTildePath(envDir);
     }
     return join(homedir(), CONFIG_DIR_NAME, "agent");
 }

@@ -17,7 +17,7 @@ import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME } from "../config.js";
 import { loadThemeFromPath } from "../modes/interactive/theme/theme.js";
-import { isLocalPath } from "../utils/paths.js";
+import { canonicalizePath, isLocalPath } from "../utils/paths.js";
 import { createEventBus } from "./event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
 import { DefaultPackageManager } from "./package-manager.js";
@@ -41,7 +41,7 @@ function resolvePromptInput(input, description) {
     return input;
 }
 function loadContextFileFromDir(dir) {
-    const candidates = ["AGENTS.md", "CLAUDE.md"];
+    const candidates = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
     for (const filename of candidates) {
         const filePath = join(dir, filename);
         if (existsSync(filePath)) {
@@ -511,9 +511,10 @@ export class DefaultResourceLoader {
         const seen = new Set();
         for (const p of [...primary, ...additional]) {
             const resolved = this.resolveResourcePath(p);
-            if (seen.has(resolved))
+            const canonicalPath = canonicalizePath(resolved);
+            if (seen.has(canonicalPath))
                 continue;
-            seen.add(resolved);
+            seen.add(canonicalPath);
             merged.push(resolved);
         }
         return merged;

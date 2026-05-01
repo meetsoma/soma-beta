@@ -161,7 +161,9 @@ export class SettingsManager {
     /** Create an in-memory SettingsManager (no file I/O) */
     static inMemory(settings = {}) {
         const storage = new InMemorySettingsStorage();
-        return new SettingsManager(storage, settings, {});
+        const initialSettings = SettingsManager.migrateSettings(structuredClone(settings));
+        storage.withLock("global", () => JSON.stringify(initialSettings, null, 2));
+        return SettingsManager.fromStorage(storage);
     }
     static loadFromStorage(storage, scope) {
         let content;
@@ -210,6 +212,24 @@ export class SettingsManager {
             else {
                 delete settings.skills;
             }
+        }
+        // Migrate retry.maxDelayMs -> retry.provider.maxRetryDelayMs
+        if ("retry" in settings &&
+            typeof settings.retry === "object" &&
+            settings.retry !== null &&
+            !Array.isArray(settings.retry)) {
+            const retrySettings = settings.retry;
+            const providerSettings = typeof retrySettings.provider === "object" && retrySettings.provider !== null
+                ? retrySettings.provider
+                : undefined;
+            if (typeof retrySettings.maxDelayMs === "number" &&
+                (providerSettings?.maxRetryDelayMs === undefined || providerSettings?.maxRetryDelayMs === null)) {
+                retrySettings.provider = {
+                    ...(providerSettings ?? {}),
+                    maxRetryDelayMs: retrySettings.maxDelayMs,
+                };
+            }
+            delete retrySettings.maxDelayMs;
         }
         return settings;
     }
@@ -490,7 +510,13 @@ export class SettingsManager {
             enabled: this.getRetryEnabled(),
             maxRetries: this.settings.retry?.maxRetries ?? 3,
             baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
-            maxDelayMs: this.settings.retry?.maxDelayMs ?? 60000,
+        };
+    }
+    getProviderRetrySettings() {
+        return {
+            timeoutMs: this.settings.retry?.provider?.timeoutMs,
+            maxRetries: this.settings.retry?.provider?.maxRetries,
+            maxRetryDelayMs: this.settings.retry?.provider?.maxRetryDelayMs ?? 60000,
         };
     }
     getHideThinkingBlock() {
@@ -671,6 +697,17 @@ export class SettingsManager {
         this.markModified("terminal", "clearOnShrink");
         this.save();
     }
+    getShowTerminalProgress() {
+        return this.settings.terminal?.showTerminalProgress ?? false;
+    }
+    setShowTerminalProgress(enabled) {
+        if (!this.globalSettings.terminal) {
+            this.globalSettings.terminal = {};
+        }
+        this.globalSettings.terminal.showTerminalProgress = enabled;
+        this.markModified("terminal", "showTerminalProgress");
+        this.save();
+    }
     getImageAutoResize() {
         return this.settings.images?.autoResize ?? true;
     }
@@ -745,6 +782,14 @@ export class SettingsManager {
     }
     getCodeBlockIndent() {
         return this.settings.markdown?.codeBlockIndent ?? "  ";
+    }
+    getWarnings() {
+        return { ...(this.settings.warnings ?? {}) };
+    }
+    setWarnings(warnings) {
+        this.globalSettings.warnings = { ...warnings };
+        this.markModified("warnings");
+        this.save();
     }
 }
 //# sourceMappingURL=settings-manager.js.map

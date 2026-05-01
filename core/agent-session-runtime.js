@@ -50,6 +50,7 @@ export class AgentSessionRuntime {
     _diagnostics;
     _modelFallbackMessage;
     rebindSession;
+    beforeSessionInvalidate;
     constructor(_session, _services, createRuntime, _diagnostics = [], _modelFallbackMessage) {
         this._session = _session;
         this._services = _services;
@@ -74,6 +75,17 @@ export class AgentSessionRuntime {
     }
     setRebindSession(rebindSession) {
         this.rebindSession = rebindSession;
+    }
+    /**
+     * Set a synchronous callback that runs after `session_shutdown` handlers finish
+     * but before the current session is invalidated.
+     *
+     * This is for host-owned UI teardown that must not yield to the event loop,
+     * such as detaching extension-provided TUI components before the old extension
+     * context becomes stale.
+     */
+    setBeforeSessionInvalidate(beforeSessionInvalidate) {
+        this.beforeSessionInvalidate = beforeSessionInvalidate;
     }
     async emitBeforeSwitch(reason, targetSessionFile) {
         const runner = this.session.extensionRunner;
@@ -105,6 +117,7 @@ export class AgentSessionRuntime {
             reason,
             targetSessionFile,
         });
+        this.beforeSessionInvalidate?.();
         this.session.dispose();
     }
     apply(result) {
@@ -281,6 +294,7 @@ export class AgentSessionRuntime {
             type: "session_shutdown",
             reason: "quit",
         });
+        this.beforeSessionInvalidate?.();
         this.session.dispose();
     }
 }

@@ -372,20 +372,32 @@ async function checkAndUpdate() {
     console.log(`  ${green("✓")} Core installed`);
   }
 
+  // SX-715 (s01-4d36c6): auto-detect github.com remote name. Users have
+  // 'origin' (soma-beta clone); dogfood worktrees may have 'meetsoma'
+  // (soma-agent). Hardcoding 'origin' silently failed for dogfood installs.
+  let remoteName = "origin";
+  try {
+    const remotes = execSync("git remote -v", { cwd: installPath, encoding: "utf-8" });
+    const m = remotes.match(/^(\w+)\s+https:\/\/github\.com\/.*\(fetch\)/m);
+    if (m) remoteName = m[1];
+  } catch {}
+
   let behind = 0;
+  let branch = "main";
   try {
     console.log(`  ${yellow("⏳")} Checking for updates...`);
-    execSync("git fetch origin --quiet", { cwd: installPath, stdio: "ignore", timeout: 15000 });
-    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+    execSync(`git fetch ${remoteName} --quiet`, { cwd: installPath, stdio: "ignore", timeout: 15000 });
+    branch = execSync("git rev-parse --abbrev-ref HEAD", {
       cwd: installPath, encoding: "utf-8"
     }).trim();
     const behindStr = execSync(
-      `git rev-list HEAD..origin/${branch} --count`,
+      `git rev-list HEAD..${remoteName}/${branch} --count`,
       { cwd: installPath, encoding: "utf-8" }
     ).trim();
     behind = parseInt(behindStr) || 0;
-  } catch {
-    console.log(`  ${dim("Could not check for updates.")}`);
+  } catch (err) {
+    const errMsg = (err.stderr ? err.stderr.toString() : err.message || "").split("\n")[0];
+    console.log(`  ${dim("Could not check for updates:")} ${dim(errMsg || "unknown error")}`);
     console.log("");
     return;
   }
@@ -411,7 +423,7 @@ async function checkAndUpdate() {
 
   try {
     const log = execSync(
-      `git log HEAD..origin/main --oneline --no-decorate -5`,
+      `git log HEAD..${remoteName}/${branch} --oneline --no-decorate -5`,
       { cwd: installPath, encoding: "utf-8" }
     ).trim();
     if (log) {
@@ -1036,6 +1048,32 @@ async function projectDoctor() {
           changed = true;
           fixes++;
         }
+
+        // ── One-time semantic migrations ─────────────────────────────
+        // Tracked via settings.migrations[] so each runs exactly once.
+        // Unlike `add`, these can FLIP existing values.
+        // Keep in sync with extensions/soma-boot.ts (same migration IDs).
+        if (!Array.isArray(current.migrations)) { current.migrations = []; }
+        const applyOnce = (id, fn) => {
+          if (current.migrations.includes(id)) return;
+          const flipped = fn();
+          current.migrations.push(id);
+          changed = true;
+          if (flipped) fixes++;
+        };
+
+        // v0.23.1 — disable proactive auto-breathe by default.
+        // Auto-breathe at rotateAt% (default 70%) wipes user input mid-compose
+        // with no warning. Default is now opt-in.
+        applyOnce("breathe-auto-off-v0.23.1", () => {
+          if (current.breathe && typeof current.breathe === "object" && current.breathe.auto === true) {
+            current.breathe.auto = false;
+            console.log(`  ${green("✓")} migration breathe-auto-off-v0.23.1: flipped breathe.auto → false (re-enable in settings.json if desired)`);
+            return true;
+          }
+          return false;
+        });
+
         if (changed) writeFileSync(settingsPath, JSON.stringify(current, null, "\t") + "\n");
       } catch {}
     }
@@ -1117,12 +1155,20 @@ async function projectDoctor() {
       }
     } catch { /* best-effort */ }
 
-    if (fixes > 0) {
-      try {
-        const s = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    // SX-714 fix: always persist the version marker on drift detection,
+    // not only in the `fixes > 0` branch. Prior to this, when projectV < agentV
+    // and no file migrations were needed, doctor printed "Version bumped"
+    // but never wrote to settings.json — next run still showed drift.
+    // Caught dogfood s01-4d36c6.
+    try {
+      const s = JSON.parse(readFileSync(settingsPath, "utf-8"));
+      if (s.version !== agentV) {
         s.version = agentV;
         writeFileSync(settingsPath, JSON.stringify(s, null, "\t") + "\n");
-      } catch {}
+      }
+    } catch {}
+
+    if (fixes > 0) {
       console.log(`  ${green("✓")} Applied ${fixes} automatic fixes`);
       const bc = existsSync(join(somaDir, "body")) ? readdirSync(join(somaDir, "body")).filter(f => f.endsWith(".md")).length : 0;
       const pc = existsSync(protoDir) ? readdirSync(protoDir).filter(f => f.endsWith(".md")).length : 0;

@@ -109,6 +109,9 @@ export async function runRpcMode(runtimeHost) {
         setWorkingMessage(_message) {
             // Working message not supported in RPC mode - requires TUI loader access
         },
+        setWorkingVisible(_visible) {
+            // Working visibility not supported in RPC mode - requires TUI loader access
+        },
         setWorkingIndicator(_options) {
             // Working indicator customization not supported in RPC mode - requires TUI loader access
         },
@@ -191,6 +194,10 @@ export async function runRpcMode(runtimeHost) {
         },
         setEditorComponent() {
             // Custom editor components not supported in RPC mode
+        },
+        getEditorComponent() {
+            // Custom editor components not supported in RPC mode
+            return undefined;
         },
         get theme() {
             return theme;

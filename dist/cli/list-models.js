@@ -3,6 +3,7 @@
  */
 import { fuzzyFilter } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { formatNoModelsAvailableMessage } from "../core/auth-guidance.js";
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")
  */
@@ -27,7 +28,7 @@ export async function listModels(modelRegistry, searchPattern) {
     }
     const models = modelRegistry.getAvailable();
     if (models.length === 0) {
-        console.log("No models available. Set API keys in environment variables.");
+        console.log(formatNoModelsAvailableMessage());
         return;
     }
     // Apply fuzzy filter if search pattern provided

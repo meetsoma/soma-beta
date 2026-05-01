@@ -9,9 +9,9 @@
     "configDir": ".soma"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "0.69.0",
-    "@mariozechner/pi-ai": "0.69.0",
-    "@mariozechner/pi-tui": "0.69.0"
+    "@mariozechner/pi-coding-agent": "0.71.0",
+    "@mariozechner/pi-ai": "0.71.0",
+    "@mariozechner/pi-tui": "0.71.0"
   },
   "license": "BSL-1.1"
 }

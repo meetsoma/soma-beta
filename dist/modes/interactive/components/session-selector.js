@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import * as os from "node:os";
 import { Container, getKeybindings, Input, Spacer, Text, truncateToWidth, visibleWidth, } from "@mariozechner/pi-tui";
 import { KeybindingsManager } from "../../../core/keybindings.js";
+import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
@@ -40,12 +41,7 @@ function formatSessionDate(date) {
 function canonicalizePath(path) {
     if (!path)
         return path;
-    try {
-        return realpathSync(path);
-    }
-    catch {
-        return path;
-    }
+    return _canonicalizePath(path);
 }
 class SessionSelectorHeader {
     scope;

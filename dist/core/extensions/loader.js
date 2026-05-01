@@ -19,7 +19,7 @@ import * as _bundledPiTui from "@mariozechner/pi-tui";
 import * as _bundledTypebox from "typebox";
 import * as _bundledTypeboxCompile from "typebox/compile";
 import * as _bundledTypeboxValue from "typebox/value";
-import { getAgentDir, isBunBinary } from "../../config.js";
+import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @mariozechner/pi-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
@@ -134,7 +134,7 @@ export function createExtensionRuntime() {
         invalidate: (message) => {
             state.staleMessage ??=
                 message ??
-                    "This extension instance is stale after session replacement or reload. Use the provided replacement-session context instead.";
+                    "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().";
         },
         // Pre-bind: queue registrations so bindCore() can flush them once the
         // model registry is available. bindCore() replaces both with direct calls.
@@ -457,8 +457,8 @@ export async function discoverAndLoadExtensions(configuredPaths, cwd, agentDir =
             }
         }
     };
-    // 1. Project-local extensions: cwd/.pi/extensions/
-    const localExtDir = path.join(cwd, ".pi", "extensions");
+    // 1. Project-local extensions: cwd/${CONFIG_DIR_NAME}/extensions/
+    const localExtDir = path.join(cwd, CONFIG_DIR_NAME, "extensions");
     addPaths(discoverExtensionsInDir(localExtDir));
     // 2. Global extensions: agentDir/extensions/
     const globalExtDir = path.join(agentDir, "extensions");

@@ -199,11 +199,12 @@ export function createEditToolDefinition(cwd, options) {
                         try {
                             await ops.access(absolutePath);
                         }
-                        catch {
+                        catch (error) {
+                            const errorMessage = error instanceof Error && "code" in error ? `Error code: ${error.code}` : String(error);
                             if (signal) {
                                 signal.removeEventListener("abort", onAbort);
                             }
-                            reject(new Error(`File not found: ${path}`));
+                            reject(new Error(`Could not edit file: ${path}. ${errorMessage}.`));
                             return;
                         }
                         // Check if aborted before reading.
@@ -302,7 +303,7 @@ export function createEditToolDefinition(cwd, options) {
                     changed = true;
                 }
                 if (changed) {
-                    context.invalidate();
+                    buildEditCallComponent(callComponent, context.args, theme);
                 }
             }
             const output = formatEditResult(context.args, callComponent?.preview, typedResult, theme, context.isError);

@@ -74,7 +74,7 @@ export class ScopedModelsSelectorComponent extends Container {
     listContainer;
     footerText;
     callbacks;
-    maxVisible = 15;
+    maxVisible = 8;
     isDirty = false;
     constructor(config, callbacks) {
         super();

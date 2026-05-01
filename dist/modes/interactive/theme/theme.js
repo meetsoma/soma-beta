@@ -5,6 +5,7 @@ import { highlight, supportsLanguage } from "cli-highlight";
 import { Type } from "typebox";
 import { Compile } from "typebox/compile";
 import { getCustomThemesDir, getThemesDir } from "../../../config.js";
+import { closeWatcher, watchWithErrorHandler } from "../../../utils/fs-watch.js";
 // ============================================================================
 // Types & Schema
 // ============================================================================
@@ -645,8 +646,8 @@ function startThemeWatcher() {
             }
         }, 100);
     };
-    try {
-        themeWatcher = fs.watch(customThemesDir, (_eventType, filename) => {
+    themeWatcher =
+        watchWithErrorHandler(customThemesDir, (_eventType, filename) => {
             if (currentThemeName !== watchedThemeName) {
                 return;
             }
@@ -654,35 +655,22 @@ function startThemeWatcher() {
                 scheduleReload();
                 return;
             }
-            const changedFile = String(filename);
-            if (changedFile !== watchedFileName) {
+            if (filename !== watchedFileName) {
                 return;
             }
             scheduleReload();
-        });
-        themeWatcher.on("error", () => {
-            try {
-                themeWatcher?.close();
-            }
-            catch {
-                /* ignore */
-            }
+        }, () => {
+            closeWatcher(themeWatcher);
             themeWatcher = undefined;
-        });
-    }
-    catch (_error) {
-        // Ignore errors starting watcher
-    }
+        }) ?? undefined;
 }
 export function stopThemeWatcher() {
     if (themeReloadTimer) {
         clearTimeout(themeReloadTimer);
         themeReloadTimer = undefined;
     }
-    if (themeWatcher) {
-        themeWatcher.close();
-        themeWatcher = undefined;
-    }
+    closeWatcher(themeWatcher);
+    themeWatcher = undefined;
 }
 // ============================================================================
 // HTML Export Helpers

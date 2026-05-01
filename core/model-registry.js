@@ -21,6 +21,7 @@ import { join } from "path";
 import { Type } from "typebox";
 import { Compile } from "typebox/compile";
 import { getAgentDir } from "../config.js";
+import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.js";
 import { clearConfigValueCache, resolveConfigValueOrThrow, resolveConfigValueUncached, resolveHeadersOrThrow, } from "./resolve-config-value.js";
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({
@@ -79,9 +80,11 @@ const OpenAICompletionsCompatSchema = Type.Object({
     requiresToolResultName: Type.Optional(Type.Boolean()),
     requiresAssistantAfterToolResult: Type.Optional(Type.Boolean()),
     requiresThinkingAsText: Type.Optional(Type.Boolean()),
+    requiresReasoningContentOnAssistantMessages: Type.Optional(Type.Boolean()),
     thinkingFormat: Type.Optional(Type.Union([
         Type.Literal("openai"),
         Type.Literal("openrouter"),
+        Type.Literal("deepseek"),
         Type.Literal("zai"),
         Type.Literal("qwen"),
         Type.Literal("qwen-chat-template"),
@@ -90,9 +93,21 @@ const OpenAICompletionsCompatSchema = Type.Object({
     openRouterRouting: Type.Optional(OpenRouterRoutingSchema),
     vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
     supportsStrictMode: Type.Optional(Type.Boolean()),
+    supportsLongCacheRetention: Type.Optional(Type.Boolean()),
 });
-const OpenAIResponsesCompatSchema = Type.Object({});
-const OpenAICompatSchema = Type.Union([OpenAICompletionsCompatSchema, OpenAIResponsesCompatSchema]);
+const OpenAIResponsesCompatSchema = Type.Object({
+    sendSessionIdHeader: Type.Optional(Type.Boolean()),
+    supportsLongCacheRetention: Type.Optional(Type.Boolean()),
+});
+const AnthropicMessagesCompatSchema = Type.Object({
+    supportsEagerToolInputStreaming: Type.Optional(Type.Boolean()),
+    supportsLongCacheRetention: Type.Optional(Type.Boolean()),
+});
+const ProviderCompatSchema = Type.Union([
+    OpenAICompletionsCompatSchema,
+    OpenAIResponsesCompatSchema,
+    AnthropicMessagesCompatSchema,
+]);
 // Schema for custom model definition
 // Most fields are optional with sensible defaults for local models (Ollama, LM Studio, etc.)
 const ModelDefinitionSchema = Type.Object({
@@ -111,7 +126,7 @@ const ModelDefinitionSchema = Type.Object({
     contextWindow: Type.Optional(Type.Number()),
     maxTokens: Type.Optional(Type.Number()),
     headers: Type.Optional(Type.Record(Type.String(), Type.String())),
-    compat: Type.Optional(OpenAICompatSchema),
+    compat: Type.Optional(ProviderCompatSchema),
 });
 // Schema for per-model overrides (all fields optional, merged with built-in model)
 const ModelOverrideSchema = Type.Object({
@@ -127,14 +142,15 @@ const ModelOverrideSchema = Type.Object({
     contextWindow: Type.Optional(Type.Number()),
     maxTokens: Type.Optional(Type.Number()),
     headers: Type.Optional(Type.Record(Type.String(), Type.String())),
-    compat: Type.Optional(OpenAICompatSchema),
+    compat: Type.Optional(ProviderCompatSchema),
 });
 const ProviderConfigSchema = Type.Object({
+    name: Type.Optional(Type.String({ minLength: 1 })),
     baseUrl: Type.Optional(Type.String({ minLength: 1 })),
     apiKey: Type.Optional(Type.String({ minLength: 1 })),
     api: Type.Optional(Type.String({ minLength: 1 })),
     headers: Type.Optional(Type.Record(Type.String(), Type.String())),
-    compat: Type.Optional(OpenAICompatSchema),
+    compat: Type.Optional(ProviderCompatSchema),
     authHeader: Type.Optional(Type.Boolean()),
     models: Type.Optional(Type.Array(ModelDefinitionSchema)),
     modelOverrides: Type.Optional(Type.Record(Type.String(), ModelOverrideSchema)),
@@ -530,6 +546,39 @@ export class ModelRegistry {
         }
     }
     /**
+     * Return auth status for a provider, including request auth configured in models.json.
+     * This intentionally does not execute command-backed config values.
+     */
+    getProviderAuthStatus(provider) {
+        const authStatus = this.authStorage.getAuthStatus(provider);
+        if (authStatus.source) {
+            return authStatus;
+        }
+        const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
+        if (!providerApiKey) {
+            return authStatus;
+        }
+        if (providerApiKey.startsWith("!")) {
+            return { configured: true, source: "models_json_command" };
+        }
+        if (process.env[providerApiKey]) {
+            return { configured: true, source: "environment", label: providerApiKey };
+        }
+        return { configured: true, source: "models_json_key" };
+    }
+    /**
+     * Get display name for a provider.
+     */
+    getProviderDisplayName(provider) {
+        const registeredProvider = this.registeredProviders.get(provider);
+        const oauthProvider = this.authStorage.getOAuthProviders().find((p) => p.id === provider);
+        return (registeredProvider?.name ??
+            registeredProvider?.oauth?.name ??
+            oauthProvider?.name ??
+            BUILT_IN_PROVIDER_DISPLAY_NAMES[provider] ??
+            provider);
+    }
+    /**
      * Get API key for a provider.
      */
     async getApiKeyForProvider(provider) {
@@ -557,7 +606,7 @@ export class ModelRegistry {
     registerProvider(providerName, config) {
         this.validateProviderConfig(providerName, config);
         this.applyProviderConfig(providerName, config);
-        this.registeredProviders.set(providerName, config);
+        this.upsertRegisteredProvider(providerName, config);
     }
     /**
      * Unregister a previously registered provider.
@@ -573,6 +622,24 @@ export class ModelRegistry {
             return;
         this.registeredProviders.delete(providerName);
         this.refresh();
+    }
+    /**
+     * Upsert a provider config into registeredProviders.
+     * If the provider is already registered, defined values in the incoming config
+     * override existing ones; undefined values are preserved from the stored config.
+     * If the provider is not registered, the incoming config is stored as-is.
+     */
+    upsertRegisteredProvider(providerName, config) {
+        const existing = this.registeredProviders.get(providerName);
+        if (!existing) {
+            this.registeredProviders.set(providerName, config);
+            return;
+        }
+        for (const k of Object.keys(config)) {
+            if (config[k] !== undefined) {
+                existing[k] = config[k];
+            }
+        }
     }
     validateProviderConfig(providerName, config) {
         if (config.streamSimple && !config.api) {
