@@ -10,6 +10,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.24.1] — 2026-05-03
+
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+### Fixed
+- **SX-722 — release-ship Step 7 silently swallowed pull failures** (`dcf8a3c`). `soma-release-ship.sh` was `(cd ~/.soma/agent && git pull ... || true)` and printed `✓ runtime updated` regardless of outcome. v0.24.0 shipped with the runtime worktree silently stuck at v0.23.0 because of this. Now: `git pull --ff-only`, then verify `package.json` version matches `NEW_VERSION` post-pull; on mismatch print full diagnostic + manual fix path and exit 1.
+- **scrape: `mkdir -p` dest before writing llms.txt** (`1ad8469`). Silent failure when `_website/` wasn't created — previously lost a fetched llms.txt this way (2026-04-27, lightpanda). Found as uncommitted edit on the runtime worktree during the s01-f1230f cycle pass; lifted to dev. (`scripts/_pro/*` is gitignored from soma-beta release — dev/main only.)
+- **tsconfig hygiene** (`9f6b091`). Added `extensions/_archive/**` to `tsconfig.json` exclude. Cleared 15 TS7006 errors from `_archive/sx594-flat-wrappers/` that `npm run check` was reporting. Archived code shouldn't be type-checked.
+
+### Added
+- **`tests/test-release-completeness.sh` regression** (`9f6b091`). Asserts CHANGELOG ↔ git tag parity, dev ↔ main ff-merge reachability, `dist/manifest.json` ↔ `package.json`, `npm/package.json` ↔ `package.json` (SX-659 collapsed train). Wired into orchestrator Phase 1 (tests gate) automatically because `soma-release-prepare.sh` iterates `tests/test-*.sh`. If a previous release was incomplete (main behind), the next prepare fails CONFLICT-HARD before any new bump — the proactive layer of the SX-722 prevention rule.
+- **`tests/test-namespaced-caps.sh` regression** (`9f6b091`). Static-analysis floor for the cap-bus surface (~92 registered caps): per-family minimum thresholds, v0.24.0 named-cap presence (18 specific caps from CHANGELOG), duplicate-registration detection, namespace hygiene. Catches accidental cap deletion or rename across all addons before runtime.
+
+
+
 ## [0.24.0] — 2026-05-01
 
 ### Fixed
