@@ -1009,6 +1009,68 @@ async function projectDoctor() {
     }
   } catch { /* best-effort; doctor continues */ }
 
+  // ── ALWAYS-RUN: One-time semantic migrations (sentinel-gated) ─────────
+  // Run regardless of version state. Sentinels in settings.migrations[] make
+  // each migration idempotent. s01-86b0fd: previously gated inside the
+  // version-mismatch block, missed users on current version with no sentinel
+  // (e.g. fresh init at current version, or manual settings.json edit).
+  // Keep in sync with extensions/soma-boot.ts always-run block.
+  {
+    const somaDir = join(process.cwd(), ".soma");
+    const settingsPath = join(somaDir, "settings.json");
+    if (existsSync(settingsPath)) {
+      try {
+        const current = JSON.parse(readFileSync(settingsPath, "utf-8"));
+        let migrationsChanged = false;
+        if (!Array.isArray(current.migrations)) { current.migrations = []; migrationsChanged = true; }
+        const applyOnceAlways = (id, fn) => {
+          if (current.migrations.includes(id)) return;
+          fn();
+          current.migrations.push(id);
+          migrationsChanged = true;
+        };
+
+        // v0.23.1 — disable proactive auto-breathe by default.
+        applyOnceAlways("breathe-auto-off-v0.23.1", () => {
+          if (current.breathe && typeof current.breathe === "object" && current.breathe.auto === true) {
+            current.breathe.auto = false;
+            console.log(`  ${green("✓")} migration breathe-auto-off-v0.23.1: flipped breathe.auto → false`);
+            return true;
+          }
+          return false;
+        });
+
+        // v0.25.0 — strip redundant prepend-vars from body/_mind.md.
+        applyOnceAlways("mind-prepend-cleanup-v0.25.0", () => {
+          try {
+            const mindPath = join(somaDir, "body", "_mind.md");
+            if (!existsSync(mindPath)) return false;
+            const original = readFileSync(mindPath, "utf-8");
+            const bareLineRx = /^[ \t]*\{\{(protocol_summaries|muscle_digests|scripts_table)\}\}[ \t]*$/gm;
+            if (!bareLineRx.test(original)) return false;
+            bareLineRx.lastIndex = 0;
+            const backupPath = mindPath + ".bak-v0.25.0";
+            if (!existsSync(backupPath)) writeFileSync(backupPath, original);
+            let cleaned = original.replace(bareLineRx, "");
+            cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+            const breadcrumb = "<!-- v0.25.0 migration (2026-05-04): removed redundant {{protocol_summaries}} / {{muscle_digests}} / {{scripts_table}} interpolations.\n     compileFrontalCortex prepends them. Backup: _mind.md.bak-v0.25.0. See: docs/body.md, migrations/phases/v0.24.1-to-v0.25.0.md. -->\n\n";
+            const fmMatch = cleaned.match(/^---\n[\s\S]*?\n---\n+/);
+            cleaned = fmMatch
+              ? cleaned.slice(0, fmMatch[0].length) + breadcrumb + cleaned.slice(fmMatch[0].length)
+              : breadcrumb + cleaned;
+            writeFileSync(mindPath, cleaned);
+            console.log(`  ${green("✓")} migration mind-prepend-cleanup-v0.25.0: cleaned _mind.md (backup at _mind.md.bak-v0.25.0)`);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+
+        if (migrationsChanged) writeFileSync(settingsPath, JSON.stringify(current, null, "\t") + "\n");
+      } catch { /* settings parse failed */ }
+    }
+  }
+
   if (agentV && semverCmp(projectV, agentV) === 0) {
     console.log(`  ${green("✓")} Project is up to date.`);
     console.log("");
@@ -1049,31 +1111,8 @@ async function projectDoctor() {
           fixes++;
         }
 
-        // ── One-time semantic migrations ─────────────────────────────
-        // Tracked via settings.migrations[] so each runs exactly once.
-        // Unlike `add`, these can FLIP existing values.
-        // Keep in sync with extensions/soma-boot.ts (same migration IDs).
-        if (!Array.isArray(current.migrations)) { current.migrations = []; }
-        const applyOnce = (id, fn) => {
-          if (current.migrations.includes(id)) return;
-          const flipped = fn();
-          current.migrations.push(id);
-          changed = true;
-          if (flipped) fixes++;
-        };
-
-        // v0.23.1 — disable proactive auto-breathe by default.
-        // Auto-breathe at rotateAt% (default 70%) wipes user input mid-compose
-        // with no warning. Default is now opt-in.
-        applyOnce("breathe-auto-off-v0.23.1", () => {
-          if (current.breathe && typeof current.breathe === "object" && current.breathe.auto === true) {
-            current.breathe.auto = false;
-            console.log(`  ${green("✓")} migration breathe-auto-off-v0.23.1: flipped breathe.auto → false (re-enable in settings.json if desired)`);
-            return true;
-          }
-          return false;
-        });
-
+        // One-time semantic migrations now run UNCONDITIONALLY in the
+        // always-run block above (s01-86b0fd). This block keeps `add` only.
         if (changed) writeFileSync(settingsPath, JSON.stringify(current, null, "\t") + "\n");
       } catch {}
     }

@@ -10,6 +10,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.25.0] — 2026-05-04
+
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+### Added
+- **Preflight update prompt** (s01-86b0fd). Cached `~/.soma/config.json:updateAvailable` (set by `soma-statusline` background check) now surfaces an interactive prompt at startup: `(c)ontinue / (u)pdate now / (s)kip this version`. Skip persists via `skipUpdateUntilTs` matched against `updateCheckTs` — new commits arrive, prompt re-fires. Zero network at boot. Replaces the misfiring Pi-cruft deprecation prompt that nagged on every startup. See `docs/troubleshooting.md § Startup Prompts`.
+- **`tests/test-shipped-templates-clean.sh` regression**. Locks the shipped `templates/default/_mind.md` AND the in-code `getDefaultMindTemplate()` fallback against re-introducing redundant `{{protocol_summaries}}` / `{{muscle_digests}}` / `{{scripts_table}}` interpolations. Four gates: source clean, dist mirrors source, warning comment present, fallback string clean.
+- **`tests/test-stale-ctx-after-rotation.sh` regression**. Static-scan + Pi `runner.js invalidate(...)` snapshot. Catches the SX-713 family (Pi 0.71.0 expanded the stale-ctx guard from `pi.X` to also cover `ctx.X`).
+- **`tests/test-mind-prepend-cleanup-migration.sh` + `tests/test-preflight-prompt.sh`** — fixture-based migration tests for v0.25.0 changes.
+- **Migration map `migrations/phases/v0.24.1-to-v0.25.0.md`** documenting the body/_mind.md cleanup migration + always-run sentinel pattern + preflight prompt.
+
+### Changed
+- **Migrations now run UNCONDITIONALLY** (s01-86b0fd). Previously gated behind `if (status.needsMigration)` (project version < agent version), missing users on current version with no sentinel — e.g. fresh init at current version, or manual settings.json edit. Now `applyOnce()` migrations run on every boot/doctor invocation; sentinels make them O(1) idempotent. Affects both `extensions/soma-boot.ts` Tier 1 and `npm/thin-cli.js` doctor mirror.
+- **Doc updates**: `docs/troubleshooting.md` gains a `## Startup Prompts` section. `docs/getting-started.md` mentions the preflight prompt at first run. `docs/body.md` and `body/DNA.md` updated with the rationale for why `{{protocol_summaries}} / {{muscle_digests}} / {{scripts_table}}` are NOT in the shipped `_mind.md` template (compileFrontalCortex prepends them).
+- **`amps/muscles/internal/route-plumbing-first.md`**: TL;DR + symptom table now cover `ctx.X` access post-rotation (was `pi.X` only). Pi 0.71.0 expanded the guard.
+
+### Fixed
+- **`/inhale` stale-ctx after Pi 0.71.0 guard expansion** (s01-86b0fd). `extensions/soma-boot.ts` `/inhale` handler made 3 `ctx.ui.notify` calls AFTER `await ctx.newSession({})`, which Pi 0.71.0's expanded `runner.js invalidate()` guard now flags as stale. Fix: drop 2 redundant success notifies, route the degraded-state warning through `getRoute()?.get("ui:notify")`. Same family as SX-713 (`pi.sendUserMessage` post-rotation); muscle updated.
+- **`getDefaultMindTemplate()` inline fallback cleaned** (s01-86b0fd). The fallback string at `core/body.ts:925` (used in test environments / `/soma debug` output when no shipped template is present) still interpolated `{{protocol_summaries}}\n\n{{muscle_digests}}` — inconsistent with the shipped template since `fcd32bd`. Fixed; locked by the new `test-shipped-templates-clean.sh`.
+- **Pi-cruft startup warnings removed** (s01-86b0fd). `npm/migrations.js` `checkDeprecatedExtensionDirs` (Pi-inherited via SX-391 absorption) was warning users with `.soma/tools/` (Python scripts), `.soma/hooks/`, or `.soma/commands/` directories — none of which are Soma conventions. The Pi-rename history (Pi's old `tools/` → `extensions/` migration) doesn't apply to Soma. Function preserved as a no-op stub for future Soma-specific deprecations; warnings no longer fire.
+
+
 ## [0.24.1] — 2026-05-03
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
