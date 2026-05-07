@@ -1,7 +1,7 @@
 {
-  "version": "0.26.0",
-  "buildId": "2ccb9e639075e57a",
-  "buildDate": "2026-05-07T06:12:20.966Z",
+  "version": "0.26.1",
+  "buildId": "cf608465af2d5b95",
+  "buildDate": "2026-05-07T08:00:16.891Z",
   "piVersion": "0.72.1",
   "fileCount": 219,
   "files": {
@@ -200,7 +200,7 @@
     "templates/default/pulse.md": "1e61f124f3bd273bd6638118e036e6c851a453ccf24a97f5c27f465d212fc337",
     "templates/default/soul.md": "0f52d232109aa1eba588a2e5ba9a73a26bee56e3f53c144af5f718e8441072b8",
     "templates/default/voice.md": "7a2df8e08cd9861f3ca4c5ded3623222840208ffaab619ce354863a04996bf5e",
-    "thin-cli.js": "cbc189f57f170bb214f40711dd7f2b3d39518f37686e45f8fd296a0d6f9a8a10",
+    "thin-cli.js": "36633f6038f08fa4d6a3fe138ec97d0c4b28cb9591da050ea7b37ae211ece025",
     "utils/changelog.js": "7f2efad2f30697d1ab2f2324e128f0501f646f893f5a09e39d69cd4f7fbd34c1",
     "utils/child-process.js": "1f2e62a49d03af5d4d1fc3b5b646e90b0aaaf56bad2d03777552ead4d8ac9c8b",
     "utils/clipboard-image.js": "88716dbef6c7f186d9b20b86e785eda8767ce64af1ee387aa73f71b1261119cc",

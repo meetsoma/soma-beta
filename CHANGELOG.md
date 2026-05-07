@@ -8,6 +8,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+## [0.26.1] — 2026-05-07
+
+### Fixed
+
+- **Cycle 21 — `test-release-completeness.sh` Section 4 in-flight aware** (s01-c62a62). The npm/package.json drift gate now respects the existing `IN_FLIGHT_VERSION` guard (same pattern as Section 2 dev↔main parity and `test-version-truth.sh` cycle 18). During the release ship window, `npm test` ran in orchestrator Step 4 (preflight) was reporting a real drift that resolved moments later when Step 5 (`soma-npm-publish.sh`) bumped + committed npm/package.json. Now skips cleanly with a SKIP not FAIL during ship. Re-run post-ship for verification.
+
+- **Cycle 22 — `soma:github.local_*` runtime ship gap** (s01-c62a62, commit `005005e`). The 8 local-mode caps shipped in v0.24.0 (`local_path` / `local_map` / `local_find` / `local_refs` / `local_blast` / `local_structure` / `cache_list` / `cache_clean`) registered cleanly on the route bus but failed at runtime in every install with `"ERROR: soma-github-cache.sh not found at /var/folders/.../T/"` because `compile-pro-scripts.sh` PRO_SCRIPTS list bundled `soma-github` without its companion cache helper. Static-only `test-namespaced-caps.sh` never invoked the caps so the gap was invisible. Fix (Option A — inline w/ clean-extraction markers): refactored `soma-github-cache.sh` case-dispatcher into named `_cache_*` functions wrapped in `{{INLINE-LIFT-START / END}}` markers; `soma-github.sh` got `{{INLINE-START / END}}` markers + a comment block explaining the rationale + clean-extraction pattern (so cache can later be promoted to a separate Pro tool); new `lift-cache-helper.sh` build gate (idempotent, hooked into `compile-pro-scripts.sh`) regenerates the inline block from canonical before b64-encode. Plus 1 sub-bug fix: `cache_info` dispatcher branch now passes `$REPO` (was empty `$@`). New runtime regression test `tests/test-soma-github-local-runtime.sh` drives the shipped `soma` binary through all 8 caps + a regression guard for the exact "not found" string — 10/10 pass. v0.24.0 marketing/docs surfaces (`docs/_dev/github-scanner.md`, `docs/whats-new.md`, `docs/tools.md`, website mirrors) described correct behavior all along; the fix makes those descriptions true at runtime.
+
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.26.0] — 2026-05-07
