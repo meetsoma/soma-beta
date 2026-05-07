@@ -13,7 +13,7 @@
 
 import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
-import { streamSimple } from "@mariozechner/pi-ai";
+import { clampThinkingLevel, streamSimple } from "@mariozechner/pi-ai";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
@@ -155,8 +155,11 @@ export async function createAgentSession(options = {}) {
         thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
     }
     // Clamp to model capabilities
-    if (!model || !model.reasoning) {
+    if (!model) {
         thinkingLevel = "off";
+    }
+    else {
+        thinkingLevel = clampThinkingLevel(model, thinkingLevel);
     }
     const defaultActiveToolNames = ["read", "bash", "edit", "write"];
     const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);

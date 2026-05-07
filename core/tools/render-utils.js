@@ -25,7 +25,7 @@ export function normalizeDisplayText(text) {
     return text.replace(/\r/g, "");
 }
 export function getTextOutput(result, showImages) {
-    if (!result)
+    if (!result || !Array.isArray(result.content))
         return "";
     const textBlocks = result.content.filter((c) => c.type === "text");
     const imageBlocks = result.content.filter((c) => c.type === "image");

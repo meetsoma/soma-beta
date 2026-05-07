@@ -3269,7 +3269,7 @@ export class InteractiveMode {
         const storedCredential = this.session.modelRegistry.authStorage.get("anthropic");
         if (storedCredential?.type === "oauth") {
             this.anthropicSubscriptionWarningShown = true;
-            if (ANTHROPIC_SUBSCRIPTION_AUTH_WARNING) this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
+            this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
             return;
         }
         try {
@@ -3278,7 +3278,7 @@ export class InteractiveMode {
                 return;
             }
             this.anthropicSubscriptionWarningShown = true;
-            if (ANTHROPIC_SUBSCRIPTION_AUTH_WARNING) this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
+            this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
         }
         catch {
             // Ignore auth lookup failures for warning-only checks.

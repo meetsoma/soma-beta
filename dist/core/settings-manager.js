@@ -454,7 +454,7 @@ export class SettingsManager {
         this.save();
     }
     getTransport() {
-        return this.settings.transport ?? "sse";
+        return this.settings.transport ?? "auto";
     }
     setTransport(transport) {
         this.globalSettings.transport = transport;

@@ -1066,6 +1066,29 @@ async function projectDoctor() {
           }
         });
 
+        // v0.26.0 — rename `## Next Session` → `## Start Here` in active preloads (SX-733).
+        applyOnceAlways("memory-section-rename-v0.26.0", () => {
+          try {
+            const preloadDir = join(somaDir, "memory", "preloads");
+            if (!existsSync(preloadDir)) return false;
+            const files = readdirSync(preloadDir).filter((f) => f.startsWith("preload-next-") && f.endsWith(".md"));
+            let touched = 0;
+            for (const f of files) {
+              const path = join(preloadDir, f);
+              const content = readFileSync(path, "utf-8");
+              if (!/^## Next Session\s*$/m.test(content)) continue;
+              writeFileSync(path, content.replace(/^## Next Session\s*$/m, "## Start Here"));
+              touched++;
+            }
+            if (touched > 0) {
+              console.log(`  ${green("✓")} migration memory-section-rename-v0.26.0: renamed in ${touched} preload(s)`);
+            }
+            return touched > 0;
+          } catch {
+            return false;
+          }
+        });
+
         if (migrationsChanged) writeFileSync(settingsPath, JSON.stringify(current, null, "\t") + "\n");
       } catch { /* settings parse failed */ }
     }

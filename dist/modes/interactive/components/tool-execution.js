@@ -137,7 +137,7 @@ export class ToolExecutionComponent extends Container {
         const caps = getCapabilities();
         if (caps.images !== "kitty")
             return;
-        if (!this.result)
+        if (!this.result || !Array.isArray(this.result.content))
             return;
         const imageBlocks = this.result.content.filter((c) => c.type === "image");
         for (let i = 0; i < imageBlocks.length; i++) {
@@ -252,7 +252,7 @@ export class ToolExecutionComponent extends Container {
             this.removeChild(spacer);
         }
         this.imageSpacers = [];
-        if (this.result) {
+        if (this.result && Array.isArray(this.result.content)) {
             const imageBlocks = this.result.content.filter((c) => c.type === "image");
             const caps = getCapabilities();
             for (let i = 0; i < imageBlocks.length; i++) {

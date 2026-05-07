@@ -195,7 +195,7 @@ export function estimateTokens(message) {
             if (typeof message.content === "string") {
                 chars = message.content.length;
             }
-            else {
+            else if (Array.isArray(message.content)) {
                 for (const block of message.content) {
                     if (block.type === "text" && block.text) {
                         chars += block.text.length;

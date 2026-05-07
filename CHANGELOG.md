@@ -10,6 +10,57 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.26.0] — 2026-05-07
+
+### Added
+
+- **Cycle 10 — `_tool-template.ts` modern shape + Pi tool runner runtime guard** (s01-a6b91e). Replaces broken canonical example (2-arg execute, bare-string return) with the contract Pi's runtime actually expects: 5-arg `(toolCallId, params, signal, onUpdate, ctx) => Promise<AgentToolResult>`, including required `label` field. Adds Site G defensive wrap in `pi-agent-core/agent-loop.js executePreparedToolCall` so any tool returning a string OR an object with undefined `.content` gets lifted into the canonical `{content: [{type:"text", text}], details}` envelope before persistence. Closes the bare-string-return bug class that was producing malformed toolResult records (no `.content` key) and crashing downstream consumers (renderer, compaction, anthropic provider). Verified all 7 runtime patches still needed against upstream Pi 0.73.0 main — audit recorded in `.soma/cycles/audit-fix/10-pi-tool-result-shape-mismatch/VERIFY.md`.
+
+- **Cycle 10 — 6 defensive runtime guards against malformed `ToolResult.content`** (s01-a6b91e). Added Sites A-F across 4 files: `render-utils.getTextOutput`, `tool-execution.maybeConvertImagesForKitty`, `tool-execution.updateDisplay`, `compaction.estimateTokens`, `pi-ai/anthropic.convertContentBlocks`, plus `pi-tui/terminal.start` process-exit cleanup (CSI-u + bracketed-paste + modifyOtherKeys + raw-mode restoration so terminal doesn't leak escape sequences into shell after TUI crash). Defense-in-depth: Site G prevents the malformation upstream; Sites A-F catch anything that slips past.
+
+- **Cycle 12 — Preload notify state machine** (s01-a6b91e). `extensions/soma-breathe.ts` replaces the every-turn-end "🟢 Preload saved..." notify with a transition-only state machine (`'none' | 'saved' | 'stale'`). Adds yellow stale notify (`🟡 Preload now stale (N tool calls...)`) and green refresh notify (`🟢 Preload refreshed`) on STALE→SAVED. Single source of truth for the stale threshold (`PRELOAD_STALE_TOOL_COUNT = 5`); `breathe:detail` route cap exposes `isStale`/`staleThreshold`/`notifyState` for downstream consumers (statusline + soma-boot). Removes dead opt-in `breathe.preloadStaleThreshold` setting (was default 0 = disabled).
+
+- **Cycle 14 — Regression tests for runtime patches** (s01-a6b91e). 27 new gates across 3 test scripts (`test-tool-result-content-guard.sh`, `test-pi-ai-anthropic-content-guard.sh`, `test-pi-tui-exit-cleanup.sh`) lock Sites A-G against regression. Plus `test-preload-notify-state-machine.sh` (15 gates) for cycle 12. Total: 42 new test gates, 100% passing.
+
+- **Cycle 03-meta — META_CYCLE.md adoption** (s01-a6b91e). New `releases/META_CYCLE.md` umbrella dashboard (live state + cycles index + routing + cross-cycle artifact pointers + pattern + changelog). Pattern adopted from arzadon-fitness s01-ddcd84 v0.1.0; meetsoma is domain #2 of the validation arc her muscle's "Strengthen" phase needs.
+
+- **Three new disciplines locked as muscles** (s01-a6b91e):
+  - `amps/muscles/meta-cycle-pattern.md` — single SoT per cycle; umbrella META_CYCLE.md dashboard; persistent service artifacts at `<umbrella>/<service>/`.
+  - `amps/muscles/verify-patch-against-upstream.md` — `git show upstream/main:<path>` from your local pi-mono clone BEFORE adding any `apply-patches.sh` entry. Don't patch what upstream already fixed.
+  - `amps/muscles/blast-radius-before-change.md` — `soma:code.blast` + regression test BEFORE claiming a fix shipped. No claim-shipped without a test.
+
+- **`docs/extending.md` § Cache-safe registration vs hot-reload** — four-concept table (cache-safe registration / module hot-reload / prompt rebuild / subprocess pickup) with explicit "don't conflate the four" rule. Cited authority: `agent-session.js:1894`, `loader.js:271`, soma-boot cache-stickiness, Pi changelog 0.56.0 (#1720), `meta-tool-factory.ts:96-130`, `soma-addons/code.ts:38`. Decision matrix: per-edit-class × cache-impact × what-to-run.
+
+- **`docs/commands.md` § `/reload`** — row clarified to cover both `pi.registerTool` and `route.provide` registration shapes. Pair-with-`/rebuild` guidance for prompt-visible field edits.
+
+- **`body/body.md` Before Doing X table** — added 4 new routing rows (verify-patch-against-upstream, blast-radius-before-change, meta-cycle-pattern, runtime-patch entry).
+
+- **5 queued cycles for follow-up work** filed in `.soma/cycles/`:
+  - `audit-fix/11-soma-inhale-double-preload-load` — deep code trace done, hypothesis space narrowed (H-A/H-B/H-C), smoke recipe ready for runtime repro.
+  - `audit-fix/13-startup-only-retry-redesign` — Pi 0.73 retry regex audited; gap = DNS/TLS/handshake errors; needs Curtis's actual error class to scope.
+  - `audit-fix/15-stale-test-cleanup-sx727-sx734` — deletes stale tests asserting reverted features.
+
+### Fixed
+- **cycle 15 — delete stale SX-727/SX-734 tests + replacement upstream-tracking gate (s01-a6b91e)**
+
+- **CHANGELOG entries from s01-a54f21 reflect what was originally shipped, not what's currently on `main`.** Two entries below describe features that were subsequently REVERSED or further GUTTED in the same session and not back-propagated to this changelog:
+  - **SX-727 (`context-1m-2025-08-07` beta header patch) — REVERSED** in commit `da6b971` (s01-a54f21). Always-on header rejected requests on accounts without long-context billing (Curtis's case). Patch is DISABLED in `apply-patches.sh`; manifest entry marked `"removed": "2026-05-04"`. To re-enable as opt-in, see SX-741 (auto-apply on settings flip). Original CHANGELOG entry retained below for ancestry; reality is the patch does NOT ship.
+  - **SX-734 (billing-retry gate) — FULLY GUTTED** in commit `7109ce1` (s01-a54f21). The `autoRetryBilling` setting gate landed (commit 54f7ef5), then SX-738 fixed undefined-settings ref (commit e403fab), then the entire layer was REMOVED — letting Pi handle billing errors natively (its `_isRetryableError` correctly excludes `extra usage`). Existing `tests/test-billing-retry-disabled.sh` is now stale and fails; cycle 15 plans cleanup.
+
+  Both entries above need cleanup before this changelog is promoted to a versioned section. Cycle 15 (`audit-fix/15-stale-test-cleanup-sx727-sx734`) deletes the stale tests; the CHANGELOG entries themselves should be either removed or rewritten as REVERSED markers.
+
+### Original (stale) entries — retained for ancestry, do NOT promote as-is
+
+- **SX-737 stable-v0.25.0 fallback branch + generic switch ref**
+- **Pi 0.72.1 bump** (SX-732). Updates `pi-ai`, `pi-coding-agent`, `pi-tui`, `pi-agent-core` from 0.71.0 to 0.72.1. Unlocks `shouldStopAfterTurn` agent loop callback (Pi 0.72.0+) — documented use case: *"request a graceful stop after the current turn, e.g. before context gets too full"* — the canonical mechanism for the upcoming v0.27 auto-breathe redesign. Pi's internal API rename (`compat.reasoningEffortMap` → `thinkingLevelMap`) audited clean: zero usage in Soma extensions. Removed providers (Gemini CLI / Antigravity) we don't reference. `npm audit`: 0 vulnerabilities post-bump.
+- **~~Anthropic `context-1m-2025-08-07` beta header patch~~** (SX-727) — REVERSED s01-a54f21 commit `da6b971`. See "Fixed" section above for full context. Original entry: *Soma now adds `context-1m-2025-08-07` to Anthropic's OAuth `anthropic-beta` header via `scripts/_dev/patches/apply-patches.sh`. Without this opt-in, Sonnet 4.6 hits the long-context billing tier ("extra usage" wall) at ~400K tokens.*
+- **Doctor migration: `## Next Session` → `## Start Here` in active preloads** (SX-733). Closes the SX-729 loop for existing user preloads. Sentinel-gated `applyOnce("memory-section-rename-v0.26.0")` in BOTH Tier 1 sites (`extensions/soma-boot.ts` + `npm/thin-cli.js`). Strict heading-only regex; `_archive/` untouched (provenance). New regression test: `tests/test-memory-section-rename-migration.sh` (7 scenarios).
+- **~~Billing-error auto-retry disabled by default~~** (SX-734) — GATE GUTTED s01-a54f21 commit `7109ce1`. See "Fixed" section above for full context. Original entry: *Fix: gate auto-retry behind `settings.errors.autoRetryBilling` (default `false`). [...] New regression test: `tests/test-billing-retry-disabled.sh` (6 gates).* Reality: the autoRetryBilling gate AND the entire Soma billing-retry layer are now removed; Pi handles billing errors natively.
+
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+<!-- s01-a6b91e: cycle 10/12/14 work added above; s01-a54f21 entries marked stale/reversed for ancestry. -->
+
+
 ## [0.25.0] — 2026-05-04
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
