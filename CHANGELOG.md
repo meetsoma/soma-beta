@@ -8,6 +8,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+## [0.26.2] — 2026-05-07
+
+### Added
+
+- **`extraUsageRecovery` setting** (default `"auto"`, s01-c62a62, cycle 13 successor). Narrow-scoped recovery for the boot-turn-after-`/inhale` variant of Anthropic's `extra usage` 400 error. When `/inhale` rotates the session and the first API call returns Anthropic's `"You're out of extra usage. Add more at claude.ai/settings/usage and keep going."`, Soma surfaces a single notice and auto-injects `.` after a 1s debounce so the conversation advances and subsequent turns can run cleanly. Three modes: `"auto"` (default — notify + auto-`.`), `"notify"` (notice only; user sends any message to continue), `"off"` (silent — Pi's raw error display passes through). Hard fence: only fires when error contains literal `"extra usage"` AND `turnCount <= 2` AND no keepalive fired. Auto-injection is 1 char (`.`) — no full-context resend, no 2× billing amplifier (the SX-709 failure mode that killed the original auto-retry stays killed). Migration phase doc: `migrations/phases/v0.26.1-to-v0.26.2.md`. Plan: `.soma/cycles/audit-fix/13-startup-only-retry-redesign/cycle.md`.
+
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
 ## [0.26.1] — 2026-05-07
 
 ### Fixed
