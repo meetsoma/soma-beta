@@ -49,6 +49,9 @@ export const defaultModelPerProvider = {
     "cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
     "cloudflare-ai-gateway": "workers-ai/@cf/moonshotai/kimi-k2.6",
     xiaomi: "mimo-v2.5-pro",
+    "xiaomi-token-plan-cn": "mimo-v2.5-pro",
+    "xiaomi-token-plan-ams": "mimo-v2.5-pro",
+    "xiaomi-token-plan-sgp": "mimo-v2.5-pro",
 };
 /**
  * Helper to check if a model ID looks like an alias (no date suffix)

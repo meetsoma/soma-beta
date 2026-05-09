@@ -1,8 +1,10 @@
+import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import { Text } from "@mariozechner/pi-tui";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { Type } from "typebox";
-import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
+import { getReadmePath } from "../../config.js";
+import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.js";
 import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.js";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
@@ -15,24 +17,25 @@ const readSchema = Type.Object({
     offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
     limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
 });
+const COMPACT_RESOURCE_FILE_NAMES = new Set(["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]);
 const defaultReadOperations = {
     readFile: (path) => fsReadFile(path),
     access: (path) => fsAccess(path, constants.R_OK),
     detectImageMimeType: detectSupportedImageMimeTypeFromFile,
 };
+function formatReadLineRange(args, theme) {
+    if (args?.offset === undefined && args?.limit === undefined)
+        return "";
+    const startLine = args.offset ?? 1;
+    const endLine = args.limit !== undefined ? startLine + args.limit - 1 : "";
+    return theme.fg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
+}
 function formatReadCall(args, theme) {
     const rawPath = str(args?.file_path ?? args?.path);
     const path = rawPath !== null ? shortenPath(rawPath) : null;
-    const offset = args?.offset;
-    const limit = args?.limit;
     const invalidArg = invalidArgText(theme);
-    let pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
-    if (offset !== undefined || limit !== undefined) {
-        const startLine = offset ?? 1;
-        const endLine = limit !== undefined ? startLine + limit - 1 : "";
-        pathDisplay += theme.fg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
-    }
-    return `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}`;
+    const pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
+    return `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}${formatReadLineRange(args, theme)}`;
 }
 function trimTrailingEmptyLines(lines) {
     let end = lines.length;
@@ -47,7 +50,59 @@ function getNonVisionImageNote(model) {
     }
     return "[Current model does not support images. The image will be omitted from this request.]";
 }
-function formatReadResult(args, result, options, theme, showImages) {
+function toPosixPath(filePath) {
+    return filePath.split(sep).join("/");
+}
+function getPiDocsClassification(absolutePath) {
+    const packageRoot = dirname(getReadmePath());
+    const relativePath = relative(resolvePath(packageRoot), resolvePath(absolutePath));
+    if (relativePath === "" ||
+        relativePath === ".." ||
+        relativePath.startsWith(`..${sep}`) ||
+        isAbsolute(relativePath)) {
+        return undefined;
+    }
+    const label = toPosixPath(relativePath);
+    if (label === "README.md" || label.startsWith("docs/") || label.startsWith("examples/")) {
+        return { kind: "docs", label };
+    }
+    return undefined;
+}
+function getCompactReadClassification(args, cwd) {
+    const rawPath = str(args?.file_path ?? args?.path);
+    if (!rawPath)
+        return undefined;
+    const absolutePath = resolveReadPath(rawPath, cwd);
+    const fileName = basename(absolutePath);
+    if (fileName === "SKILL.md") {
+        return { kind: "skill", label: basename(dirname(absolutePath)) || fileName };
+    }
+    const docsClassification = getPiDocsClassification(absolutePath);
+    if (docsClassification)
+        return docsClassification;
+    if (COMPACT_RESOURCE_FILE_NAMES.has(fileName)) {
+        return { kind: "resource", label: fileName };
+    }
+    return undefined;
+}
+function formatCompactReadCall(classification, args, theme) {
+    const expandHint = theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`);
+    if (classification.kind === "skill") {
+        return (theme.fg("customMessageLabel", `\x1b[1m[skill]\x1b[22m `) +
+            theme.fg("customMessageText", classification.label) +
+            formatReadLineRange(args, theme) +
+            expandHint);
+    }
+    return (theme.fg("toolTitle", theme.bold(`read ${classification.kind}`)) +
+        " " +
+        theme.fg("accent", classification.label) +
+        formatReadLineRange(args, theme) +
+        expandHint);
+}
+function formatReadResult(args, result, options, theme, showImages, cwd, isError) {
+    if (!options.expanded && !isError && getCompactReadClassification(args, cwd)) {
+        return "";
+    }
     const rawPath = str(args?.file_path ?? args?.path);
     const output = getTextOutput(result, showImages);
     const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
@@ -216,12 +271,13 @@ export function createReadToolDefinition(cwd, options) {
         },
         renderCall(args, theme, context) {
             const text = context.lastComponent ?? new Text("", 0, 0);
-            text.setText(formatReadCall(args, theme));
+            const classification = !context.expanded ? getCompactReadClassification(args, context.cwd) : undefined;
+            text.setText(classification ? formatCompactReadCall(classification, args, theme) : formatReadCall(args, theme));
             return text;
         },
         renderResult(result, options, theme, context) {
             const text = context.lastComponent ?? new Text("", 0, 0);
-            text.setText(formatReadResult(context.args, result, options, theme, context.showImages));
+            text.setText(formatReadResult(context.args, result, options, theme, context.showImages, context.cwd, context.isError));
             return text;
         },
     };

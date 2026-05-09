@@ -24,11 +24,19 @@ function emitOsc52(text) {
 }
 export async function copyToClipboard(text) {
     let copied = false;
+    const p = platform();
     // Prefer direct clipboard writes. Emitting OSC 52 first can make terminals
     // write the same native clipboard concurrently with the addon, and very large
     // OSC 52 payloads can desynchronize terminal rendering.
+    //
+    // On Linux, skip the native addon. The underlying `clipboard-rs` crate is
+    // X11-only and does not retain selection ownership after `set_text`
+    // resolves, so on Wayland-only compositors (Hyprland, Niri, ...) and even
+    // some X11 sessions the call resolves successfully without populating the
+    // clipboard. The platform tools below (wl-copy, xclip, xsel) properly
+    // daemonize and keep ownership.
     try {
-        if (clipboard) {
+        if (clipboard && p !== "linux") {
             await clipboard.setText(text);
             copied = true;
         }
@@ -40,7 +48,6 @@ export async function copyToClipboard(text) {
     if (copied && !remote) {
         return;
     }
-    const p = platform();
     const options = { input: text, timeout: 5000, stdio: ["pipe", "ignore", "ignore"] };
     if (!copied) {
         try {

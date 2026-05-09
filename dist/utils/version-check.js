@@ -40,7 +40,7 @@ export function isNewerPackageVersion(candidateVersion, currentVersion) {
     }
     return candidateVersion.trim() !== currentVersion.trim();
 }
-export async function getLatestPiVersion(currentVersion, options = {}) {
+export async function getLatestPiRelease(currentVersion, options = {}) {
     if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE)
         return undefined;
     const response = await fetch(LATEST_VERSION_URL, {
@@ -53,7 +53,14 @@ export async function getLatestPiVersion(currentVersion, options = {}) {
     if (!response.ok)
         return undefined;
     const data = (await response.json());
-    return typeof data.version === "string" && data.version.trim() ? data.version.trim() : undefined;
+    if (typeof data.version !== "string" || !data.version.trim()) {
+        return undefined;
+    }
+    const packageName = typeof data.packageName === "string" && data.packageName.trim() ? data.packageName.trim() : undefined;
+    return { version: data.version.trim(), packageName };
+}
+export async function getLatestPiVersion(currentVersion, options = {}) {
+    return (await getLatestPiRelease(currentVersion, options))?.version;
 }
 export async function checkForNewPiVersion(currentVersion) {
     try {

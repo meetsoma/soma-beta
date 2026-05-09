@@ -201,7 +201,7 @@ fi
 # Validate model id looks plausible (non-empty, no path-like chars)
 if [[ -z "$MODEL_ID" ]] || [[ "$MODEL_ID" == *"/"*"/"* ]]; then
 	printf '%b\n' "${SOMA_RED}Invalid --set value: '$MODEL_ID'${SOMA_NC}" >&2
-	echo "Try e.g. --set claude-opus-4-5 or --set anthropic/claude-opus-4.6" >&2
+	echo "Try e.g. --set claude-opus-4-7 or --set anthropic/claude-sonnet-4-6" >&2
 	exit 2
 fi
 

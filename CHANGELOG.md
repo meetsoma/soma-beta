@@ -8,6 +8,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.27.0] — 2026-05-09
+
+### Added
+
+- **Pi upstream monitor — live version gap in every session** (s01-8b3cb3). GitHub Actions workflow (`.github/workflows/upstream-monitor.yml`) watches `badlogic/pi-mono` (source of `@mariozechner/pi-coding-agent`) every 6 hours. Writes `PI_UPSTREAM.md` to the agent root with: current pinned version, latest npm version, releases behind count, and flagged commits relevant to Soma (covers all 33 Pi API usages: `registerTool`, `registerCommand`, `sendUserMessage`, 11 event hooks, 7 patch targets). New `{{pi_gap}}` body var in `resolveBlockVariables` reads `PI_UPSTREAM.md` at session start and injects live gap into the system prompt. `soma-dev status` surfaces flagged ⚠️ items in yellow. Eliminates manually tracking Pi version drift.
+
+- **Autonomous CI loop — nightly tests + issue filing + fix pipeline** (s01-8b3cb3, smoke-validated s01-ae942e). Three-layer self-healing CI: (1) `.github/workflows/test-nightly.yml` runs 25 portable tests on schedule (4am UTC) and on push to dev/main; on failure, auto-files a structured GitHub issue tagged `nightly-failure` with failing tests, error excerpts, Pi version, last 5 commits, and a fix brief for the next agent. Dedupe gate skips filing when an open issue already exists for the same failure. (2) `dev:issue.create` + `dev:issue.list` addon caps for agent-filed issues from within sessions. (3) `soma-dev delegate ci-fix <url>` orchestrates: `issue_investigator` → `builder` → `verifier`. 18 tests gained `CI=true` skip guards (workspace/dist-dependent tests self-skip). `pr-check.yml` hardened: tsc typecheck job + changelog blocking + conventional-commit format validation. End-to-end smoke s01-ae942e drove a deliberate test failure through nightly→issue→dedupe→revert→green.
+
+- **Autonomous PR workflow — `soma-dev delegate pr`** (s01-8b3cb3). Full pipeline from commits to complete PR: `soma-pr-brief.sh` generates structured brief (git-cliff CHANGELOG, affected files, semver bump type, docs to update, roadmap entry suggestion); `changelog_curator` writes rich `[Unreleased]` narrative; `pr_author` writes PR description; `doc_writer` updates flagged docs; `verifier` confirms tests pass. `cliff.toml` added — git-cliff configured for Keep-A-Changelog format from conventional commits (feat→Added, fix→Fixed, ci/chore/test filtered). `release-please` manifest updated from stale 0.22.1 → 0.26.2; auto-trigger enabled on push to dev.
+
+- **`soma-dev delegate` — multi-agent workflow orchestrator** (s01-8b3cb3). New command composes child agents into named end-to-end pipelines: `pr` / `pr-brief` / `ci-fix <url>` / `changelog` / `doc-update` / `audit`. Wired into `soma-dev` as `soma-dev delegate | soma-dev workflow`. Eliminates manually orchestrating multiple `soma-dev children run` calls.
+
+- **3 new child role bodies** (s01-ae942e). `body/children/issue_investigator.md` (read-mostly root-cause tracer for nightly failures — writes `/tmp/fix-brief.md`), `body/children/pr_author.md` (writes rich PR descriptions from a brief, voice-hygiene + solo-editorial inherited), `body/children/changelog_curator.md` (curates `[Unreleased]` narratives from git-cliff output, replaces auto-appended bullet noise). Past-self in s01-8b3cb3 declared the roles in `delegate.sh` + CHANGELOG narratives but the body files were never written — every `soma-dev delegate ci-fix` call would have failed at phase 1 with `role 'X' not found in body/children/...`. Surfaced via the s01-ae942e smoke; fixed in the same session.
+
+- **`tests/test-children-roles-exist.sh`** (s01-ae942e). Drift-prevention regression test: extracts every `_run_role` reference from `delegate.sh`, asserts a matching `body/children/<role>.md` exists, plus validates required frontmatter fields. Catches the s01-8b3cb3 class of "declared role, missing body" drift before it ships.
+
+- **`soma-dev check-phases` pre-release gate** (s01-8b3cb3). 30-second sanity check (upstream sync + tests + tsc) before running the full 5-minute `soma-release-prepare.sh` orchestrator. Exits non-zero if any of the three signals is off, saving the cost of a full prepare run that would fail.
+
+### Changed
+
+- **Pi runtime: `0.72.1` → `0.73.1`** (s01-8b3cb3, commit `42ef127`). All 4 pi-* packages bumped together (`pi-coding-agent`, `pi-ai`, `pi-agent-core`, `pi-tui`) per the lockstep rule — mismatched bumps cause silent API mismatches (e.g. `cleanupSessionResources` in pi-ai@0.73.1 not found if pi-ai stayed at 0.72.1). All 7 runtime patches apply cleanly against new upstream; CI green.
+
+- **`docs/anthropic-long-context.md` — long-context wall claim corrected** (s01-ae942e). Previous prose asserted the long-context tier triggers at "~200K" of context, presented as Anthropic-published behavior. That number wasn't sourced; empirical evidence on Curtis's Claude Max plan shows the wall hits at ≈40-48% of Sonnet 4-6's reported 1M context window (~400-480K tokens) — substantially higher than the doc claimed. Three prose blocks + the per-model behavior table updated with hedge language naming the empirical observation; users probe their own account threshold via the `extra usage required for long context` 429.
+
+### Fixed
+
+- **Release flow consolidation** (s01-8b3cb3). `soma-ship.sh` (both in `repos/agent/scripts/_dev/` and `.soma/amps/scripts/internal/`) archived to `_archive/pre-orchestrator-v0.22.x/` — it referenced `repos/agent-stable` (dead since SX-652 worktree topology) and a 10-phase spiral that no longer exists. `soma-dev ship` replaced with clean `git push meetsoma dev` (branch guard + unpushed count). `soma-dev release` now routes to `prepare/ship/beta` subcommands.
+
+- **3 stale model-ID references** (s01-ae942e). Test fixture in `scripts/_dev/tests/test-children-list.sh` referenced `claude-sonnet-4-5`; verify script `scripts/_dev/soma-verify.sh` referenced `claude-3-5-haiku-latest` (a generation-old alias); `scripts/soma-model-sync.sh` error-message hint suggested retired IDs. All bumped to current available IDs. Behavior defaults intentionally NOT changed: `core/delegate/models.ts` MODEL_ALIASES still pin sonnet/haiku/opus to 4-5 (default-tier safety — bumping aliases would silently force users onto 1M-context variants and their long-context billing tier).
+
+- **Premature v0.26.3 roadmap entry removed from website** (s01-ae942e). Past-self in s01-8b3cb3 drafted a v0.26.3 entry covering the autonomous CI/CD work but the version was never released (`npm view meetsoma version` = 0.26.2). Entry deleted; this work surfaces under v0.27.0.
+
 ## [0.26.2] — 2026-05-07
 
 ### Added

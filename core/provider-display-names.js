@@ -37,6 +37,9 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES = {
     "vercel-ai-gateway": "Vercel AI Gateway",
     xai: "xAI",
     zai: "ZAI",
-    xiaomi: "Xiaomi MiMo Token Plan",
+    xiaomi: "Xiaomi MiMo",
+    "xiaomi-token-plan-cn": "Xiaomi MiMo Token Plan (China)",
+    "xiaomi-token-plan-ams": "Xiaomi MiMo Token Plan (Amsterdam)",
+    "xiaomi-token-plan-sgp": "Xiaomi MiMo Token Plan (Singapore)",
 };
 //# sourceMappingURL=provider-display-names.js.map

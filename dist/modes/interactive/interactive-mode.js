@@ -75,6 +75,14 @@ class ExpandableText extends Text {
         this.setText(expanded ? this.getExpandedText() : this.getCollapsedText());
     }
 }
+const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
+function isDeadTerminalError(error) {
+    if (!error || typeof error !== "object" || !("code" in error)) {
+        return false;
+    }
+    const code = error.code;
+    return code !== undefined && DEAD_TERMINAL_ERROR_CODES.has(code);
+}
 const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING = "Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
 function isAnthropicSubscriptionAuthKey(apiKey) {
     return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
@@ -2121,6 +2129,7 @@ export class InteractiveMode {
         this.footer.invalidate();
         switch (event.type) {
             case "agent_start":
+                this.pendingTools.clear();
                 if (this.settingsManager.getShowTerminalProgress()) {
                     this.ui.terminal.setProgress(true);
                 }
@@ -2511,6 +2520,7 @@ export class InteractiveMode {
      */
     renderSessionContext(sessionContext, options = {}) {
         this.pendingTools.clear();
+        const renderedPendingTools = new Map();
         if (options.updateFooter) {
             this.footer.invalidate();
             this.updateEditorBorderColor();
@@ -2543,17 +2553,17 @@ export class InteractiveMode {
                             component.updateResult({ content: [{ type: "text", text: errorMessage }], isError: true });
                         }
                         else {
-                            this.pendingTools.set(content.id, component);
+                            renderedPendingTools.set(content.id, component);
                         }
                     }
                 }
             }
             else if (message.role === "toolResult") {
                 // Match tool results to pending tool components
-                const component = this.pendingTools.get(message.toolCallId);
+                const component = renderedPendingTools.get(message.toolCallId);
                 if (component) {
                     component.updateResult(message);
-                    this.pendingTools.delete(message.toolCallId);
+                    renderedPendingTools.delete(message.toolCallId);
                 }
             }
             else {
@@ -2561,7 +2571,9 @@ export class InteractiveMode {
                 this.addMessageToChat(message, options);
             }
         }
-        this.pendingTools.clear();
+        for (const [toolCallId, component] of renderedPendingTools) {
+            this.pendingTools.set(toolCallId, component);
+        }
         this.ui.requestRender();
     }
     renderInitialMessages() {
@@ -2627,6 +2639,14 @@ export class InteractiveMode {
         await this.runtimeHost.dispose();
         process.exit(0);
     }
+    emergencyTerminalExit() {
+        this.isShuttingDown = true;
+        this.unregisterSignalHandlers();
+        killTrackedDetachedChildren();
+        // The terminal is gone. Do not run normal shutdown because TUI and
+        // extension cleanup can write restore sequences and re-trigger EIO.
+        process.exit(129);
+    }
     /**
      * Check if shutdown was requested and perform shutdown if so.
      */
@@ -2643,12 +2663,25 @@ export class InteractiveMode {
         }
         for (const signal of signals) {
             const handler = () => {
+                if (signal === "SIGHUP") {
+                    this.emergencyTerminalExit();
+                }
                 killTrackedDetachedChildren();
                 void this.shutdown();
             };
-            process.on(signal, handler);
+            process.prependListener(signal, handler);
             this.signalCleanupHandlers.push(() => process.off(signal, handler));
         }
+        const terminalErrorHandler = (error) => {
+            if (isDeadTerminalError(error)) {
+                this.emergencyTerminalExit();
+            }
+            throw error;
+        };
+        process.stdout.on("error", terminalErrorHandler);
+        process.stderr.on("error", terminalErrorHandler);
+        this.signalCleanupHandlers.push(() => process.stdout.off("error", terminalErrorHandler));
+        this.signalCleanupHandlers.push(() => process.stderr.off("error", terminalErrorHandler));
     }
     unregisterSignalHandlers() {
         for (const cleanup of this.signalCleanupHandlers) {
@@ -3809,6 +3842,28 @@ export class InteractiveMode {
             }
         }
     }
+    showOAuthLoginSelect(dialog, prompt) {
+        return new Promise((resolve) => {
+            const restoreDialog = () => {
+                this.editorContainer.clear();
+                this.editorContainer.addChild(dialog);
+                this.ui.setFocus(dialog);
+                this.ui.requestRender();
+            };
+            const labels = prompt.options.map((option) => option.label);
+            const selector = new ExtensionSelectorComponent(prompt.message, labels, (optionLabel) => {
+                restoreDialog();
+                resolve(prompt.options.find((option) => option.label === optionLabel)?.id);
+            }, () => {
+                restoreDialog();
+                resolve(undefined);
+            });
+            this.editorContainer.clear();
+            this.editorContainer.addChild(selector);
+            this.ui.setFocus(selector);
+            this.ui.requestRender();
+        });
+    }
     async showLoginDialog(providerId, providerName) {
         const providerInfo = this.session.modelRegistry.authStorage
             .getOAuthProviders()
@@ -3872,6 +3927,7 @@ export class InteractiveMode {
                 onProgress: (message) => {
                     dialog.showProgress(message);
                 },
+                onSelect: (prompt) => this.showOAuthLoginSelect(dialog, prompt),
                 onManualCodeInput: () => manualCodePromise,
                 signal: dialog.signal,
             });
