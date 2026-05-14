@@ -75,6 +75,48 @@ process.exit = function somaRotationExit(code) {
 	_realExit.call(process, code);
 };
 
+// ── [SX-759] User-global resource paths ──────────────────────────────
+// Inject ~/.soma/{extensions,skills,prompts,themes}/ into Pi's --extension /
+// --skill / --prompt-template / --theme flags BEFORE argv slicing.
+//
+// Why this exists: ~/.soma/agent/ is the runtime install (a git worktree).
+// Editing it = drift between sibling soma sessions. ~/.soma/<resource>/ is
+// a clean user-global location, NOT under any git worktree.
+//
+// Pi's loader reads `parsed.extensions` / `parsed.skills` / etc. from CLI
+// args parsed out of process.argv. We splice the flags in here so every
+// sub-command (including those that pass `[]` to main) and the rotation
+// re-exec inherit them.
+//
+// Skip injection if the directory doesn't exist OR the user passed a
+// matching opt-out flag. Always honor user opt-out.
+//
+// Meta-cycle 04 Phase 2 (s01-8657fc). Architectural fix for the worktree
+// drift class. See body/ecosystem.md for the canonical layout rule.
+(function injectUserGlobalPaths() {
+	try {
+		const home = process.env.HOME || "";
+		if (!home) return;
+		const argv = process.argv;
+		const injections = [
+			{ subdir: "extensions", flag: "--extension", optOut: ["--no-extensions", "-ne"] },
+			{ subdir: "skills", flag: "--skill", optOut: ["--no-skills", "-ns"] },
+			{ subdir: "prompts", flag: "--prompt-template", optOut: ["--no-prompt-templates", "-np"] },
+			{ subdir: "themes", flag: "--theme", optOut: ["--no-themes"] },
+		];
+		for (const { subdir, flag, optOut } of injections) {
+			if (optOut.some(o => argv.includes(o))) continue;
+			const dirPath = join(home, ".soma", subdir);
+			if (!existsSync(dirPath)) continue;
+			// Insert right after the script-name arg (index 1), before user args.
+			// This way `soma -p '...'` and the rotation re-exec both see the flags.
+			argv.splice(2, 0, flag, dirPath);
+		}
+	} catch {
+		/* non-fatal; user-global paths are an enhancement, not required */
+	}
+})();
+
 // ── Command dispatch ───────────────────────────────────────────────────
 const args = process.argv.slice(2);
 

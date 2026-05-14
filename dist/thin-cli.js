@@ -1118,7 +1118,20 @@ async function projectDoctor() {
         // Both paths run addIfMissing; first to fire wins, second is a no-op.
         add("doctor", { autoUpdate: true, declinedVersion: null });
         add("keepalive", { maxPings: 5, autoExhale: true, autoExhaleMinTokens: 75000 });
-        add("breathe", { auto: false, triggerAt: 50, rotateAt: 70, graceSeconds: 30 });
+        // Cycle 16 (s01-7b287c, v0.27.1): tri-state auto + per-model thresholds.
+        // "model-aware" reads ctx.model.id and picks per-glob thresholds; sonnet exhaleRange
+        // [34,50] catches the ~48% long-context wall. Fallback "default" matches global behavior.
+        add("breathe", {
+          auto: "model-aware",
+          triggerAt: 50,
+          rotateAt: 70,
+          thresholds: {
+            "default":  { warnRange: [50, 64], exhaleRange: [65, 85] },
+            "*sonnet*": { warnRange: [28, 33], exhaleRange: [34, 50] },
+            "*opus*":   { warnRange: [60, 74], exhaleRange: [75, 90] },
+          },
+          graceSeconds: 30,
+        });
         add("context", { notifyAt: 50, warnAt: 70, urgentAt: 80, autoExhaleAt: 85 });
         add("preload", { staleAfterHours: 48, lastSessionLogs: 0, recentNotesCount: 3 });
         add("scratch", { autoInject: false });

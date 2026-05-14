@@ -6,8 +6,52 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ---
 
+## [0.27.3] — 2026-05-14
+
+### Added
+
+- **`soma:seam.*` addon family — concept archaeology caps** (s01-345201, SX-744). Eight new caps + 2 docs caps wire the existing shell archaeology tools into the cap surface so the agent reaches for them under context pressure. `soma:seam.trace` (free tier — wraps `amps/scripts/soma-trace.sh`), `soma:seam.ancestors` (PRO — vault agents + Pi/Claude sessions w/ attribution), `soma:seam.timeline` (PRO — chronological evolution), `soma:seam.sessions` (dev tree — search `.soma/memory/sessions/` + Pi JSONLs), `soma:seam.seeds` (PRO), `soma:seam.gaps` (PRO — orphan docs), `soma:seam.web` (PRO — **persistent** markdown trace written to `.soma/memory/webs/`), `soma:seam.stats` (dev tree — Pi JSONL analytics). Plus `soma:docs.related` + `soma:docs.impact` (dev tree — frontmatter graph walk). Caps degrade gracefully when underlying scripts aren't present (PRO/dev message). Honors Recall's "mind of the place" lineage. New file `extensions/_shared/script-resolver.ts` extracts the shared shell-out + path-resolution helper. Closure test (passing): `soma:seam.ancestors "breathe"` returns `Zenith (openclaw-dev) — dev lead, vault refactorer, soma's daddy`. 10/10 smoke tests green in `tests/test-seam-caps.sh`. Plan: `.soma/releases/v0.27.x/plans/seam-addon-family.md`.
+
+### Fixed
+- **exclude tincture/_generated from path scan**
+
+## [0.27.2](https://github.com/meetsoma/soma-agent/compare/v0.27.1...v0.27.2) (2026-05-10)
+
+
+### Features
+
+* **meta-tools:** family-summary view for op='list' (action-oriented cheat sheet) ([8a0aee0](https://github.com/meetsoma/soma-agent/commit/8a0aee0de77a204d41875d999f63a0902324f867))
+
+
+### Documentation
+
+* catch up whats-new + skills_block transplant + auto-breathe variants + delegate cycle workflow ([88afed8](https://github.com/meetsoma/soma-agent/commit/88afed8853d74c51dd7a14d00aceff71e9721a6d))
+
+## [0.27.1](https://github.com/meetsoma/soma-agent/compare/v0.27.0...v0.27.1) (2026-05-10)
+
+### Added
+
+- **Model-aware breathe thresholds** (cycle 16, s01-7b287c). New tri-state `breathe.auto`: `"off"` / `"global"` / `"model-aware"` (boolean still parsed for back-compat via migration `breathe-tri-state-v0.27.0`). New `breathe.thresholds` map with glob patterns (e.g. `"*sonnet*"`) selects per-model `warnRange`/`exhaleRange` percentages from `ctx.model.id`. Sonnet's empirical `extra usage required for long context` wall (~48% on default-tier accounts) now triggers warn at 28-33% and auto-exhale at 34-50% — well before the wall, instead of the old fixed 50/70 thresholds that fired AFTER the wall hit. Opus uses 60-74 / 75-90; default fallback uses 50-64 / 65-85. Default install ships `auto: "model-aware"`. `/auto-breathe` accepts `off|global|model-aware|status` subcommands. 76 tests pass (was 47/55 before, +21 new tests for tri-state + per-model resolution + migration). Closes the wall-before-threshold bug that crashed s01-8b3cb3 mid-pipeline.
+- **`soma-dev delegate cycle <brief>` workflow** (cycle 17, s01-7b287c). Full implementation pipeline for any markdown brief (cycle.md, inbox/*.md, plans/*.md). Composes `intern` (investigate, 80-call budget) → `intern` (build, 80-call budget) → `verifier` (test, 25 calls) → `pr_author` (description, 30 calls). Total ~215 tool calls / ~$2.50 per cycle. Outputs `/tmp/soma-cycle-investigation.md`, `/tmp/soma-cycle-impl-summary.md`, `/tmp/soma-pr-description.md`. Flags: `--no-pr`, `--no-verify`. Built because single `builder` (25-call budget) was too small for multi-step cycles like cycle 16 (9 steps, ~80+ tool calls).
+
+### Fixed
+
+- **`/inhale` no longer double-injects preload after rotation** (cycle 17 bug #1, s01-7b287c). Empirically verified across 10 sessions in the last 14 days: every `/inhale`-triggered rotation produced TWO preload-injection messages in the new session — one from soma-boot's `session_start` "new" branch (`[Soma Boot — rotated session]`, ~16K chars), one from `/inhale`'s post-await `send()` (`[Soma Inhale — Loading Preload]`, ~16K chars). ~8K tokens duplicated per `/inhale`. Fix: soma-boot now exposes `route.provide("preload:wasInjected", ...)`; `/inhale` queries this after `await ctx.newSession({})` and skips its own send if `session_start` already injected. Print-mode safety preserved (when `ctx.hasUI=false` the session_start branch skips, flag stays false, `/inhale` falls back to direct send).
+- **`/inhale` catch-fallback race** (cycle 17 bug #2, s01-7b287c). The catch block at `soma-boot.ts:3007-3020` previously fired its fallback preload-send unconditionally on any `newSession()` throw. If the throw came AFTER `session_start` had emitted (e.g. `apply()` / `setup()` / `finishSessionReplacement()` failure post-runtime-creation), the fallback would TRIPLE-stack with both the session_start injector and the happy-path injector. Same `preload:wasInjected` flag now discriminates: catch only sends if session_start hadn't already.
+- **`session_start` "new" branch fallback when boot template missing** (cycle 17, s01-7b287c). Previously, if `loadBootMessage()` returned null (boot template not found), the rotation message was silently skipped — the new session had no preload injection, and `/inhale`'s old post-await send was the only thing carrying it. After bug #1 fix, that path no longer exists, so session_start now falls back to a minimal `## Preload (from last session)\n\n${preload.content}` message when the template is missing.
+- **Honest auto-breathe notification text** (cycle 17 bug #3, s01-7b287c). The `🪵 Auto-breathe: rotating at N%` notification fired when the threshold was hit, but actual rotation only happens later in `turn_end` after the agent writes the preload (within `graceSeconds`, default 30s). New text: `🪵 Preload requested at N% — rotating after agent writes it`. The other branch (preload-already-written, immediate `.rotate-signal`) keeps its honest "Rotating — preload already written" text.
+
+### Documentation
+
+- **Auto-rotation Path A vs Path B clarification** (cycle 17 bug #5 audit, s01-7b287c). Per Pi types (`pi-coding-agent/dist/core/extensions/types.d.ts`), `newSession` lives on `ExtensionCommandContext`, not on the base `ExtensionContext` event handlers receive. Auto-breathe's `performRotation` falling back to `.rotate-signal` + process re-exec (Path A) is correct by design — Pi treats process re-exec as the safer auto-rotation route. In-process `route.get("session:new")` (Path B) is a happy-path optimization available only after a user has invoked `/breathe`/`/inhale`/`/auto-breathe` in the current session. Comment block added to `soma-breathe.ts:performRotation` documenting this; notify text changed to `🪵 Rotating session (process re-exec)...`.
+
+
 ## [Unreleased]
 
+
+### Fixed
+- **harden blacklist — dual-signal + obfuscation pipeline**
+- **harden blacklist — dual-signal + obfuscation pipeline**
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.27.0] — 2026-05-09
