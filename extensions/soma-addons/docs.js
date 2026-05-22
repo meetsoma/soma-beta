@@ -16,7 +16,7 @@ ${d.slice(0,c).join(`
 
 \u2014 truncated at ${c} lines (full: ${d.length} lines, ${o.length} bytes). Call with {lines: N} for more, or no 'lines' arg for full doc.`}return`${s}:
 
-${o}`}catch(o){return`[soma:docs.show] failed to read ${r}: ${o?.message??o}`}}async function N(t){if(!t?.query)return"[soma:docs.search] requires {query} \u2014 e.g. {query: 'cache economics'}";let e=p();if(!e)return"[soma:docs.search] docs directory not found";let n=t.limit??30,i=t.name,s=["--no-heading","--with-filename","--line-number","--color=never","--max-count","3","--glob","*.md"];i&&s.push("--glob",`*${i}*.md`);let r=t.query.replace(/'/g,"'\\''"),o=`rg ${s.map(c=>`'${c.replace(/'/g,"'\\''")}'`).join(" ")} -e '${r}' '${e}' 2>/dev/null | head -n ${n}`;try{let c=D(o,{encoding:"utf-8",maxBuffer:1e6});return c.trim()?`${`[soma:docs] ${c.trim().split(`
+${o}`}catch(o){return`[soma:docs.show] failed to read ${r}: ${o?.message??o}`}}async function N(t){if(!t?.query)return"[soma:docs.search] requires {query} \u2014 e.g. {query: 'cache economics'}";let e=p();if(!e)return"[soma:docs.search] docs directory not found";let n=t.limit??30,i=t.name,s=["--no-heading","--with-filename","--line-number","--color=never","--max-count","3","--glob","*.md"];i&&s.push("--glob",`*${i}*.md`);let r=t.query.replace(/'/g,"'\\''"),o=`rg ${s.map(c=>`'${c.replace(/'/g,"'\\''")}'`).join(" ")} -e '${r}' '${e}' 2>/dev/null | head -n ${n}`;try{let c=D(o,{encoding:"utf-8",maxBuffer:1e6,timeout:3e4});return c.trim()?`${`[soma:docs] ${c.trim().split(`
 `).length} matches for '${t.query}':`}
 ${c.trim()}`:`[soma:docs.search] no matches for '${t.query}'${i?` in docs matching '${i}'`:""}`}catch(c){let d=c?.stdout?.toString()??"";return d.trim()?`[soma:docs.search] error: ${c?.message??c}
 

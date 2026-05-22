@@ -110,7 +110,9 @@ process.exit = function somaRotationExit(code) {
 			if (!existsSync(dirPath)) continue;
 			// Insert right after the script-name arg (index 1), before user args.
 			// This way `soma -p '...'` and the rotation re-exec both see the flags.
-			argv.splice(2, 0, flag, dirPath);
+			// SX-762 (s01-19a716): was splice(2,0,...) which shifted all user args
+			// right by N slots. Broke every CLI subcommand since v0.27.3.
+			argv.push(flag, dirPath);
 		}
 	} catch {
 		/* non-fatal; user-global paths are an enhancement, not required */

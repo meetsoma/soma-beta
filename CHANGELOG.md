@@ -48,11 +48,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.27.4] — 2026-05-22
 
 ### Fixed
+- **SX-762 — argv.push instead of splice(2,0) for user-global paths**
+- **repair doctor --help assertions + github runtime test script path**
+- **SX-762 — defense-in-depth: env override + existence guard + build gate**
+- **SX-762 — call soma-code.sh directly via execFile, not 'soma code' CLI**
+- **bump obfuscator string-array-threshold 0.8→1.0**
 - **harden blacklist — dual-signal + obfuscation pipeline**
 - **harden blacklist — dual-signal + obfuscation pipeline**
-<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
 
 ## [0.27.0] — 2026-05-09
 

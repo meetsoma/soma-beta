@@ -1,0 +1,37 @@
+{
+  "$comment": "Historical sha256 hashes of bundled body templates. Used by projectDoctor for safe pristine-file auto-refresh. Every release that changes a bundled template prepends its PREVIOUS hash to the file's 'historical' list. Doctor: if local hash == any historical, file is pristine-outdated (safe auto-replace); if not in historical AND != current, file is user-edited (prompt for merge/doctor). Current hashes are computed at runtime from bundled source, NOT stored here.",
+  "$schema-version": 1,
+  "updated": "2026-04-23",
+  "templates": {
+    "_mind.md": {
+      "tracked-since": "0.21.2",
+      "historical": [
+        {
+          "version": "0.21.1",
+          "sha256": "d371566f214f0814b8641fe1d32dd1dc7dd6230ff1335503fdceb75c926f0b72",
+          "note": "Pre-cache-economics-backport. Had duplicated {{protocol_summaries}} / {{muscle_digests}} / {{scripts_table}} interpolation that compileFrontalCortex already prepends. Slot order unoptimized (core_rules first, volatile slots mid-template)."
+        }
+      ]
+    },
+    "_memory.md": {
+      "tracked-since": "0.21.2",
+      "historical": [
+        {
+          "version": "0.21.1",
+          "sha256": "31173dc6dda46c7ad86ad58429f682bc38a7a436af27f691338b74f337ec46fd",
+          "note": "Pre-v0.21.2 bundled. Missing Prior Preloads + Kanban Snapshot sections."
+        }
+      ]
+    },
+    "DNA.md": {
+      "tracked-since": "0.21.2",
+      "historical": [
+        {
+          "version": "0.21.1",
+          "sha256": "0c143ac1134493c8a50aef8ae7569ff8cefa5d28c9aa1685f8abd92a548080e8",
+          "note": "Pre-v0.21.2 bundled. Missing conditional-blocks syntax, identity resolution chain, variables-only-in-templates footgun warning, Known Quirks mini-section."
+        }
+      ]
+    }
+  }
+}
