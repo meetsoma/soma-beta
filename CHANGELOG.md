@@ -6,6 +6,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ---
 
+## [Unreleased]
+
+
+
+
+## [0.27.5] — 2026-05-26
+
+### Added
+- **ancestor .soma/ walk-up + example extensions seeding + inherit gating**
+- **SX-763 — OpenRouter session_id in request body**
+
+### Fixed
+- **scan and load extension files instead of directory path for --extension flag**
+- **show model.name instead of model.id + Free for $0 cost models**
+- **strip injected resource paths from inhale nameArg extraction**
+- **revert models.generated.js patch — use models.json instead**
+- **obfuscation coverage tightened — addons + _shared correctly scoped**
+- **obfuscation pipeline hardened — blanket coverage for core, extensions, addons, _shared**
+- **--skip-tests flag for soma-release.sh, wired into ship script**
+
+### Removed
+- **stale repos/agent/.soma/ directory — dead skeleton, gitignore blanket**
+
+
+
+## [0.27.4] — 2026-05-22
+
+### Fixed
+- **SX-762 — argv.push instead of splice(2,0) for user-global paths**
+- **repair doctor --help assertions + github runtime test script path**
+- **SX-762 — defense-in-depth: env override + existence guard + build gate**
+- **SX-762 — call soma-code.sh directly via execFile, not 'soma code' CLI**
+- **bump obfuscator string-array-threshold 0.8→1.0**
+- **harden blacklist — dual-signal + obfuscation pipeline**
+- **harden blacklist — dual-signal + obfuscation pipeline**
+
+
+
+
 ## [0.27.3] — 2026-05-14
 
 ### Added
@@ -27,6 +66,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 * catch up whats-new + skills_block transplant + auto-breathe variants + delegate cycle workflow ([88afed8](https://github.com/meetsoma/soma-agent/commit/88afed8853d74c51dd7a14d00aceff71e9721a6d))
 
+
+
 ## [0.27.1](https://github.com/meetsoma/soma-agent/compare/v0.27.0...v0.27.1) (2026-05-10)
 
 ### Added
@@ -44,22 +85,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 ### Documentation
 
 - **Auto-rotation Path A vs Path B clarification** (cycle 17 bug #5 audit, s01-7b287c). Per Pi types (`pi-coding-agent/dist/core/extensions/types.d.ts`), `newSession` lives on `ExtensionCommandContext`, not on the base `ExtensionContext` event handlers receive. Auto-breathe's `performRotation` falling back to `.rotate-signal` + process re-exec (Path A) is correct by design — Pi treats process re-exec as the safer auto-rotation route. In-process `route.get("session:new")` (Path B) is a happy-path optimization available only after a user has invoked `/breathe`/`/inhale`/`/auto-breathe` in the current session. Comment block added to `soma-breathe.ts:performRotation` documenting this; notify text changed to `🪵 Rotating session (process re-exec)...`.
-
-
-## [Unreleased]
-
-<!-- Entries accumulate here and get promoted to a versioned section on release. -->
-
-## [0.27.4] — 2026-05-22
-
-### Fixed
-- **SX-762 — argv.push instead of splice(2,0) for user-global paths**
-- **repair doctor --help assertions + github runtime test script path**
-- **SX-762 — defense-in-depth: env override + existence guard + build gate**
-- **SX-762 — call soma-code.sh directly via execFile, not 'soma code' CLI**
-- **bump obfuscator string-array-threshold 0.8→1.0**
-- **harden blacklist — dual-signal + obfuscation pipeline**
-- **harden blacklist — dual-signal + obfuscation pipeline**
 
 
 ## [0.27.0] — 2026-05-09

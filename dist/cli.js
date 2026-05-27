@@ -16,8 +16,8 @@ import { setBedrockProviderModule } from "@mariozechner/pi-ai";
 import { bedrockProviderModule } from "@mariozechner/pi-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { main } from "./main.js";
-import { existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
+import { existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
+import { join, resolve } from "path";
 import { execFileSync } from "child_process";
 setGlobalDispatcher(new EnvHttpProxyAgent());
 setBedrockProviderModule(bedrockProviderModule);
@@ -75,24 +75,33 @@ process.exit = function somaRotationExit(code) {
 	_realExit.call(process, code);
 };
 
-// ── [SX-759] User-global resource paths ──────────────────────────────
-// Inject ~/.soma/{extensions,skills,prompts,themes}/ into Pi's --extension /
-// --skill / --prompt-template / --theme flags BEFORE argv slicing.
+// ── [SX-759 + SX-763] Resource path discovery ─────────────────────────
+// Inject resource paths into Pi's --extension / --skill / --prompt-template /
+// --theme flags BEFORE argv slicing. Three tiers, injected in order:
+//
+//   Tier 1 (user-global):   ~/.soma/<resource>/  — user-owned, outside worktree
+//   Tier 2 (ancestor walk):  ../.soma/<resource>/ — parent project workspaces
+//
+// Tier 0 (runtime): ~/.soma/agent/<resource>/ is auto-discovered by Pi's
+// addAutoDiscoveredResources (package-manager.js:1770). Not our concern.
+//
+// Tier 3 (CWD project): <cwd>/.soma/<resource>/ is also auto-discovered by Pi.
+// Not injected — Pi handles it.
 //
 // Why this exists: ~/.soma/agent/ is the runtime install (a git worktree).
 // Editing it = drift between sibling soma sessions. ~/.soma/<resource>/ is
 // a clean user-global location, NOT under any git worktree.
 //
 // Pi's loader reads `parsed.extensions` / `parsed.skills` / etc. from CLI
-// args parsed out of process.argv. We splice the flags in here so every
+// args parsed out of process.argv. We push the flags in here so every
 // sub-command (including those that pass `[]` to main) and the rotation
 // re-exec inherit them.
 //
 // Skip injection if the directory doesn't exist OR the user passed a
 // matching opt-out flag. Always honor user opt-out.
 //
-// Meta-cycle 04 Phase 2 (s01-8657fc). Architectural fix for the worktree
-// drift class. See body/ecosystem.md for the canonical layout rule.
+// Meta-cycle 04 Phase 2 (s01-8657fc). Ancestor walk-up added s01-68563d
+// (SX-763). See body/ecosystem.md for the canonical layout rule.
 (function injectUserGlobalPaths() {
 	try {
 		const home = process.env.HOME || "";
@@ -104,18 +113,159 @@ process.exit = function somaRotationExit(code) {
 			{ subdir: "prompts", flag: "--prompt-template", optOut: ["--no-prompt-templates", "-np"] },
 			{ subdir: "themes", flag: "--theme", optOut: ["--no-themes"] },
 		];
+
+		const discoverExtensionFiles = (dir) => {
+			if (!existsSync(dir)) return [];
+			try {
+				return readdirSync(dir, { withFileTypes: true })
+					.filter(e => (e.isFile() || e.isSymbolicLink()) && (e.name.endsWith(".ts") || e.name.endsWith(".js")))
+					.map(e => join(dir, e.name));
+			} catch {
+				return [];
+			}
+		};
+
+		// ── Tier 1: User-global (~/.soma/<resource>/) ────────────────────
+		// Seed example extensions on first run so the dir isn't empty.
+		const userExtDir = join(home, ".soma", "extensions");
+		if (!existsSync(userExtDir)) {
+			try {
+				mkdirSync(userExtDir, { recursive: true });
+				writeFileSync(join(userExtDir, "README.md"),
+					"# Your Extensions\n\n" +
+					"Extensions you put here are loaded automatically by Soma.\n" +
+					"They live outside the runtime install — edit freely.\n\n" +
+					"## Getting Started\n\n" +
+					"- `hello-world.ts` — registers a simple tool\n" +
+					"- `_template.ts` — copy-paste starter with common patterns\n\n" +
+					"Docs: https://soma.gravicity.ai/docs/extending\n"
+				);
+				writeFileSync(join(userExtDir, "hello-world.ts"),
+					'// hello-world.ts — Your first Soma extension\n' +
+					'// This registers a simple tool. Rename, modify, make it yours.\n\n' +
+					'import type { Pi } from "@mariozechner/pi-coding-agent";\n\n' +
+					'export default function activate(pi: Pi) {\n' +
+					'  pi.registerTool({\n' +
+					'    name: "helloWorld",\n' +
+					'    description: "Say hello — your first custom tool.",\n' +
+					'    parameters: {\n' +
+					'      type: "object",\n' +
+					'      properties: {\n' +
+					'        name: { type: "string", description: "Who to greet" },\n' +
+					'      },\n' +
+					'      required: ["name"],\n' +
+					'    },\n' +
+					'    handler: async ({ name }) => {\n' +
+					'      return `Hello, ${name}! 👋`;\n' +
+					'    },\n' +
+					'  });\n' +
+					'}\n'
+				);
+				writeFileSync(join(userExtDir, "_template.ts"),
+					'// _template.ts — Soma extension starter\n' +
+					'// Copy this file and rename it to start a new extension.\n\n' +
+					'import type { Pi } from "@mariozechner/pi-coding-agent";\n\n' +
+					'export default function activate(pi: Pi) {\n' +
+					'  // ── Register a tool ──\n' +
+					'  pi.registerTool({\n' +
+					'    name: "myTool",\n' +
+					'    description: "What this tool does — shown to the agent.",\n' +
+					'    parameters: {\n' +
+					'      type: "object",\n' +
+					'      properties: {\n' +
+					'        input: { type: "string", description: "What to process" },\n' +
+					'      },\n' +
+					'      required: ["input"],\n' +
+					'    },\n' +
+					'    handler: async ({ input }) => {\n' +
+					'      // Your logic here. Return a string or an object.\n' +
+					'      return `Processed: ${input}`;\n' +
+					'    },\n' +
+					'  });\n\n' +
+					'  // ── Register a slash command ──\n' +
+					'  pi.registerCommand("mycommand", {\n' +
+					'    description: "What /mycommand does.",\n' +
+					'    handler: async (_args, ctx) => {\n' +
+					'      ctx.ui.notify("Command ran!", "info");\n' +
+					'    },\n' +
+					'  });\n\n' +
+					'  // ── Hook into session events ──\n' +
+					'  pi.on("session_start", (event) => {\n' +
+					'    // Runs once per session. event.reason = "startup" | "new" | "resume"\n' +
+					'  });\n' +
+					'}\n'
+				);
+			} catch { /* non-fatal; examples are a nicety */ }
+		}
+
 		for (const { subdir, flag, optOut } of injections) {
 			if (optOut.some(o => argv.includes(o))) continue;
 			const dirPath = join(home, ".soma", subdir);
 			if (!existsSync(dirPath)) continue;
-			// Insert right after the script-name arg (index 1), before user args.
-			// This way `soma -p '...'` and the rotation re-exec both see the flags.
-			// SX-762 (s01-19a716): was splice(2,0,...) which shifted all user args
-			// right by N slots. Broke every CLI subcommand since v0.27.3.
-			argv.push(flag, dirPath);
+			if (subdir === "extensions") {
+				const files = discoverExtensionFiles(dirPath);
+				for (const f of files) {
+					argv.push(flag, f);
+				}
+			} else {
+				argv.push(flag, dirPath);
+			}
+		}
+
+		// ── Tier 2: Ancestor .soma/ walk-up ─────────────────────────
+		// Read inherit settings to gate walk-up per resource type.
+		// Default: true for all (matches existing inherit block defaults).
+		let inheritCfg = { extensions: true, skills: true, prompts: true, themes: true };
+		try {
+			const readSettings = (p) => {
+				if (!existsSync(p)) return null;
+				try { return JSON.parse(readFileSync(p, "utf-8")); } catch { return null; }
+			};
+			const cwd = process.cwd();
+			const globalS = readSettings(join(home, ".soma", "settings.json"));
+			const projectS = readSettings(join(cwd, ".soma", "settings.json"));
+			if (globalS?.inherit) Object.assign(inheritCfg, globalS.inherit);
+			if (projectS?.inherit) Object.assign(inheritCfg, projectS.inherit);
+		} catch { /* use defaults */ }
+
+		// Collect ancestors, then inject in REVERSE order (farthest first,
+		// closest last). Pi's runner registers extensions in argv order;
+		// last-registration wins for same-name tools. This gives child .soma/
+		// higher priority than parent — same model as protocols/muscles/tools
+		// in the inherit block and the existing addAutoDiscoveredResources
+		// order (project before user-global).
+		const cwd = process.cwd();
+		let dir = resolve(cwd, "..");
+		let distance = 0;
+		const ancestorPaths = [];
+		while (dir !== resolve(dir, "..") && distance < 10) {
+			if (dir === home) break; // HOME handled by Tier 1
+			const ancestorSoma = join(dir, ".soma");
+			if (existsSync(ancestorSoma)) ancestorPaths.push(ancestorSoma);
+			dir = resolve(dir, "..");
+			distance++;
+		}
+		// Inject farthest ancestor first (registered earlier = lower priority),
+		// closest ancestor last (registered later = higher priority).
+		for (let i = ancestorPaths.length - 1; i >= 0; i--) {
+			const ancestorSoma = ancestorPaths[i];
+			for (const { subdir, flag, optOut } of injections) {
+				if (inheritCfg[subdir] === false) continue;
+				if (optOut.some(o => argv.includes(o))) continue;
+				const resourcePath = join(ancestorSoma, subdir);
+				if (!existsSync(resourcePath)) continue;
+				if (subdir === "extensions") {
+					const files = discoverExtensionFiles(resourcePath);
+					for (const f of files) {
+						argv.push(flag, f);
+					}
+				} else {
+					argv.push(flag, resourcePath);
+				}
+			}
 		}
 	} catch {
-		/* non-fatal; user-global paths are an enhancement, not required */
+		/* non-fatal; resource paths are an enhancement, not required */
 	}
 })();
 
@@ -534,7 +684,18 @@ if (args[0] === "map") {
 	const listFlag = inhaleArgs.includes("--list");
 	const loadIdx = inhaleArgs.indexOf("--load");
 	const loadPath = loadIdx !== -1 ? inhaleArgs[loadIdx + 1] : null;
-	const nameArg = inhaleArgs.filter(a => !a.startsWith("-") && a !== loadPath)[0];
+	// Strip user-global resource flags+values injected by injectUserGlobalPaths()
+	// (--extension, --skill, --prompt-template, --theme) to prevent them from
+	// being misidentified as positional nameArg. Without this, a bare
+	// `soma inhale` picks up e.g. /Users/user/.soma/skills as nameArg and
+	// fails with "No preload matching" error. SX-763, s01-68563d.
+	const injFlags = ["--extension", "--skill", "--prompt-template", "--theme"];
+	const cleanedInhaleArgs = inhaleArgs.filter((a, i) => {
+		if (injFlags.includes(a)) return false;
+		if (i > 0 && injFlags.includes(inhaleArgs[i-1])) return false;
+		return true;
+	});
+	const nameArg = cleanedInhaleArgs.filter(a => !a.startsWith("-") && a !== loadPath)[0];
 
 	if (listFlag) {
 		// List available preloads
