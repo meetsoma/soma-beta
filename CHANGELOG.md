@@ -8,6 +8,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.27.6] — 2026-05-28
+
+### Added
+- **shared preload lifecycle state machine** — `_shared/preload-lifecycle.ts` module unifies preload tracking across breathe, boot, and statusline extensions. Single source of truth replaces 7 independent `let` flags. (Cycle 29)
+- **route capabilities for lifecycle access** — `preload:lifecycle` (read state), `preload:transition` (write transitions), `preload:reset` (fresh session), `preload:noteToolCall` (track work after save). (Cycle 29)
+- **three-state auto-breath config** — `breathe.auto` now accepts `"on"` (proactive), `"auto"` (adaptive), `"off"` (passive). Backward-compat with boolean and `"global"` values. (Cycle 28)
+- **sandbox `--dummy` mode** — simulated API responses, no API key needed. Runs all 10 API-dependent tests offline. (Cycle 28)
+- **sandbox `--brief` mode** — compact dot-progress output, details on failures only. Clean CI logs.
+- **wire kanban search/related/similar caps — Cycle 27**
+- **dev-sync dist provenance indicator** — `.dev-synced` marker written by `soma-dev sync dev`; statusline shows `(main +dev)` when running dev-synced dist on main branch. Marker cleared by `soma-dev switch main/rollback`.
+- **tiered progressive-disclosure format for soma(op='list')**
+
+### Fixed
+- **85% safety net no longer overrides manual `/exhale` or keepalive auto-exhale** — safety net checks shared lifecycle state before acting. If preload is already `REQUESTED` (by `/exhale` or keepalive), it notifies instead of initiating a competing breathe or rotating immediately. (Cycle 29)
+- **`/exhale` at high context no longer triggers immediate rotation without preload update** — exhaleHandler calls `preloadLifecycle.transition("requested", { source: "manual" })` before the followUp, so the safety net sees state=`REQUESTED` and waits for the preload write. Stale-preload immediate rotation case fixed. (Cycle 29)
+- **keepalive auto-exhale no longer double-requests preload** — gated on lifecycle state: skips if already `REQUESTED` or `SAVED`. (Cycle 29)
+- **preload now loads after auto-rotate** — `.rotate-signal` was cleaned at extension load before `session_start` could read it. Deferred cleanup to startup handler, which detects rotation and injects preload. (Cycle 28)
+- **sandbox help text test** — `rc --help` triggered Pi model resolution, polluting stdout. Changed to `thin-cli.js --help` which bypasses Pi init. (Cycle 28 carry)
+- **sandbox license header test in `--main` mode** — source worktree lacks release-injected headers; skip like `--local` mode. Updated checked path to `dist/extensions/` for shipped builds.
+- **sandbox `--dev` timeout** — `soma-release.sh --dry-run` ran `npm test` (55 scripts × 2 passes). Added `SKIP_TESTS=1` to release dry-run in dev sandbox mode.
+- **restore protocol paths after repos/agent/.soma/ skeleton removal**
+
+### Test
+- **rotate-signal continuity** — 14 assertions verifying `.rotate-signal` not cleared at extension load, read at session_start, cleaned after consumption. (Cycle 28)
+- **tri-state string value normalization** — 4 tests for `"on"`, `"auto"`, `"global"` legacy compat, `default` fallback.
+
 
 
 
