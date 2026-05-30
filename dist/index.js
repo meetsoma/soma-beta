@@ -1,4 +1,5 @@
 // Core session management
+export { parseArgs } from "./cli/args.js";
 // Config paths
 export { getAgentDir, VERSION } from "./config.js";
 export { AgentSession, parseSkillBlock, } from "./core/agent-session.js";
@@ -36,6 +37,8 @@ export { getLanguageFromPath, getMarkdownTheme, getSelectListTheme, getSettingsL
 // Clipboard utilities
 export { copyToClipboard } from "./utils/clipboard.js";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
+export { convertToPng } from "./utils/image-convert.js";
+export { formatDimensionNote, resizeImage } from "./utils/image-resize.js";
 // Shell utilities
 export { getShellConfig } from "./utils/shell.js";
 //# sourceMappingURL=index.js.map

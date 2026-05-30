@@ -1,5 +1,5 @@
-import { getOAuthProviders } from "@mariozechner/pi-ai/oauth";
-import { Container, getKeybindings, Input, Spacer, Text } from "@mariozechner/pi-tui";
+import { getOAuthProviders } from "@earendil-works/pi-ai/oauth";
+import { Container, getKeybindings, Input, Spacer, Text } from "@earendil-works/pi-tui";
 import { exec } from "child_process";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -8,13 +8,13 @@ import { keyHint } from "./keybinding-hints.js";
  * Login dialog component - replaces editor during OAuth login flow
  */
 export class LoginDialogComponent extends Container {
-    onComplete;
     contentContainer;
     input;
     tui;
     abortController = new AbortController();
     inputResolver;
     inputRejecter;
+    onComplete;
     // Focusable implementation - propagate to input for IME cursor positioning
     _focused = false;
     get focused() {
@@ -26,8 +26,8 @@ export class LoginDialogComponent extends Container {
     }
     constructor(tui, providerId, onComplete, providerNameOverride, titleOverride) {
         super();
-        this.onComplete = onComplete;
         this.tui = tui;
+        this.onComplete = onComplete;
         const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
         const providerName = providerNameOverride || providerInfo?.name || providerId;
         const title = titleOverride ?? `Login to ${providerName}`;
@@ -80,10 +80,33 @@ export class LoginDialogComponent extends Container {
             this.contentContainer.addChild(new Spacer(1));
             this.contentContainer.addChild(new Text(theme.fg("warning", instructions), 1, 0));
         }
-        // Try to open browser
-        const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-        exec(`${openCmd} "${url}"`);
+        this.openUrl(url);
         this.tui.requestRender();
+    }
+    /**
+     * Called by onDeviceCode callback - show URL and user code.
+     */
+    showDeviceCode(info) {
+        this.contentContainer.clear();
+        this.contentContainer.addChild(new Spacer(1));
+        const linkedUrl = `\x1b]8;;${info.verificationUri}\x07${info.verificationUri}\x1b]8;;\x07`;
+        this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
+        const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
+        const hyperlink = `\x1b]8;;${info.verificationUri}\x07${clickHint}\x1b]8;;\x07`;
+        this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
+        this.contentContainer.addChild(new Spacer(1));
+        this.contentContainer.addChild(new Text(theme.fg("warning", `Enter code: ${info.userCode}`), 1, 0));
+        this.openUrl(info.verificationUri);
+        this.tui.requestRender();
+    }
+    openUrl(url) {
+        const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+        try {
+            exec(`${openCmd} "${url}"`, () => { });
+        }
+        catch {
+            // Ignore browser launch failures. The URL remains visible for manual opening/copying.
+        }
     }
     /**
      * Show input for manual code/URL entry (for callback server providers)

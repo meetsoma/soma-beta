@@ -1,12 +1,12 @@
-import { Box, Container, Spacer, Text } from "@mariozechner/pi-tui";
+import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
 import { Type } from "typebox";
 import { renderDiff } from "../../modes/interactive/components/diff.js";
-import { applyEditsToNormalizedContent, computeEditsDiff, detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings, stripBom, } from "./edit-diff.js";
+import { applyEditsToNormalizedContent, computeEditsDiff, detectLineEnding, generateDiffString, generateUnifiedPatch, normalizeToLF, restoreLineEndings, stripBom, } from "./edit-diff.js";
 import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveToCwd } from "./path-utils.js";
-import { invalidArgText, shortenPath, str } from "./render-utils.js";
+import { renderToolPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 const replaceEditSchema = Type.Object({
     oldText: Type.String({
@@ -93,11 +93,8 @@ function getRenderablePreviewInput(args) {
     }
     return null;
 }
-function formatEditCall(args, theme) {
-    const invalidArg = invalidArgText(theme);
-    const rawPath = str(args?.file_path ?? args?.path);
-    const path = rawPath !== null ? shortenPath(rawPath) : null;
-    const pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
+function formatEditCall(args, theme, cwd) {
+    const pathDisplay = renderToolPath(str(args?.file_path ?? args?.path), theme, cwd);
     return `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
 }
 function formatEditResult(args, preview, result, theme, isError) {
@@ -132,10 +129,10 @@ function getEditHeaderBg(preview, settledError, theme) {
     }
     return (text) => theme.bg("toolPendingBg", text);
 }
-function buildEditCallComponent(component, args, theme) {
+function buildEditCallComponent(component, args, theme, cwd) {
     component.setBgFn(getEditHeaderBg(component.preview, component.settledError, theme));
     component.clear();
-    component.addChild(new Text(formatEditCall(args, theme), 0, 0));
+    component.addChild(new Text(formatEditCall(args, theme, cwd), 0, 0));
     if (!component.preview) {
         return component;
     }
@@ -177,88 +174,51 @@ export function createEditToolDefinition(cwd, options) {
         async execute(_toolCallId, input, signal, _onUpdate, _ctx) {
             const { path, edits } = validateEditInput(input);
             const absolutePath = resolveToCwd(path, cwd);
-            return withFileMutationQueue(absolutePath, () => new Promise((resolve, reject) => {
-                // Check if already aborted.
-                if (signal?.aborted) {
-                    reject(new Error("Operation aborted"));
-                    return;
-                }
-                let aborted = false;
-                // Set up abort handler.
-                const onAbort = () => {
-                    aborted = true;
-                    reject(new Error("Operation aborted"));
+            return withFileMutationQueue(absolutePath, async () => {
+                // Do not reject from an abort event listener here: that would release the
+                // mutation queue while an in-flight filesystem operation may still finish.
+                // Checking signal.aborted after each await observes the same aborts while
+                // keeping the queue locked until the current operation has settled.
+                const throwIfAborted = () => {
+                    if (signal?.aborted)
+                        throw new Error("Operation aborted");
                 };
-                if (signal) {
-                    signal.addEventListener("abort", onAbort, { once: true });
+                throwIfAborted();
+                // Check if file exists.
+                try {
+                    await ops.access(absolutePath);
                 }
-                // Perform the edit operation.
-                void (async () => {
-                    try {
-                        // Check if file exists.
-                        try {
-                            await ops.access(absolutePath);
-                        }
-                        catch (error) {
-                            const errorMessage = error instanceof Error && "code" in error ? `Error code: ${error.code}` : String(error);
-                            if (signal) {
-                                signal.removeEventListener("abort", onAbort);
-                            }
-                            reject(new Error(`Could not edit file: ${path}. ${errorMessage}.`));
-                            return;
-                        }
-                        // Check if aborted before reading.
-                        if (aborted) {
-                            return;
-                        }
-                        // Read the file.
-                        const buffer = await ops.readFile(absolutePath);
-                        const rawContent = buffer.toString("utf-8");
-                        // Check if aborted after reading.
-                        if (aborted) {
-                            return;
-                        }
-                        // Strip BOM before matching. The model will not include an invisible BOM in oldText.
-                        const { bom, text: content } = stripBom(rawContent);
-                        const originalEnding = detectLineEnding(content);
-                        const normalizedContent = normalizeToLF(content);
-                        const { baseContent, newContent } = applyEditsToNormalizedContent(normalizedContent, edits, path);
-                        // Check if aborted before writing.
-                        if (aborted) {
-                            return;
-                        }
-                        const finalContent = bom + restoreLineEndings(newContent, originalEnding);
-                        await ops.writeFile(absolutePath, finalContent);
-                        // Check if aborted after writing.
-                        if (aborted) {
-                            return;
-                        }
-                        // Clean up abort handler.
-                        if (signal) {
-                            signal.removeEventListener("abort", onAbort);
-                        }
-                        const diffResult = generateDiffString(baseContent, newContent);
-                        resolve({
-                            content: [
-                                {
-                                    type: "text",
-                                    text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
-                                },
-                            ],
-                            details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },
-                        });
-                    }
-                    catch (error) {
-                        // Clean up abort handler.
-                        if (signal) {
-                            signal.removeEventListener("abort", onAbort);
-                        }
-                        if (!aborted) {
-                            reject(error instanceof Error ? error : new Error(String(error)));
-                        }
-                    }
-                })();
-            }));
+                catch (error) {
+                    throwIfAborted();
+                    const errorMessage = error instanceof Error && "code" in error ? `Error code: ${error.code}` : String(error);
+                    throw new Error(`Could not edit file: ${path}. ${errorMessage}.`);
+                }
+                throwIfAborted();
+                // Read the file.
+                const buffer = await ops.readFile(absolutePath);
+                const rawContent = buffer.toString("utf-8");
+                throwIfAborted();
+                // Strip BOM before matching. The model will not include an invisible BOM in oldText.
+                const { bom, text: content } = stripBom(rawContent);
+                const originalEnding = detectLineEnding(content);
+                const normalizedContent = normalizeToLF(content);
+                const { baseContent, newContent } = applyEditsToNormalizedContent(normalizedContent, edits, path);
+                throwIfAborted();
+                const finalContent = bom + restoreLineEndings(newContent, originalEnding);
+                await ops.writeFile(absolutePath, finalContent);
+                throwIfAborted();
+                const diffResult = generateDiffString(baseContent, newContent);
+                const patch = generateUnifiedPatch(path, baseContent, newContent);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
+                        },
+                    ],
+                    details: { diff: diffResult.diff, patch, firstChangedLine: diffResult.firstChangedLine },
+                };
+            });
         },
         renderCall(args, theme, context) {
             const component = getEditCallRenderComponent(context.state, context.lastComponent);
@@ -282,7 +242,7 @@ export function createEditToolDefinition(cwd, options) {
                     }
                 });
             }
-            return buildEditCallComponent(component, args, theme);
+            return buildEditCallComponent(component, args, theme, context.cwd);
         },
         renderResult(result, _options, theme, context) {
             const callComponent = context.state.callComponent;
@@ -303,7 +263,7 @@ export function createEditToolDefinition(cwd, options) {
                     changed = true;
                 }
                 if (changed) {
-                    buildEditCallComponent(callComponent, context.args, theme);
+                    buildEditCallComponent(callComponent, context.args, theme, context.cwd);
                 }
             }
             const output = formatEditResult(context.args, callComponent?.preview, typedResult, theme, context.isError);

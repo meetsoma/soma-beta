@@ -4,27 +4,27 @@
  * This file handles CLI argument parsing and translates them into
  * createAgentSession() options. The SDK does the heavy lifting.
  */
-import { resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { modelsAreEqual } from "@mariozechner/pi-ai";
-import { ProcessTerminal, setKeybindings, TUI } from "@mariozechner/pi-tui";
+import { modelsAreEqual } from "@earendil-works/pi-ai";
+import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { ENV_SESSION_DIR, expandTildePath, getAgentDir, VERSION } from "./config.js";
+import { ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.js";
 import { createAgentSessionRuntime } from "./core/agent-session-runtime.js";
 import { createAgentSessionFromServices, createAgentSessionServices, } from "./core/agent-session-services.js";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
+import { configureHttpDispatcher } from "./core/http-dispatcher.js";
 import { KeybindingsManager } from "./core/keybindings.js";
 import { resolveCliModel, resolveModelScope } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import { formatMissingSessionCwdPrompt, getMissingSessionCwdIssue, MissingSessionCwdError, } from "./core/session-cwd.js";
-import { SessionManager } from "./core/session-manager.js";
+import { assertValidSessionId, SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
@@ -32,7 +32,8 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
-import { isLocalPath } from "./utils/paths.js";
+import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.js";
+import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.js";
 /**
  * Read all content from piped stdin.
  * Returns undefined if stdin is a TTY (interactive terminal).
@@ -103,23 +104,27 @@ async function prepareInitialMessage(parsed, autoResizeImages, stdinContent) {
  * Resolve a session argument to a file path.
  * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
  */
+async function findLocalSessionByExactId(sessionId, cwd, sessionDir) {
+    const localSessions = await SessionManager.list(cwd, sessionDir);
+    const localMatch = localSessions.find((s) => s.id === sessionId);
+    return localMatch ? { type: "local", path: localMatch.path } : undefined;
+}
 async function resolveSessionPath(sessionArg, cwd, sessionDir) {
-    // If it looks like a file path, use as-is
+    // If it looks like a file path, resolve it before handing it to the session manager.
     if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
-        return { type: "path", path: sessionArg };
+        return { type: "path", path: resolvePath(sessionArg, cwd) };
     }
     // Try to match as session ID in current project first
     const localSessions = await SessionManager.list(cwd, sessionDir);
-    const localMatches = localSessions.filter((s) => s.id.startsWith(sessionArg));
-    if (localMatches.length >= 1) {
-        return { type: "local", path: localMatches[0].path };
+    const localMatch = localSessions.find((s) => s.id === sessionArg) ?? localSessions.find((s) => s.id.startsWith(sessionArg));
+    if (localMatch) {
+        return { type: "local", path: localMatch.path };
     }
     // Try global search across all projects
-    const allSessions = await SessionManager.listAll();
-    const globalMatches = allSessions.filter((s) => s.id.startsWith(sessionArg));
-    if (globalMatches.length >= 1) {
-        const match = globalMatches[0];
-        return { type: "global", path: match.path, cwd: match.cwd };
+    const allSessions = await SessionManager.listAll(sessionDir);
+    const globalMatch = allSessions.find((s) => s.id === sessionArg) ?? allSessions.find((s) => s.id.startsWith(sessionArg));
+    if (globalMatch) {
+        return { type: "global", path: globalMatch.path, cwd: globalMatch.cwd };
     }
     // Not found anywhere
     return { type: "not_found", arg: sessionArg };
@@ -151,9 +156,31 @@ function validateForkFlags(parsed) {
         process.exit(1);
     }
 }
-function forkSessionOrExit(sourcePath, cwd, sessionDir) {
+function validateSessionIdFlags(parsed) {
+    if (parsed.sessionId === undefined)
+        return;
+    const conflictingFlags = [
+        parsed.session ? "--session" : undefined,
+        parsed.continue ? "--continue" : undefined,
+        parsed.resume ? "--resume" : undefined,
+        parsed.noSession ? "--no-session" : undefined,
+    ].filter((flag) => flag !== undefined);
+    if (conflictingFlags.length > 0) {
+        console.error(chalk.red(`Error: --session-id cannot be combined with ${conflictingFlags.join(", ")}`));
+        process.exit(1);
+    }
     try {
-        return SessionManager.forkFrom(sourcePath, cwd, sessionDir);
+        assertValidSessionId(parsed.sessionId);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red(`Error: ${message}`));
+        process.exit(1);
+    }
+}
+function forkSessionOrExit(sourcePath, cwd, sessionDir, sessionId) {
+    try {
+        return SessionManager.forkFrom(sourcePath, cwd, sessionDir, { id: sessionId });
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -162,16 +189,23 @@ function forkSessionOrExit(sourcePath, cwd, sessionDir) {
     }
 }
 async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
-    if (parsed.noSession) {
-        return SessionManager.inMemory();
+    if (parsed.noSession || parsed.help || parsed.listModels !== undefined) {
+        return SessionManager.inMemory(cwd);
     }
     if (parsed.fork) {
+        if (parsed.sessionId) {
+            const existingTarget = await findLocalSessionByExactId(parsed.sessionId, cwd, sessionDir);
+            if (existingTarget) {
+                console.error(chalk.red(`Session already exists with id '${parsed.sessionId}'`));
+                process.exit(1);
+            }
+        }
         const resolved = await resolveSessionPath(parsed.fork, cwd, sessionDir);
         switch (resolved.type) {
             case "path":
             case "local":
             case "global":
-                return forkSessionOrExit(resolved.path, cwd, sessionDir);
+                return forkSessionOrExit(resolved.path, cwd, sessionDir, parsed.sessionId);
             case "not_found":
                 console.error(chalk.red(`No session found matching '${resolved.arg}'`));
                 process.exit(1);
@@ -200,7 +234,7 @@ async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
     if (parsed.resume) {
         initTheme(settingsManager.getTheme(), true);
         try {
-            const selectedPath = await selectSession((onProgress) => SessionManager.list(cwd, sessionDir, onProgress), SessionManager.listAll);
+            const selectedPath = await selectSession((onProgress) => SessionManager.list(cwd, sessionDir, onProgress), (onProgress) => SessionManager.listAll(sessionDir, onProgress));
             if (!selectedPath) {
                 console.log(chalk.dim("No session selected"));
                 process.exit(0);
@@ -214,7 +248,13 @@ async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
     if (parsed.continue) {
         return SessionManager.continueRecent(cwd, sessionDir);
     }
-    return SessionManager.create(cwd, sessionDir);
+    if (parsed.sessionId) {
+        const existingSession = await findLocalSessionByExactId(parsed.sessionId, cwd, sessionDir);
+        if (existingSession) {
+            return SessionManager.open(existingSession.path, sessionDir);
+        }
+    }
+    return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
 }
 function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegistry, settingsManager) {
     const options = {};
@@ -291,10 +331,13 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
     if (parsed.tools) {
         options.tools = [...parsed.tools];
     }
+    if (parsed.excludeTools) {
+        options.excludeTools = [...parsed.excludeTools];
+    }
     return { options, cliThinkingFromModel, diagnostics };
 }
 function resolveCliPaths(cwd, paths) {
-    return paths?.map((value) => (isLocalPath(value) ? resolve(cwd, value) : value));
+    return paths?.map((value) => (isLocalPath(value) ? resolvePath(value, cwd) : value));
 }
 async function promptForMissingSessionCwd(issue, settingsManager) {
     initTheme(settingsManager.getTheme());
@@ -323,6 +366,9 @@ export async function main(args, options) {
     if (offlineMode) {
         process.env.PI_OFFLINE = "1";
         process.env.PI_SKIP_VERSION_CHECK = "1";
+    }
+    if (process.platform === "win32") {
+        cleanupWindowsSelfUpdateQuarantine(getPackageDir());
     }
     if (await handlePackageCommand(args)) {
         return;
@@ -369,6 +415,7 @@ export async function main(args, options) {
         process.exit(1);
     }
     validateForkFlags(parsed);
+    validateSessionIdFlags(parsed);
     // Run migrations (pass cwd for project-local migrations)
     const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
     time("runMigrations");
@@ -382,7 +429,7 @@ export async function main(args, options) {
     // the target session cwd is known. The startup-cwd settings manager is used only for
     // sessionDir lookup during session selection.
     const envSessionDir = process.env[ENV_SESSION_DIR];
-    const sessionDir = parsed.sessionDir ??
+    const sessionDir = (parsed.sessionDir ? normalizePath(parsed.sessionDir) : undefined) ??
         (envSessionDir ? expandTildePath(envSessionDir) : undefined) ??
         startupSettingsManager.getSessionDir();
     let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
@@ -399,6 +446,14 @@ export async function main(args, options) {
             console.error(chalk.red(new MissingSessionCwdError(missingSessionCwdIssue).message));
             process.exit(1);
         }
+    }
+    if (parsed.name !== undefined) {
+        const name = parsed.name.trim();
+        if (!name) {
+            console.error(chalk.red("Error: --name requires a non-empty value"));
+            process.exit(1);
+        }
+        sessionManager.appendSessionInfo(name);
     }
     time("createSessionManager");
     const resolvedExtensionPaths = resolveCliPaths(cwd, parsed.extensions);
@@ -459,6 +514,7 @@ export async function main(args, options) {
             thinkingLevel: sessionOptions.thinkingLevel,
             scopedModels: sessionOptions.scopedModels,
             tools: sessionOptions.tools,
+            excludeTools: sessionOptions.excludeTools,
             noTools: sessionOptions.noTools,
             customTools: sessionOptions.customTools,
         });
@@ -478,8 +534,10 @@ export async function main(args, options) {
         agentDir,
         sessionManager,
     });
+    time("createAgentSessionRuntime");
     const { services, session, modelFallbackMessage } = runtime;
     const { settingsManager, modelRegistry, resourceLoader } = services;
+    configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
     if (parsed.help) {
         const extensionFlags = resourceLoader
             .getExtensions()
@@ -509,7 +567,6 @@ export async function main(args, options) {
     if (appMode === "interactive" && deprecationWarnings.length > 0) {
         await showDeprecationWarnings(deprecationWarnings);
     }
-    const scopedModels = [...session.scopedModels];
     time("resolveModelScope");
     reportDiagnostics(runtime.diagnostics);
     if (runtime.diagnostics.some((diagnostic) => diagnostic.type === "error")) {
@@ -530,15 +587,6 @@ export async function main(args, options) {
         await runRpcMode(runtime);
     }
     else if (appMode === "interactive") {
-        if (scopedModels.length > 0 && (parsed.verbose || !settingsManager.getQuietStartup())) {
-            const modelList = scopedModels
-                .map((sm) => {
-                const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
-                return `${sm.model.id}${thinkingStr}`;
-            })
-                .join(", ");
-            console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
-        }
         const interactiveMode = new InteractiveMode(runtime, {
             migratedProviders,
             modelFallbackMessage,

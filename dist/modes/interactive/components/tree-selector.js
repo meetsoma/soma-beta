@@ -1,4 +1,4 @@
-import { Container, getKeybindings, Input, Spacer, Text, TruncatedText, truncateToWidth, } from "@mariozechner/pi-tui";
+import { Container, getKeybindings, Input, Spacer, Text, TruncatedText, truncateToWidth, } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
@@ -1045,7 +1045,8 @@ export class TreeSelectorComponent extends Container {
             keyText("app.tree.filter.all"),
         ].join("/");
         const cycleKeys = `${keyText("app.tree.filter.cycleForward")}/${keyText("app.tree.filter.cycleBackward")}`;
-        this.addChild(new TruncatedText(theme.fg("muted", `  ↑/↓: move. ←/→: page. ^←/^→ or Alt+←/Alt+→: fold/branch. ${keyText("app.tree.editLabel")}: label. ${filterKeys}: filters (${cycleKeys} cycle). ${keyText("app.tree.toggleLabelTimestamp")}: label time`), 0, 0));
+        const branchKeys = `${keyText("app.tree.foldOrUp")}/${keyText("app.tree.unfoldOrDown")}`;
+        this.addChild(new TruncatedText(theme.fg("muted", `  ↑/↓: move. ←/→: page. ${branchKeys}: fold/branch. ${keyText("app.tree.editLabel")}: label. ${filterKeys}: filters (${cycleKeys} cycle). ${keyText("app.tree.toggleLabelTimestamp")}: label time`), 0, 0));
         this.addChild(new SearchLine(this.treeList));
         this.addChild(new DynamicBorder());
         this.addChild(new Spacer(1));

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
 import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.js";
+import { normalizePath, resolvePath } from "../../utils/paths.js";
 import { SessionManager } from "../session-manager.js";
 /** Parse a color string to RGB values. Supports hex (#RRGGBB) and rgb(r,g,b) formats. */
 function parseColor(color) {
@@ -187,7 +188,7 @@ export async function exportSessionToHtml(sm, state, options) {
         renderedTools,
     };
     const html = generateHtml(sessionData, opts.themeName);
-    let outputPath = opts.outputPath;
+    let outputPath = opts.outputPath ? normalizePath(opts.outputPath) : undefined;
     if (!outputPath) {
         const sessionBasename = basename(sessionFile, ".jsonl");
         outputPath = `${APP_NAME}-session-${sessionBasename}.html`;
@@ -201,10 +202,11 @@ export async function exportSessionToHtml(sm, state, options) {
  */
 export async function exportFromFile(inputPath, options) {
     const opts = typeof options === "string" ? { outputPath: options } : options || {};
-    if (!existsSync(inputPath)) {
-        throw new Error(`File not found: ${inputPath}`);
+    const resolvedInputPath = resolvePath(inputPath);
+    if (!existsSync(resolvedInputPath)) {
+        throw new Error(`File not found: ${resolvedInputPath}`);
     }
-    const sm = SessionManager.open(inputPath);
+    const sm = SessionManager.open(resolvedInputPath);
     const sessionData = {
         header: sm.getHeader(),
         entries: sm.getEntries(),
@@ -213,9 +215,9 @@ export async function exportFromFile(inputPath, options) {
         tools: undefined,
     };
     const html = generateHtml(sessionData, opts.themeName);
-    let outputPath = opts.outputPath;
+    let outputPath = opts.outputPath ? normalizePath(opts.outputPath) : undefined;
     if (!outputPath) {
-        const inputBasename = basename(inputPath, ".jsonl");
+        const inputBasename = basename(resolvedInputPath, ".jsonl");
         outputPath = `${APP_NAME}-session-${inputBasename}.html`;
     }
     writeFileSync(outputPath, html, "utf8");

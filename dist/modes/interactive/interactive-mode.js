@@ -6,13 +6,15 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getProviders, } from "@mariozechner/pi-ai";
-import { CombinedAutocompleteProvider, Container, fuzzyFilter, Loader, Markdown, matchesKey, ProcessTerminal, Spacer, setKeybindings, Text, TruncatedText, TUI, visibleWidth, } from "@mariozechner/pi-tui";
+import { getProviders, } from "@earendil-works/pi-ai";
+import { CombinedAutocompleteProvider, Container, fuzzyFilter, getCapabilities, hyperlink, Loader, Markdown, matchesKey, ProcessTerminal, Spacer, setKeybindings, Text, TruncatedText, TUI, visibleWidth, } from "@earendil-works/pi-tui";
+import chalk from "chalk";
 import { spawn, spawnSync } from "child_process";
 import { APP_NAME, APP_TITLE, getAgentDir, getAuthPath, getDebugLogPath, getDocsPath, getShareViewerUrl, VERSION, } from "../../config.js";
 import { parseSkillBlock } from "../../core/agent-session.js";
 import { SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
+import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
@@ -26,6 +28,7 @@ import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/cha
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
+import { getCwdRelativePath } from "../../utils/paths.js";
 import { getPiUserAgent } from "../../utils/pi-user-agent.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
@@ -46,7 +49,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
-import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
+import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
@@ -90,6 +93,27 @@ function isAnthropicSubscriptionAuthKey(apiKey) {
 function isUnknownModel(model) {
     return !!model && model.provider === "unknown" && model.id === "unknown" && model.api === "unknown";
 }
+function quoteIfNeeded(value) {
+    if (value.length > 0 && !/[^a-zA-Z0-9_\-./~:@]/.test(value)) {
+        return value;
+    }
+    return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+export function formatResumeCommand(sessionManager) {
+    if (!process.stdout.isTTY)
+        return undefined;
+    if (!sessionManager.isPersisted())
+        return undefined;
+    const sessionFile = sessionManager.getSessionFile();
+    if (!sessionFile || !fs.existsSync(sessionFile))
+        return undefined;
+    const args = [APP_NAME];
+    if (!sessionManager.usesDefaultSessionDir()) {
+        args.push("--session-dir", quoteIfNeeded(sessionManager.getSessionDir()));
+    }
+    args.push("--session", sessionManager.getSessionId());
+    return args.join(" ");
+}
 function hasDefaultModelProvider(providerId) {
     return providerId in defaultModelPerProvider;
 }
@@ -105,7 +129,6 @@ export function isApiKeyLoginProvider(providerId, oauthProviderIds, builtInProvi
     return !oauthProviderIds.has(providerId);
 }
 export class InteractiveMode {
-    options;
     runtimeHost;
     ui;
     chatContainer;
@@ -125,6 +148,7 @@ export class InteractiveMode {
     version;
     isInitialized = false;
     onInputCallback;
+    pendingUserInputs = [];
     loadingAnimation = undefined;
     workingMessage = undefined;
     workingVisible = true;
@@ -189,6 +213,7 @@ export class InteractiveMode {
     builtInHeader = undefined;
     // Custom header from extension (undefined = use built-in header)
     customHeader = undefined;
+    options;
     // Convenience accessors
     get session() {
         return this.runtimeHost.session;
@@ -203,8 +228,8 @@ export class InteractiveMode {
         return this.session.settingsManager;
     }
     constructor(runtimeHost, options = {}) {
-        this.options = options;
         this.runtimeHost = runtimeHost;
+        this.options = options;
         this.runtimeHost.setBeforeSessionInvalidate(() => {
             this.resetExtensionUI();
         });
@@ -389,6 +414,19 @@ export class InteractiveMode {
         // Both are needed: fd for autocomplete, rg for grep tool and bash commands
         const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
         this.fdPath = fdPath;
+        if (this.session.scopedModels.length > 0 && (this.options.verbose || !this.settingsManager.getQuietStartup())) {
+            const modelList = this.session.scopedModels
+                .map((sm) => {
+                const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
+                return `${sm.model.id}${thinkingStr}`;
+            })
+                .join(", ");
+            const cycleKeys = this.keybindings.getKeys("app.model.cycleForward");
+            const cycleHint = cycleKeys.length > 0
+                ? theme.fg("muted", ` (${formatKeyText(cycleKeys.join("/"), { capitalize: true })} to cycle)`)
+                : "";
+            console.log(theme.fg("dim", `Model scope: ${modelList}${cycleHint}`));
+        }
         // Add header container as first child
         this.ui.addChild(this.headerContainer);
         // Add header with keybindings from config (unless silenced)
@@ -488,9 +526,9 @@ export class InteractiveMode {
     async run() {
         await this.init();
         // Start version check asynchronously
-        checkForNewPiVersion(this.version).then((newVersion) => {
-            if (newVersion) {
-                this.showNewVersionNotification(newVersion);
+        checkForNewPiVersion(this.version).then((newRelease) => {
+            if (newRelease) {
+                this.showNewVersionNotification(newRelease);
             }
         });
         // Start package update check asynchronously
@@ -677,13 +715,9 @@ export class InteractiveMode {
     formatContextPath(p) {
         const cwd = path.resolve(this.sessionManager.getCwd());
         const absolutePath = path.isAbsolute(p) ? path.resolve(p) : path.resolve(cwd, p);
-        const relativePath = path.relative(cwd, absolutePath);
-        const isInsideCwd = relativePath === "" ||
-            (!relativePath.startsWith("..") &&
-                !relativePath.startsWith(`..${path.sep}`) &&
-                !path.isAbsolute(relativePath));
-        if (isInsideCwd) {
-            return relativePath || ".";
+        const relativePath = getCwdRelativePath(absolutePath, cwd);
+        if (relativePath !== undefined) {
+            return relativePath;
         }
         return this.formatDisplayPath(absolutePath);
     }
@@ -1096,6 +1130,9 @@ export class InteractiveMode {
         const uiContext = this.createExtensionUIContext();
         await this.session.bindExtensions({
             uiContext,
+            abortHandler: () => {
+                this.restoreQueuedMessagesToEditor({ abort: true });
+            },
             commandContextActions: {
                 waitForIdle: () => this.session.agent.waitForIdle(),
                 newSession: async (options) => {
@@ -1174,6 +1211,7 @@ export class InteractiveMode {
         this.showStartupNoticesIfNeeded();
     }
     applyRuntimeSettings() {
+        configureHttpDispatcher(this.settingsManager.getHttpIdleTimeoutMs());
         this.footer.setSession(this.session);
         this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
         this.footerDataProvider.setCwd(this.sessionManager.getCwd());
@@ -1238,7 +1276,9 @@ export class InteractiveMode {
             model: this.session.model,
             isIdle: () => !this.session.isStreaming,
             signal: this.session.agent.signal,
-            abort: () => this.session.abort(),
+            abort: () => {
+                this.restoreQueuedMessagesToEditor({ abort: true });
+            },
             hasPendingMessages: () => this.session.pendingMessageCount > 0,
             shutdown: () => {
                 this.shutdownRequested = true;
@@ -1592,7 +1632,7 @@ export class InteractiveMode {
                 opts?.signal?.removeEventListener("abort", onAbort);
                 this.hideExtensionSelector();
                 resolve(undefined);
-            }, { tui: this.ui, timeout: opts?.timeout });
+            }, { tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() });
             this.editorContainer.clear();
             this.editorContainer.addChild(this.extensionSelector);
             this.ui.setFocus(this.extensionSelector);
@@ -2114,6 +2154,9 @@ export class InteractiveMode {
             if (this.onInputCallback) {
                 this.onInputCallback(text);
             }
+            else {
+                this.pendingUserInputs.push(text);
+            }
             this.editor.addToHistory?.(text);
         };
     }
@@ -2592,6 +2635,10 @@ export class InteractiveMode {
         }
     }
     async getUserInput() {
+        const queuedInput = this.pendingUserInputs.shift();
+        if (queuedInput !== undefined) {
+            return queuedInput;
+        }
         return new Promise((resolve) => {
             this.onInputCallback = (text) => {
                 this.onInputCallback = undefined;
@@ -2627,16 +2674,36 @@ export class InteractiveMode {
      * repaint the final frame while the process is exiting.
      */
     isShuttingDown = false;
-    async shutdown() {
+    async shutdown(options) {
         if (this.isShuttingDown)
             return;
         this.isShuttingDown = true;
         this.unregisterSignalHandlers();
+        if (options?.fromSignal) {
+            // Signal-triggered shutdown (SIGTERM/SIGHUP). Emit extension cleanup
+            // (session_shutdown) BEFORE touching the terminal. Extension teardown
+            // such as removing sockets does not write to the tty, so it must not be
+            // skipped if a later terminal-restore write fails on a dead or stalled
+            // terminal. If the terminal is gone, the restore writes below emit EIO,
+            // which the stdout/stderr error handler turns into emergencyTerminalExit;
+            // the render loop is already idle, so this cannot hot-spin (see #4144).
+            await this.runtimeHost.dispose();
+            await this.ui.terminal.drainInput(1000);
+            this.stop();
+            process.exit(0);
+        }
+        // Interactive quit (Ctrl+D, Ctrl+C, /quit, extension shutdown()). Stop the
+        // TUI before emitting shutdown events so extension UI cleanup cannot repaint
+        // the final frame while the process is exiting.
         // Drain any in-flight Kitty key release events before stopping.
         // This prevents escape sequences from leaking to the parent shell over slow SSH.
         await this.ui.terminal.drainInput(1000);
         this.stop();
         await this.runtimeHost.dispose();
+        const resumeCommand = formatResumeCommand(this.sessionManager);
+        if (resumeCommand) {
+            process.stdout.write(`${chalk.dim("To resume this session:")} ${resumeCommand}\n`);
+        }
         process.exit(0);
     }
     emergencyTerminalExit() {
@@ -2646,6 +2713,38 @@ export class InteractiveMode {
         // The terminal is gone. Do not run normal shutdown because TUI and
         // extension cleanup can write restore sequences and re-trigger EIO.
         process.exit(129);
+    }
+    /**
+     * Last-resort handler for uncaught exceptions. The TUI puts stdin into raw
+     * mode and hides the cursor; without this handler, an uncaught throw from
+     * anywhere (e.g. an extension's async `ChildProcess.on("exit")` callback)
+     * tears down the process while leaving the terminal in raw mode with no
+     * cursor, requiring `stty sane && reset` to recover.
+     *
+     * Unlike emergencyTerminalExit, the terminal is still alive here, so we
+     * call ui.stop() to restore cooked mode, the cursor, and disable bracketed
+     * paste / Kitty / modifyOtherKeys sequences.
+     */
+    uncaughtCrash(error) {
+        if (this.isShuttingDown) {
+            process.exit(1);
+        }
+        this.isShuttingDown = true;
+        try {
+            this.unregisterSignalHandlers();
+        }
+        catch { }
+        try {
+            killTrackedDetachedChildren();
+        }
+        catch { }
+        try {
+            this.ui.stop();
+        }
+        catch { }
+        console.error("pi exiting due to uncaughtException:");
+        console.error(error);
+        process.exit(1);
     }
     /**
      * Check if shutdown was requested and perform shutdown if so.
@@ -2663,11 +2762,12 @@ export class InteractiveMode {
         }
         for (const signal of signals) {
             const handler = () => {
-                if (signal === "SIGHUP") {
-                    this.emergencyTerminalExit();
-                }
+                // SIGHUP no longer hard-exits: graceful shutdown emits session_shutdown
+                // first, then attempts terminal restore. A genuinely dead terminal
+                // surfaces as an EIO on the restore writes, which the stdout/stderr
+                // error handler converts into emergencyTerminalExit (see #4144, #5080).
                 killTrackedDetachedChildren();
-                void this.shutdown();
+                void this.shutdown({ fromSignal: true });
             };
             process.prependListener(signal, handler);
             this.signalCleanupHandlers.push(() => process.off(signal, handler));
@@ -2682,6 +2782,12 @@ export class InteractiveMode {
         process.stderr.on("error", terminalErrorHandler);
         this.signalCleanupHandlers.push(() => process.stdout.off("error", terminalErrorHandler));
         this.signalCleanupHandlers.push(() => process.stderr.off("error", terminalErrorHandler));
+        // Restore the terminal before the process dies on any uncaught throw.
+        // Without this, an unhandled exception from extension code (or anywhere
+        // in pi) leaves the terminal in raw mode with no cursor.
+        const uncaughtExceptionHandler = (error) => this.uncaughtCrash(error);
+        process.prependListener("uncaughtException", uncaughtExceptionHandler);
+        this.signalCleanupHandlers.push(() => process.off("uncaughtException", uncaughtExceptionHandler));
     }
     unregisterSignalHandlers() {
         for (const cleanup of this.signalCleanupHandlers) {
@@ -2831,7 +2937,7 @@ export class InteractiveMode {
         }
         this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
     }
-    openExternalEditor() {
+    async openExternalEditor() {
         // Determine editor (respect $VISUAL, then $EDITOR)
         const editorCmd = process.env.VISUAL || process.env.EDITOR;
         if (!editorCmd) {
@@ -2847,13 +2953,20 @@ export class InteractiveMode {
             this.ui.stop();
             // Split by space to support editor arguments (e.g., "code --wait")
             const [editor, ...editorArgs] = editorCmd.split(" ");
-            // Spawn editor synchronously with inherited stdio for interactive editing
-            const result = spawnSync(editor, [...editorArgs, tmpFile], {
-                stdio: "inherit",
-                shell: process.platform === "win32",
+            process.stdout.write(`Launching external editor: ${editorCmd}\nPi will resume when the editor exits.\n`);
+            // Do not use spawnSync here. On Windows, synchronous child_process calls can keep
+            // Node/libuv's console input read active after ui.stop() pauses stdin, racing
+            // vim/nvim for the console input buffer until Ctrl+C cancels the pending read.
+            const status = await new Promise((resolve) => {
+                const child = spawn(editor, [...editorArgs, tmpFile], {
+                    stdio: "inherit",
+                    shell: process.platform === "win32",
+                });
+                child.on("error", () => resolve(null));
+                child.on("close", (code) => resolve(code));
             });
             // On successful exit (status 0), replace editor content
-            if (result.status === 0) {
+            if (status === 0) {
                 const newContent = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
                 this.editor.setText(newContent);
             }
@@ -2883,6 +2996,7 @@ export class InteractiveMode {
     showError(errorMessage) {
         this.chatContainer.addChild(new Spacer(1));
         this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
+        this.chatContainer.addChild(new Spacer(1));
         this.ui.requestRender();
     }
     showWarning(warningMessage) {
@@ -2890,14 +3004,26 @@ export class InteractiveMode {
         this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
         this.ui.requestRender();
     }
-    showNewVersionNotification(newVersion) {
+    showNewVersionNotification(release) {
         const action = theme.fg("accent", `${APP_NAME} update`);
-        const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. Run `) + action;
-        const changelogUrl = theme.fg("accent", "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md");
-        const changelogLine = theme.fg("muted", "Changelog: ") + changelogUrl;
+        const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
+        const changelogUrl = "https://pi.dev/changelog";
+        const changelogLink = getCapabilities().hyperlinks
+            ? hyperlink(theme.fg("accent", "open changelog"), changelogUrl)
+            : theme.fg("accent", changelogUrl);
+        const changelogLine = theme.fg("muted", "Changelog: ") + changelogLink;
+        const note = release.note?.trim();
         this.chatContainer.addChild(new Spacer(1));
         this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-        this.chatContainer.addChild(new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${changelogLine}`, 1, 0));
+        this.chatContainer.addChild(new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}`, 1, 0));
+        if (note) {
+            this.chatContainer.addChild(new Spacer(1));
+            this.chatContainer.addChild(new Markdown(note, 1, 0, this.getMarkdownThemeWithSettings(), {
+                color: (text) => theme.fg("muted", text),
+            }));
+            this.chatContainer.addChild(new Spacer(1));
+        }
+        this.chatContainer.addChild(new Text(changelogLine, 1, 0));
         this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
         this.ui.requestRender();
     }
@@ -3106,6 +3232,7 @@ export class InteractiveMode {
                 steeringMode: this.session.steeringMode,
                 followUpMode: this.session.followUpMode,
                 transport: this.settingsManager.getTransport(),
+                httpIdleTimeoutMs: this.settingsManager.getHttpIdleTimeoutMs(),
                 thinkingLevel: this.session.thinkingLevel,
                 availableThinkingLevels: this.session.getAvailableThinkingLevels(),
                 currentTheme: this.settingsManager.getTheme() || "dark",
@@ -3162,6 +3289,11 @@ export class InteractiveMode {
                 onTransportChange: (transport) => {
                     this.settingsManager.setTransport(transport);
                     this.session.agent.transport = transport;
+                },
+                onHttpIdleTimeoutMsChange: (timeoutMs) => {
+                    this.settingsManager.setHttpIdleTimeoutMs(timeoutMs);
+                    configureHttpDispatcher(timeoutMs);
+                    this.showStatus(`HTTP idle timeout: ${formatHttpIdleTimeoutMs(timeoutMs)}`);
                 },
                 onThinkingLevelChange: (level) => {
                     this.session.setThinkingLevel(level);
@@ -3562,7 +3694,9 @@ export class InteractiveMode {
     }
     showSessionSelector() {
         this.showSelector((done) => {
-            const selector = new SessionSelectorComponent((onProgress) => SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress), SessionManager.listAll, async (sessionPath) => {
+            const selector = new SessionSelectorComponent((onProgress) => SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress), (onProgress) => this.sessionManager.usesDefaultSessionDir()
+                ? SessionManager.listAll(onProgress)
+                : SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress), async (sessionPath) => {
                 done();
                 await this.handleResumeSession(sessionPath);
             }, () => {
@@ -3915,11 +4049,11 @@ export class InteractiveMode {
                             }
                         });
                     }
-                    else if (providerId === "github-copilot") {
-                        // GitHub Copilot polls after onAuth
-                        dialog.showWaiting("Waiting for browser authentication...");
-                    }
                     // For Anthropic: onPrompt is called immediately after
+                },
+                onDeviceCode: (info) => {
+                    dialog.showDeviceCode(info);
+                    dialog.showWaiting("Waiting for authentication...");
                 },
                 onPrompt: async (prompt) => {
                     return dialog.showPrompt(prompt.message, prompt.placeholder);
@@ -3977,6 +4111,7 @@ export class InteractiveMode {
         };
         try {
             await this.session.reload();
+            configureHttpDispatcher(this.settingsManager.getHttpIdleTimeoutMs());
             this.keybindings.reload();
             const activeHeader = this.customHeader ?? this.builtInHeader;
             if (isExpandable(activeHeader)) {
@@ -4279,28 +4414,16 @@ export class InteractiveMode {
         this.ui.requestRender();
     }
     /**
-     * Capitalize keybinding for display (e.g., "ctrl+c" -> "Ctrl+C").
-     */
-    capitalizeKey(key) {
-        return key
-            .split("/")
-            .map((k) => k
-            .split("+")
-            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-            .join("+"))
-            .join("/");
-    }
-    /**
      * Get capitalized display string for an app keybinding action.
      */
     getAppKeyDisplay(action) {
-        return this.capitalizeKey(keyText(action));
+        return keyDisplayText(action);
     }
     /**
      * Get capitalized display string for an editor keybinding action.
      */
     getEditorKeyDisplay(action) {
-        return this.capitalizeKey(keyText(action));
+        return keyDisplayText(action);
     }
     handleHotkeysCommand() {
         // Navigation keybindings
@@ -4399,7 +4522,7 @@ export class InteractiveMode {
 `;
             for (const [key, shortcut] of shortcuts) {
                 const description = shortcut.description ?? shortcut.extensionPath;
-                const keyDisplay = key.replace(/\b\w/g, (c) => c.toUpperCase());
+                const keyDisplay = formatKeyText(key, { capitalize: true });
                 hotkeys += `| \`${keyDisplay}\` | ${description} |\n`;
             }
         }

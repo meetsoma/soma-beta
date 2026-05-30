@@ -12,10 +12,11 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { normalizePath, resolvePath } from "../utils/paths.js";
+import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.js";
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
 function deepMergeSettings(base, overrides) {
     const result = { ...base };
@@ -41,12 +42,24 @@ function deepMergeSettings(base, overrides) {
     }
     return result;
 }
+function parseTimeoutSetting(value, settingName) {
+    const timeoutMs = parseHttpIdleTimeoutMs(value);
+    if (timeoutMs !== undefined) {
+        return timeoutMs;
+    }
+    if (value !== undefined) {
+        throw new Error(`Invalid ${settingName} setting: ${String(value)}`);
+    }
+    return undefined;
+}
 export class FileSettingsStorage {
     globalSettingsPath;
     projectSettingsPath;
     constructor(cwd, agentDir) {
-        this.globalSettingsPath = join(agentDir, "settings.json");
-        this.projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
+        const resolvedCwd = resolvePath(cwd);
+        const resolvedAgentDir = resolvePath(agentDir);
+        this.globalSettingsPath = join(resolvedAgentDir, "settings.json");
+        this.projectSettingsPath = join(resolvedCwd, CONFIG_DIR_NAME, "settings.json");
     }
     acquireLockSyncWithRetry(path) {
         const maxAttempts = 10;
@@ -387,16 +400,7 @@ export class SettingsManager {
     }
     getSessionDir() {
         const sessionDir = this.settings.sessionDir;
-        if (!sessionDir) {
-            return sessionDir;
-        }
-        if (sessionDir === "~") {
-            return homedir();
-        }
-        if (sessionDir.startsWith("~/")) {
-            return join(homedir(), sessionDir.slice(2));
-        }
-        return sessionDir;
+        return sessionDir ? normalizePath(sessionDir) : sessionDir;
     }
     getDefaultProvider() {
         return this.settings.defaultProvider;
@@ -512,12 +516,26 @@ export class SettingsManager {
             baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
         };
     }
+    getHttpIdleTimeoutMs() {
+        return parseTimeoutSetting(this.settings.httpIdleTimeoutMs, "httpIdleTimeoutMs") ?? DEFAULT_HTTP_IDLE_TIMEOUT_MS;
+    }
+    setHttpIdleTimeoutMs(timeoutMs) {
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+            throw new Error(`Invalid httpIdleTimeoutMs setting: ${String(timeoutMs)}`);
+        }
+        this.globalSettings.httpIdleTimeoutMs = Math.floor(timeoutMs);
+        this.markModified("httpIdleTimeoutMs");
+        this.save();
+    }
     getProviderRetrySettings() {
         return {
             timeoutMs: this.settings.retry?.provider?.timeoutMs,
             maxRetries: this.settings.retry?.provider?.maxRetries,
             maxRetryDelayMs: this.settings.retry?.provider?.maxRetryDelayMs ?? 60000,
         };
+    }
+    getWebSocketConnectTimeoutMs() {
+        return parseTimeoutSetting(this.settings.websocketConnectTimeoutMs, "websocketConnectTimeoutMs");
     }
     getHideThinkingBlock() {
         return this.settings.hideThinkingBlock ?? false;

@@ -12,9 +12,10 @@
  */
 
 import { join } from "node:path";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { clampThinkingLevel, streamSimple } from "@mariozechner/pi-ai";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai";
 import { getAgentDir } from "../config.js";
+import { resolvePath } from "../utils/paths.js";
 import { AgentSession } from "./agent-session.js";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -37,7 +38,11 @@ createCodingTools, createReadOnlyTools, createReadTool, createBashTool, createEd
 function getDefaultAgentDir() {
     return getAgentDir();
 }
-function getAttributionHeaders(model, settingsManager) {
+function getAttributionHeaders(model, settingsManager, sessionId) {
+    if (sessionId &&
+        (model.provider === "opencode" || model.provider === "opencode-go" || model.baseUrl.includes("opencode.ai"))) {
+        return { "x-opencode-session": sessionId, "x-opencode-client": "pi" };
+    }
     if (!isInstallTelemetryEnabled(settingsManager)) {
         return undefined;
     }
@@ -67,7 +72,7 @@ function getAttributionHeaders(model, settingsManager) {
  * const { session } = await createAgentSession();
  *
  * // With explicit model
- * import { getModel } from '@mariozechner/pi-ai';
+ * import { getModel } from '@earendil-works/pi-ai';
  * const { session } = await createAgentSession({
  *   model: getModel('anthropic', 'claude-opus-4-5'),
  *   thinkingLevel: 'high',
@@ -87,15 +92,15 @@ function getAttributionHeaders(model, settingsManager) {
  * await loader.reload();
  * const { session } = await createAgentSession({
  *   model: myModel,
- *   tools: [readTool, bashTool],
+ *   tools: ["read", "bash"],
  *   resourceLoader: loader,
  *   sessionManager: SessionManager.inMemory(),
  * });
  * ```
  */
 export async function createAgentSession(options = {}) {
-    const cwd = options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd();
-    const agentDir = options.agentDir ?? getDefaultAgentDir();
+    const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
+    const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
     let resourceLoader = options.resourceLoader;
     // Use provided or create AuthStorage and ModelRegistry
     const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
@@ -163,11 +168,9 @@ export async function createAgentSession(options = {}) {
     }
     const defaultActiveToolNames = ["read", "bash", "edit", "write"];
     const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
-    const initialActiveToolNames = options.tools
-        ? [...options.tools]
-        : options.noTools
-            ? []
-            : defaultActiveToolNames;
+    const excludedToolNames = options.excludeTools;
+    const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
+    const initialActiveToolNames = (options.tools ? [...options.tools] : options.noTools ? [] : defaultActiveToolNames).filter((name) => !excludedToolNameSet?.has(name));
     let agent;
     // Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
     const convertToLlmWithBlockImages = (messages) => {
@@ -214,11 +217,16 @@ export async function createAgentSession(options = {}) {
                 throw new Error(auth.error);
             }
             const providerRetrySettings = settingsManager.getProviderRetrySettings();
-            const attributionHeaders = getAttributionHeaders(model, settingsManager);
+            const timeoutMs = options?.timeoutMs ??
+                providerRetrySettings.timeoutMs ??
+                (model.api === "openai-codex-responses" ? settingsManager.getHttpIdleTimeoutMs() : undefined);
+            const websocketConnectTimeoutMs = options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
+            const attributionHeaders = getAttributionHeaders(model, settingsManager, options?.sessionId);
             return streamSimple(model, context, {
                 ...options,
                 apiKey: auth.apiKey,
-                timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
+                timeoutMs,
+                websocketConnectTimeoutMs,
                 maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
                 headers: attributionHeaders || auth.headers || options?.headers
@@ -282,6 +290,7 @@ export async function createAgentSession(options = {}) {
         modelRegistry,
         initialActiveToolNames,
         allowedToolNames,
+        excludedToolNames,
         extensionRunnerRef,
         sessionStartEvent: options.sessionStartEvent,
     });

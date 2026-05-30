@@ -1,7 +1,7 @@
 /**
  * Simple text input component for extensions.
  */
-import { Container, getKeybindings, Input, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, getKeybindings, Input, Spacer, Text } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";

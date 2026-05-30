@@ -1,6 +1,8 @@
-import { Container, getCapabilities, SelectList, SettingsList, Spacer, Text, } from "@mariozechner/pi-tui";
+import { Container, getCapabilities, SelectList, SettingsList, Spacer, Text, } from "@earendil-works/pi-tui";
+import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../../core/http-dispatcher.js";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { keyDisplayText } from "./keybinding-hints.js";
 const SETTINGS_SUBMENU_SELECT_LIST_LAYOUT = {
     minPrimaryColumnWidth: 12,
     maxPrimaryColumnWidth: 32,
@@ -91,6 +93,7 @@ export class SettingsSelectorComponent extends Container {
     constructor(config, callbacks) {
         super();
         const supportsImages = getCapabilities().images;
+        const followUpKey = keyDisplayText("app.message.followUp");
         let currentWarnings = { ...config.warnings };
         const items = [
             {
@@ -110,7 +113,7 @@ export class SettingsSelectorComponent extends Container {
             {
                 id: "follow-up-mode",
                 label: "Follow-up mode",
-                description: "Alt+Enter queues follow-up messages until agent stops. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.",
+                description: `${followUpKey} queues follow-up messages until agent stops. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.`,
                 currentValue: config.followUpMode,
                 values: ["one-at-a-time", "all"],
             },
@@ -120,6 +123,13 @@ export class SettingsSelectorComponent extends Container {
                 description: "Preferred transport for providers that support multiple transports",
                 currentValue: config.transport,
                 values: ["sse", "websocket", "websocket-cached", "auto"],
+            },
+            {
+                id: "http-idle-timeout",
+                label: "HTTP idle timeout",
+                description: "Maximum idle gap while waiting for HTTP headers or body chunks. Disable for local models that pause longer than five minutes.",
+                currentValue: formatHttpIdleTimeoutMs(config.httpIdleTimeoutMs),
+                values: HTTP_IDLE_TIMEOUT_CHOICES.map((choice) => choice.label),
             },
             {
                 id: "hide-thinking",
@@ -328,6 +338,13 @@ export class SettingsSelectorComponent extends Container {
                 case "transport":
                     callbacks.onTransportChange(newValue);
                     break;
+                case "http-idle-timeout": {
+                    const choice = HTTP_IDLE_TIMEOUT_CHOICES.find((item) => item.label === newValue);
+                    if (choice) {
+                        callbacks.onHttpIdleTimeoutMsChange(choice.timeoutMs);
+                    }
+                    break;
+                }
                 case "hide-thinking":
                     callbacks.onHideThinkingBlockChange(newValue === "true");
                     break;

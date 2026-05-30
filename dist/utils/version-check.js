@@ -57,16 +57,21 @@ export async function getLatestPiRelease(currentVersion, options = {}) {
         return undefined;
     }
     const packageName = typeof data.packageName === "string" && data.packageName.trim() ? data.packageName.trim() : undefined;
-    return { version: data.version.trim(), packageName };
+    const note = typeof data.note === "string" && data.note.trim() ? data.note.trim() : undefined;
+    return {
+        version: data.version.trim(),
+        packageName,
+        ...(note ? { note } : {}),
+    };
 }
 export async function getLatestPiVersion(currentVersion, options = {}) {
     return (await getLatestPiRelease(currentVersion, options))?.version;
 }
 export async function checkForNewPiVersion(currentVersion) {
     try {
-        const latestVersion = await getLatestPiVersion(currentVersion);
-        if (latestVersion && isNewerPackageVersion(latestVersion, currentVersion)) {
-            return latestVersion;
+        const latestRelease = await getLatestPiRelease(currentVersion);
+        if (latestRelease && isNewerPackageVersion(latestRelease.version, currentVersion)) {
+            return latestRelease;
         }
         return undefined;
     }

@@ -22,7 +22,7 @@ import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import stripAnsi from "strip-ansi";
+import { stripAnsi } from "../utils/ansi.js";
 import { sanitizeBinaryOutput } from "../utils/shell.js";
 import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.js";
 // ============================================================================

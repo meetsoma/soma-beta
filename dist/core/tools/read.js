@@ -1,5 +1,5 @@
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { Type } from "typebox";
@@ -8,8 +8,9 @@ import { keyHint, keyText } from "../../modes/interactive/components/keybinding-
 import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.js";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
-import { resolveReadPath } from "./path-utils.js";
-import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
+import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
+import { resolveReadPathAsync, resolveToCwd } from "./path-utils.js";
+import { getTextOutput, renderToolPath, replaceTabs, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from "./truncate.js";
 const readSchema = Type.Object({
@@ -30,11 +31,8 @@ function formatReadLineRange(args, theme) {
     const endLine = args.limit !== undefined ? startLine + args.limit - 1 : "";
     return theme.fg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
 }
-function formatReadCall(args, theme) {
-    const rawPath = str(args?.file_path ?? args?.path);
-    const path = rawPath !== null ? shortenPath(rawPath) : null;
-    const invalidArg = invalidArgText(theme);
-    const pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
+function formatReadCall(args, theme, cwd) {
+    const pathDisplay = renderToolPath(str(args?.file_path ?? args?.path), theme, cwd);
     return `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}${formatReadLineRange(args, theme)}`;
 }
 function trimTrailingEmptyLines(lines) {
@@ -72,7 +70,7 @@ function getCompactReadClassification(args, cwd) {
     const rawPath = str(args?.file_path ?? args?.path);
     if (!rawPath)
         return undefined;
-    const absolutePath = resolveReadPath(rawPath, cwd);
+    const absolutePath = resolveToCwd(rawPath, cwd);
     const fileName = basename(absolutePath);
     if (fileName === "SKILL.md") {
         return { kind: "skill", label: basename(dirname(absolutePath)) || fileName };
@@ -81,7 +79,7 @@ function getCompactReadClassification(args, cwd) {
     if (docsClassification)
         return docsClassification;
     if (COMPACT_RESOURCE_FILE_NAMES.has(fileName)) {
-        return { kind: "resource", label: fileName };
+        return { kind: "resource", label: formatPathRelativeToCwdOrAbsolute(absolutePath, cwd) };
     }
     return undefined;
 }
@@ -99,8 +97,8 @@ function formatCompactReadCall(classification, args, theme) {
         formatReadLineRange(args, theme) +
         expandHint);
 }
-function formatReadResult(args, result, options, theme, showImages, cwd, isError) {
-    if (!options.expanded && !isError && getCompactReadClassification(args, cwd)) {
+function formatReadResult(args, result, options, theme, showImages, _cwd, isError) {
+    if (!options.expanded && !isError) {
         return "";
     }
     const rawPath = str(args?.file_path ?? args?.path);
@@ -140,7 +138,6 @@ export function createReadToolDefinition(cwd, options) {
         promptGuidelines: ["Use read to examine files instead of cat or sed."],
         parameters: readSchema,
         async execute(_toolCallId, { path, offset, limit }, signal, _onUpdate, ctx) {
-            const absolutePath = resolveReadPath(path, cwd);
             return new Promise((resolve, reject) => {
                 if (signal?.aborted) {
                     reject(new Error("Operation aborted"));
@@ -154,6 +151,9 @@ export function createReadToolDefinition(cwd, options) {
                 signal?.addEventListener("abort", onAbort, { once: true });
                 (async () => {
                     try {
+                        const absolutePath = await resolveReadPathAsync(path, cwd);
+                        if (aborted)
+                            return;
                         // Check if file exists and is readable.
                         await ops.access(absolutePath);
                         if (aborted)
@@ -165,10 +165,9 @@ export function createReadToolDefinition(cwd, options) {
                         if (mimeType) {
                             // Read image as binary.
                             const buffer = await ops.readFile(absolutePath);
-                            const base64 = buffer.toString("base64");
                             if (autoResizeImages) {
                                 // Resize image if needed before sending it back to the model.
-                                const resized = await resizeImage({ type: "image", data: base64, mimeType });
+                                const resized = await resizeImage(buffer, mimeType);
                                 if (!resized) {
                                     let textNote = `Read image file [${mimeType}]\n[Image omitted: could not be resized below the inline image size limit.]`;
                                     if (nonVisionImageNote)
@@ -194,7 +193,7 @@ export function createReadToolDefinition(cwd, options) {
                                     textNote += `\n${nonVisionImageNote}`;
                                 content = [
                                     { type: "text", text: textNote },
-                                    { type: "image", data: base64, mimeType },
+                                    { type: "image", data: buffer.toString("base64"), mimeType },
                                 ];
                             }
                         }
@@ -272,7 +271,9 @@ export function createReadToolDefinition(cwd, options) {
         renderCall(args, theme, context) {
             const text = context.lastComponent ?? new Text("", 0, 0);
             const classification = !context.expanded ? getCompactReadClassification(args, context.cwd) : undefined;
-            text.setText(classification ? formatCompactReadCall(classification, args, theme) : formatReadCall(args, theme));
+            text.setText(classification
+                ? formatCompactReadCall(classification, args, theme)
+                : formatReadCall(args, theme, context.cwd));
             return text;
         },
         renderResult(result, options, theme, context) {

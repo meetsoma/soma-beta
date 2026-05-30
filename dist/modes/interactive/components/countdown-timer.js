@@ -2,11 +2,11 @@
  * Reusable countdown timer for dialog components.
  */
 export class CountdownTimer {
+    intervalId;
+    remainingSeconds;
     tui;
     onTick;
     onExpire;
-    intervalId;
-    remainingSeconds;
     constructor(timeoutMs, tui, onTick, onExpire) {
         this.tui = tui;
         this.onTick = onTick;

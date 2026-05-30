@@ -1,12 +1,11 @@
 import { createInterface } from "node:readline";
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
-import { existsSync } from "fs";
 import path from "path";
 import { Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
-import { resolveToCwd } from "./path-utils.js";
+import { pathExists, resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, formatSize, truncateHead } from "./truncate.js";
@@ -22,7 +21,7 @@ const findSchema = Type.Object({
 });
 const DEFAULT_LIMIT = 1000;
 const defaultFindOperations = {
-    exists: existsSync,
+    exists: pathExists,
     // This is a placeholder. Actual fd execution happens in execute() when no custom glob is provided.
     glob: () => [],
 };

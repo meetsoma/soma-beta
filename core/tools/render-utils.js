@@ -1,6 +1,8 @@
 import * as os from "node:os";
-import { getCapabilities, getImageDimensions, imageFallback } from "@mariozechner/pi-tui";
-import stripAnsi from "strip-ansi";
+import { pathToFileURL } from "node:url";
+import { getCapabilities, getImageDimensions, hyperlink, imageFallback } from "@earendil-works/pi-tui";
+import { stripAnsi } from "../../utils/ansi.js";
+import { resolvePath } from "../../utils/paths.js";
 import { sanitizeBinaryOutput } from "../../utils/shell.js";
 export function shortenPath(path) {
     if (typeof path !== "string")
@@ -10,6 +12,12 @@ export function shortenPath(path) {
         return `~${path.slice(home.length)}`;
     }
     return path;
+}
+export function linkPath(styledText, rawPath, cwd) {
+    if (!getCapabilities().hyperlinks)
+        return styledText;
+    const absolutePath = resolvePath(rawPath, cwd);
+    return hyperlink(styledText, pathToFileURL(absolutePath).href);
 }
 export function str(value) {
     if (typeof value === "string")
@@ -45,5 +53,13 @@ export function getTextOutput(result, showImages) {
 }
 export function invalidArgText(theme) {
     return theme.fg("error", "[invalid arg]");
+}
+export function renderToolPath(rawPath, theme, cwd, options) {
+    if (rawPath === null)
+        return invalidArgText(theme);
+    const value = rawPath || options?.emptyFallback;
+    if (!value)
+        return theme.fg("toolOutput", "...");
+    return linkPath(theme.fg("accent", shortenPath(value)), value, cwd);
 }
 //# sourceMappingURL=render-utils.js.map

@@ -1,5 +1,5 @@
-import { modelsAreEqual } from "@mariozechner/pi-ai";
-import { Container, fuzzyFilter, getKeybindings, Input, Spacer, Text, } from "@mariozechner/pi-tui";
+import { modelsAreEqual } from "@earendil-works/pi-ai";
+import { Container, fuzzyFilter, getKeybindings, Input, Spacer, Text, } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";

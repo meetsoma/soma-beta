@@ -10,7 +10,7 @@ import { CORE_DIR } from "./config.js";
 export function isInstalled() {
   const hasDist = existsSync(join(CORE_DIR, "dist", "extensions")) && existsSync(join(CORE_DIR, "dist", "core"));
   const hasDev = existsSync(join(CORE_DIR, "extensions")) && existsSync(join(CORE_DIR, "core"));
-  const hasDeps = existsSync(join(CORE_DIR, "node_modules", "@mariozechner"));
+  const hasDeps = existsSync(join(CORE_DIR, "node_modules", "@earendil-works"));
   return (hasDist || hasDev) && hasDeps;
 }
 

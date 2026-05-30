@@ -1,4 +1,4 @@
-import { fuzzyMatch } from "@mariozechner/pi-tui";
+import { fuzzyMatch } from "@earendil-works/pi-tui";
 function normalizeWhitespaceLower(text) {
     return text.toLowerCase().replace(/\s+/g, " ").trim();
 }

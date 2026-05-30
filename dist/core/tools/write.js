@@ -1,4 +1,4 @@
-import { Container, Text } from "@mariozechner/pi-tui";
+import { Container, Text } from "@earendil-works/pi-tui";
 import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
 import { dirname } from "path";
 import { Type } from "typebox";
@@ -6,7 +6,7 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.js";
 import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveToCwd } from "./path-utils.js";
-import { invalidArgText, normalizeDisplayText, replaceTabs, shortenPath, str } from "./render-utils.js";
+import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 const writeSchema = Type.Object({
     path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
@@ -90,12 +90,11 @@ function trimTrailingEmptyLines(lines) {
     }
     return lines.slice(0, end);
 }
-function formatWriteCall(args, options, theme, cache) {
+function formatWriteCall(args, options, theme, cache, cwd) {
     const rawPath = str(args?.file_path ?? args?.path);
     const fileContent = str(args?.content);
-    const path = rawPath !== null ? shortenPath(rawPath) : null;
-    const invalidArg = invalidArgText(theme);
-    let text = `${theme.fg("toolTitle", theme.bold("write"))} ${path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...")}`;
+    const pathDisplay = renderToolPath(rawPath, theme, cwd);
+    let text = `${theme.fg("toolTitle", theme.bold("write"))} ${pathDisplay}`;
     if (fileContent === null) {
         text += `\n\n${theme.fg("error", "[invalid content arg - expected string]")}`;
     }
@@ -141,42 +140,27 @@ export function createWriteToolDefinition(cwd, options) {
         async execute(_toolCallId, { path, content }, signal, _onUpdate, _ctx) {
             const absolutePath = resolveToCwd(path, cwd);
             const dir = dirname(absolutePath);
-            return withFileMutationQueue(absolutePath, () => new Promise((resolve, reject) => {
-                if (signal?.aborted) {
-                    reject(new Error("Operation aborted"));
-                    return;
-                }
-                let aborted = false;
-                const onAbort = () => {
-                    aborted = true;
-                    reject(new Error("Operation aborted"));
+            return withFileMutationQueue(absolutePath, async () => {
+                // Do not reject from an abort event listener here: that would release the
+                // mutation queue while an in-flight filesystem operation may still finish.
+                // Checking signal.aborted after each await observes the same aborts while
+                // keeping the queue locked until the current operation has settled.
+                const throwIfAborted = () => {
+                    if (signal?.aborted)
+                        throw new Error("Operation aborted");
                 };
-                signal?.addEventListener("abort", onAbort, { once: true });
-                (async () => {
-                    try {
-                        // Create parent directories if needed.
-                        await ops.mkdir(dir);
-                        if (aborted)
-                            return;
-                        // Write the file contents.
-                        await ops.writeFile(absolutePath, content);
-                        if (aborted)
-                            return;
-                        signal?.removeEventListener("abort", onAbort);
-                        resolve({
-                            content: [
-                                { type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` },
-                            ],
-                            details: undefined,
-                        });
-                    }
-                    catch (error) {
-                        signal?.removeEventListener("abort", onAbort);
-                        if (!aborted)
-                            reject(error);
-                    }
-                })();
-            }));
+                throwIfAborted();
+                // Create parent directories if needed.
+                await ops.mkdir(dir);
+                throwIfAborted();
+                // Write the file contents.
+                await ops.writeFile(absolutePath, content);
+                throwIfAborted();
+                return {
+                    content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` }],
+                    details: undefined,
+                };
+            });
         },
         renderCall(args, theme, context) {
             const renderArgs = args;
@@ -191,7 +175,7 @@ export function createWriteToolDefinition(cwd, options) {
             else {
                 component.cache = undefined;
             }
-            component.setText(formatWriteCall(renderArgs, { expanded: context.expanded, isPartial: context.isPartial }, theme, component.cache));
+            component.setText(formatWriteCall(renderArgs, { expanded: context.expanded, isPartial: context.isPartial }, theme, component.cache, context.cwd));
             return component;
         },
         renderResult(result, _options, theme, context) {

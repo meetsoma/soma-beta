@@ -13,11 +13,10 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import ignore from "ignore";
-import { homedir } from "os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "path";
+import { basename, dirname, join, relative, resolve, sep } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { parseFrontmatter } from "../utils/frontmatter.js";
-import { canonicalizePath } from "../utils/paths.js";
+import { canonicalizePath, resolvePath } from "../utils/paths.js";
 import { createSyntheticSourceInfo } from "./source-info.js";
 /** Max name length per spec */
 const MAX_NAME_LENGTH = 64;
@@ -72,11 +71,8 @@ function addIgnoreRules(ig, dir, rootDir) {
  * Validate skill name per Agent Skills spec.
  * Returns array of validation error messages (empty if valid).
  */
-function validateName(name, parentDirName) {
+function validateName(name) {
     const errors = [];
-    if (name !== parentDirName) {
-        errors.push(`name "${name}" does not match parent directory "${parentDirName}"`);
-    }
     if (name.length > MAX_NAME_LENGTH) {
         errors.push(`name exceeds ${MAX_NAME_LENGTH} characters (${name.length})`);
     }
@@ -237,7 +233,7 @@ function loadSkillFromFile(filePath, source) {
         // Use name from frontmatter, or fall back to parent directory name
         const name = frontmatter.name || parentDirName;
         // Validate name
-        const nameErrors = validateName(name, parentDirName);
+        const nameErrors = validateName(name);
         for (const error of nameErrors) {
             diagnostics.push({ type: "warning", message: error, path: filePath });
         }
@@ -301,28 +297,15 @@ function escapeXml(str) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&apos;");
 }
-function normalizePath(input) {
-    const trimmed = input.trim();
-    if (trimmed === "~")
-        return homedir();
-    if (trimmed.startsWith("~/"))
-        return join(homedir(), trimmed.slice(2));
-    if (trimmed.startsWith("~"))
-        return join(homedir(), trimmed.slice(1));
-    return trimmed;
-}
-function resolveSkillPath(p, cwd) {
-    const normalized = normalizePath(p);
-    return isAbsolute(normalized) ? normalized : resolve(cwd, normalized);
-}
 /**
  * Load skills from all configured locations.
  * Returns skills and any validation diagnostics.
  */
 export function loadSkills(options) {
-    const { cwd, agentDir, skillPaths, includeDefaults } = options;
+    const { agentDir, skillPaths, includeDefaults } = options;
     // Resolve agentDir - if not provided, use default from config
-    const resolvedAgentDir = agentDir ?? getAgentDir();
+    const resolvedCwd = resolvePath(options.cwd);
+    const resolvedAgentDir = resolvePath(agentDir ?? getAgentDir());
     const skillMap = new Map();
     const realPathSet = new Set();
     const allDiagnostics = [];
@@ -358,10 +341,10 @@ export function loadSkills(options) {
     }
     if (includeDefaults) {
         addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", true));
-        addSkills(loadSkillsFromDirInternal(resolve(cwd, CONFIG_DIR_NAME, "skills"), "project", true));
+        addSkills(loadSkillsFromDirInternal(resolve(resolvedCwd, CONFIG_DIR_NAME, "skills"), "project", true));
     }
     const userSkillsDir = join(resolvedAgentDir, "skills");
-    const projectSkillsDir = resolve(cwd, CONFIG_DIR_NAME, "skills");
+    const projectSkillsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, "skills");
     const isUnderPath = (target, root) => {
         const normalizedRoot = resolve(root);
         if (target === normalizedRoot) {
@@ -380,7 +363,7 @@ export function loadSkills(options) {
         return "path";
     };
     for (const rawPath of skillPaths) {
-        const resolvedPath = resolveSkillPath(rawPath, cwd);
+        const resolvedPath = resolvePath(rawPath, resolvedCwd, { trim: true });
         if (!existsSync(resolvedPath)) {
             allDiagnostics.push({ type: "warning", message: "skill path does not exist", path: resolvedPath });
             continue;

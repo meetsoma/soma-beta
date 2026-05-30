@@ -33,11 +33,10 @@ export async function processFileArguments(fileArgs, options) {
         if (mimeType) {
             // Handle image file
             const content = await readFile(absolutePath);
-            const base64Content = content.toString("base64");
             let attachment;
             let dimensionNote;
             if (autoResizeImages) {
-                const resized = await resizeImage({ type: "image", data: base64Content, mimeType });
+                const resized = await resizeImage(content, mimeType);
                 if (!resized) {
                     text += `<file name="${absolutePath}">[Image omitted: could not be resized below the inline image size limit.]</file>\n`;
                     continue;
@@ -53,7 +52,7 @@ export async function processFileArguments(fileArgs, options) {
                 attachment = {
                     type: "image",
                     mimeType,
-                    data: base64Content,
+                    data: content.toString("base64"),
                 };
             }
             images.push(attachment);

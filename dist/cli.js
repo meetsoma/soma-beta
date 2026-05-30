@@ -12,8 +12,8 @@ process.title = "soma";
 // Soma has its own versioning — skip Pi's upstream version check
 // which compares Soma 0.1.0 against pi-coding-agent 0.57.1 on npm
 process.env.PI_SKIP_VERSION_CHECK = "1";
-import { setBedrockProviderModule } from "@mariozechner/pi-ai";
-import { bedrockProviderModule } from "@mariozechner/pi-ai/bedrock-provider";
+import { setBedrockProviderModule } from "@earendil-works/pi-ai";
+import { bedrockProviderModule } from "@earendil-works/pi-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { main } from "./main.js";
 import { existsSync, unlinkSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
@@ -143,7 +143,7 @@ process.exit = function somaRotationExit(code) {
 				writeFileSync(join(userExtDir, "hello-world.ts"),
 					'// hello-world.ts — Your first Soma extension\n' +
 					'// This registers a simple tool. Rename, modify, make it yours.\n\n' +
-					'import type { Pi } from "@mariozechner/pi-coding-agent";\n\n' +
+					'import type { Pi } from "@earendil-works/pi-coding-agent";\n\n' +
 					'export default function activate(pi: Pi) {\n' +
 					'  pi.registerTool({\n' +
 					'    name: "helloWorld",\n' +
@@ -164,7 +164,7 @@ process.exit = function somaRotationExit(code) {
 				writeFileSync(join(userExtDir, "_template.ts"),
 					'// _template.ts — Soma extension starter\n' +
 					'// Copy this file and rename it to start a new extension.\n\n' +
-					'import type { Pi } from "@mariozechner/pi-coding-agent";\n\n' +
+					'import type { Pi } from "@earendil-works/pi-coding-agent";\n\n' +
 					'export default function activate(pi: Pi) {\n' +
 					'  // ── Register a tool ──\n' +
 					'  pi.registerTool({\n' +
@@ -697,6 +697,21 @@ if (args[0] === "map") {
 	});
 	const nameArg = cleanedInhaleArgs.filter(a => !a.startsWith("-") && a !== loadPath)[0];
 
+	// Forward Pi-level flags (--model, --provider, --thinking-level, etc.)
+	// that were passed on `soma inhale` so Pi sees them at boot.
+	// Without this, `soma inhale --model openrouter/deepseek-v4-flash` silently
+	// drops the model flag because inhale calls main([]) with an empty args array.
+	const piFlags = ["--model", "--provider", "--thinking-level", "--models"];
+	const passThrough = [];
+	for (let i = 0; i < inhaleArgs.length; i++) {
+		if (piFlags.includes(inhaleArgs[i])) {
+			passThrough.push(inhaleArgs[i]);
+			if (i + 1 < inhaleArgs.length && !inhaleArgs[i + 1].startsWith("-")) {
+				passThrough.push(inhaleArgs[++i]);
+			}
+		}
+	}
+
 	if (listFlag) {
 		// List available preloads
 		try {
@@ -759,16 +774,16 @@ if (args[0] === "map") {
 		}
 		process.env.SOMA_INHALE = "1";
 		process.env.SOMA_INHALE_PATH = fullPath;
-		main([]);
+		main(passThrough);
 	} else if (nameArg) {
 		// Partial name match
 		process.env.SOMA_INHALE = "1";
 		process.env.SOMA_INHALE_TARGET = nameArg;
-		main([]);
+		main(passThrough);
 	} else {
 		// Default: load most recent
 		process.env.SOMA_INHALE = "1";
-		main([]);
+		main(passThrough);
 	}
 } else if (args[0] === "doctor" || args[0] === "status" || args[0] === "health" || args[0] === "update") {
 	// Route to thin-cli which handles these commands

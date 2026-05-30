@@ -11,7 +11,7 @@
  * - Extension UI: Extension UI requests are emitted, client responds with extension_ui_response
  */
 import * as crypto from "node:crypto";
-import { takeOverStdout, writeRawStdout } from "../../core/output-guard.js";
+import { flushRawStdout, takeOverStdout, waitForRawStdoutBackpressure, writeRawStdout, } from "../../core/output-guard.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { theme } from "../interactive/theme/theme.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
@@ -23,6 +23,7 @@ export async function runRpcMode(runtimeHost) {
     takeOverStdout();
     let session = runtimeHost.session;
     let unsubscribe;
+    let unsubscribeBackpressure;
     const output = (obj) => {
         writeRawStdout(serializeJsonLine(obj));
     };
@@ -258,8 +259,12 @@ export async function runRpcMode(runtimeHost) {
             },
         });
         unsubscribe?.();
+        unsubscribeBackpressure?.();
         unsubscribe = session.subscribe((event) => {
             output(event);
+        });
+        unsubscribeBackpressure = session.agent.subscribe(async () => {
+            await waitForRawStdoutBackpressure();
         });
     };
     const registerSignalHandlers = () => {
@@ -270,7 +275,7 @@ export async function runRpcMode(runtimeHost) {
         for (const signal of signals) {
             const handler = () => {
                 killTrackedDetachedChildren();
-                void shutdown(signal === "SIGHUP" ? 129 : 143);
+                void shutdown(signal === "SIGHUP" ? 129 : 143, signal);
             };
             process.on(signal, handler);
             signalCleanupHandlers.push(() => process.off(signal, handler));
@@ -422,7 +427,9 @@ export async function runRpcMode(runtimeHost) {
             // Bash
             // =================================================================
             case "bash": {
-                const result = await session.executeBash(command.command);
+                const result = await session.executeBash(command.command, undefined, {
+                    excludeFromContext: command.excludeFromContext,
+                });
                 return success(id, "bash", result);
             }
             case "abort_bash": {
@@ -529,7 +536,7 @@ export async function runRpcMode(runtimeHost) {
      * Called after handling each command when waiting for the next command.
      */
     let detachInput = () => { };
-    async function shutdown(exitCode = 0) {
+    async function shutdown(exitCode = 0, signal) {
         if (shuttingDown) {
             process.exit(exitCode);
         }
@@ -538,9 +545,13 @@ export async function runRpcMode(runtimeHost) {
             cleanup();
         }
         unsubscribe?.();
+        unsubscribeBackpressure?.();
         await runtimeHost.dispose();
         detachInput();
         process.stdin.pause();
+        if (signal !== "SIGTERM") {
+            await flushRawStdout();
+        }
         process.exit(exitCode);
     }
     async function checkShutdownRequested() {
@@ -555,6 +566,7 @@ export async function runRpcMode(runtimeHost) {
         }
         catch (parseError) {
             output(error(undefined, "parse", `Failed to parse command: ${parseError instanceof Error ? parseError.message : String(parseError)}`));
+            await waitForRawStdoutBackpressure();
             return;
         }
         // Handle extension UI responses
@@ -575,11 +587,13 @@ export async function runRpcMode(runtimeHost) {
             const response = await handleCommand(command);
             if (response) {
                 output(response);
+                await waitForRawStdoutBackpressure();
             }
             await checkShutdownRequested();
         }
         catch (commandError) {
             output(error(command.id, command.type, commandError instanceof Error ? commandError.message : String(commandError)));
+            await waitForRawStdoutBackpressure();
         }
     };
     const onInputEnd = () => {

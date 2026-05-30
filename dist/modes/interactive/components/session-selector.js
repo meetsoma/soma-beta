@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import * as os from "node:os";
-import { Container, getKeybindings, Input, Spacer, Text, truncateToWidth, visibleWidth, } from "@mariozechner/pi-tui";
+import { Container, getKeybindings, Input, Spacer, Text, truncateToWidth, visibleWidth, } from "@earendil-works/pi-tui";
 import { KeybindingsManager } from "../../../core/keybindings.js";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.js";
 import { theme } from "../theme/theme.js";

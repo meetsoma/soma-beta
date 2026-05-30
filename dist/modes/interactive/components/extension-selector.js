@@ -2,7 +2,7 @@
  * Generic selector component for extensions.
  * Displays a list of string options with keyboard navigation.
  */
-import { Container, getKeybindings, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, getKeybindings, Spacer, Text } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -16,11 +16,13 @@ export class ExtensionSelectorComponent extends Container {
     titleText;
     baseTitle;
     countdown;
+    onToggleToolsExpanded;
     constructor(title, options, onSelect, onCancel, opts) {
         super();
         this.options = options;
         this.onSelectCallback = onSelect;
         this.onCancelCallback = onCancel;
+        this.onToggleToolsExpanded = opts?.onToggleToolsExpanded;
         this.baseTitle = title;
         this.addChild(new DynamicBorder());
         this.addChild(new Spacer(1));
@@ -54,7 +56,10 @@ export class ExtensionSelectorComponent extends Container {
     }
     handleInput(keyData) {
         const kb = getKeybindings();
-        if (kb.matches(keyData, "tui.select.up") || keyData === "k") {
+        if (kb.matches(keyData, "app.tools.expand")) {
+            this.onToggleToolsExpanded?.();
+        }
+        else if (kb.matches(keyData, "tui.select.up") || keyData === "k") {
             this.selectedIndex = Math.max(0, this.selectedIndex - 1);
             this.updateList();
         }

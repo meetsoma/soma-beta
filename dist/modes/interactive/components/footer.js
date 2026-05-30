@@ -1,4 +1,5 @@
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.js";
 /**
  * Sanitize text for display in a single-line status.
@@ -12,7 +13,7 @@ function sanitizeStatusText(text) {
         .trim();
 }
 /**
- * Format token counts (similar to web-ui)
+ * Format token counts for compact footer display.
  */
 function formatTokens(count) {
     if (count < 1000)
@@ -25,14 +26,26 @@ function formatTokens(count) {
         return `${(count / 1000000).toFixed(1)}M`;
     return `${Math.round(count / 1000000)}M`;
 }
+export function formatCwdForFooter(cwd, home) {
+    if (!home)
+        return cwd;
+    const resolvedCwd = resolve(cwd);
+    const resolvedHome = resolve(home);
+    const relativeToHome = relative(resolvedHome, resolvedCwd);
+    const isInsideHome = relativeToHome === "" ||
+        (relativeToHome !== ".." && !relativeToHome.startsWith(`..${sep}`) && !isAbsolute(relativeToHome));
+    if (!isInsideHome)
+        return cwd;
+    return relativeToHome === "" ? "~" : `~${sep}${relativeToHome}`;
+}
 /**
  * Footer component that shows pwd, token stats, and context usage.
  * Computes token/context stats from session, gets git branch and extension statuses from provider.
  */
 export class FooterComponent {
+    autoCompactEnabled = true;
     session;
     footerData;
-    autoCompactEnabled = true;
     constructor(session, footerData) {
         this.session = session;
         this.footerData = footerData;
@@ -81,11 +94,7 @@ export class FooterComponent {
         const contextPercentValue = contextUsage?.percent ?? 0;
         const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
         // Replace home directory with ~
-        let pwd = this.session.sessionManager.getCwd();
-        const home = process.env.HOME || process.env.USERPROFILE;
-        if (home && pwd.startsWith(home)) {
-            pwd = `~${pwd.slice(home.length)}`;
-        }
+        let pwd = formatCwdForFooter(this.session.sessionManager.getCwd(), process.env.HOME || process.env.USERPROFILE);
         // Add git branch if available
         const branch = this.footerData.getGitBranch();
         if (branch) {

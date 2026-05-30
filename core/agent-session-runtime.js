@@ -13,6 +13,7 @@
 
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { resolvePath } from "../utils/paths.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
 import { assertSessionCwdExists } from "./session-cwd.js";
 import { SessionManager } from "./session-manager.js";
@@ -44,13 +45,13 @@ function extractUserMessageText(content) {
  * caller. The caller is responsible for user-facing error handling.
  */
 export class AgentSessionRuntime {
+    rebindSession;
+    beforeSessionInvalidate;
     _session;
     _services;
     createRuntime;
     _diagnostics;
     _modelFallbackMessage;
-    rebindSession;
-    beforeSessionInvalidate;
     constructor(_session, _services, createRuntime, _diagnostics = [], _modelFallbackMessage) {
         this._session = _session;
         this._services = _services;
@@ -219,12 +220,11 @@ export class AgentSessionRuntime {
                 await this.finishSessionReplacement(options?.withSession);
                 return { cancelled: false, selectedText };
             }
-            const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
-            const forkedSessionPath = sourceManager.createBranchedSession(targetLeafId);
+            const sessionManager = SessionManager.open(currentSessionFile, sessionDir);
+            const forkedSessionPath = sessionManager.createBranchedSession(targetLeafId);
             if (!forkedSessionPath) {
                 throw new Error("Failed to create forked session");
             }
-            const sessionManager = SessionManager.open(forkedSessionPath, sessionDir);
             await this.teardownCurrent("fork", sessionManager.getSessionFile());
             this.apply(await this.createRuntime({
                 cwd: sessionManager.getCwd(),
@@ -260,7 +260,7 @@ export class AgentSessionRuntime {
      * @throws {MissingSessionCwdError} When the imported session cwd cannot be resolved and no override is provided.
      */
     async importFromJsonl(inputPath, cwdOverride) {
-        const resolvedPath = resolve(inputPath);
+        const resolvedPath = resolvePath(inputPath);
         if (!existsSync(resolvedPath)) {
             throw new SessionImportFileNotFoundError(resolvedPath);
         }

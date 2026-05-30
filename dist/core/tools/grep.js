@@ -1,7 +1,7 @@
+import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { createInterface } from "node:readline";
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
-import { readFileSync, statSync } from "fs";
 import path from "path";
 import { Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
@@ -21,8 +21,8 @@ const grepSchema = Type.Object({
 });
 const DEFAULT_LIMIT = 100;
 const defaultGrepOperations = {
-    isDirectory: (p) => statSync(p).isDirectory(),
-    readFile: (p) => readFileSync(p, "utf-8"),
+    isDirectory: async (p) => (await fsStat(p)).isDirectory(),
+    readFile: (p) => fsReadFile(p, "utf-8"),
 };
 function formatGrepCall(args, theme) {
     const pattern = str(args?.pattern);

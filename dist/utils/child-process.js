@@ -1,11 +1,13 @@
-import { basename } from "node:path";
+import { spawn as nodeSpawn, spawnSync as nodeSpawnSync, } from "node:child_process";
+import crossSpawn from "cross-spawn";
 const EXIT_STDIO_GRACE_MS = 100;
-const WINDOWS_SHELL_COMMANDS = new Set(["npm", "npx", "pnpm", "yarn", "yarnpkg", "corepack"]);
-export function shouldUseWindowsShell(command) {
-    if (process.platform !== "win32")
-        return false;
-    const commandName = basename(command).toLowerCase();
-    return commandName.endsWith(".cmd") || commandName.endsWith(".bat") || WINDOWS_SHELL_COMMANDS.has(commandName);
+export function spawnProcess(command, args, options) {
+    return process.platform === "win32" ? crossSpawn(command, args, options) : nodeSpawn(command, args, options);
+}
+export function spawnProcessSync(command, args, options) {
+    return process.platform === "win32"
+        ? crossSpawn.sync(command, args, options)
+        : nodeSpawnSync(command, args, options);
 }
 /**
  * Wait for a child process to terminate without hanging on inherited stdio handles.

@@ -18,17 +18,18 @@
  * Uses file locking to prevent race conditions when multiple pi instances
  * try to refresh tokens simultaneously.
  */
-import { findEnvKeys, getEnvApiKey, } from "@mariozechner/pi-ai";
-import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@mariozechner/pi-ai/oauth";
+import { findEnvKeys, getEnvApiKey, } from "@earendil-works/pi-ai";
+import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.js";
+import { normalizePath } from "../utils/paths.js";
 import { resolveConfigValue } from "./resolve-config-value.js";
 export class FileAuthStorageBackend {
     authPath;
     constructor(authPath = join(getAgentDir(), "auth.json")) {
-        this.authPath = authPath;
+        this.authPath = normalizePath(authPath);
     }
     ensureParentDir() {
         const dir = dirname(this.authPath);
@@ -156,12 +157,12 @@ export class InMemoryAuthStorageBackend {
  * Credential storage backed by a JSON file.
  */
 export class AuthStorage {
-    storage;
     data = {};
     runtimeOverrides = new Map();
     fallbackResolver;
     loadError = null;
     errors = [];
+    storage;
     constructor(storage) {
         this.storage = storage;
         this.reload();

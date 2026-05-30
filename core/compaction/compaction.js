@@ -4,7 +4,7 @@
  * Pure functions for compaction logic. The session manager handles I/O,
  * and after compaction the session is reloaded.
  */
-import { completeSimple } from "@mariozechner/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai";
 import { convertToLlm, createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage, } from "../messages.js";
 import { buildSessionContext } from "../session-manager.js";
 import { computeFileLists, createFileOps, extractFileOpsFromMessage, formatFileOperations, SUMMARIZATION_SYSTEM_PROMPT, serializeConversation, } from "./utils.js";
@@ -154,6 +154,22 @@ export function shouldCompact(contextTokens, contextWindow, settings) {
 // ============================================================================
 // Cut point detection
 // ============================================================================
+const ESTIMATED_IMAGE_CHARS = 4800;
+function estimateTextAndImageContentChars(content) {
+    if (typeof content === "string") {
+        return content.length;
+    }
+    let chars = 0;
+    for (const block of content) {
+        if (block.type === "text" && block.text) {
+            chars += block.text.length;
+        }
+        else if (block.type === "image") {
+            chars += ESTIMATED_IMAGE_CHARS;
+        }
+    }
+    return chars;
+}
 /**
  * Estimate token count for a message using chars/4 heuristic.
  * This is conservative (overestimates tokens).
@@ -162,17 +178,7 @@ export function estimateTokens(message) {
     let chars = 0;
     switch (message.role) {
         case "user": {
-            const content = message.content;
-            if (typeof content === "string") {
-                chars = content.length;
-            }
-            else if (Array.isArray(content)) {
-                for (const block of content) {
-                    if (block.type === "text" && block.text) {
-                        chars += block.text.length;
-                    }
-                }
-            }
+            chars = estimateTextAndImageContentChars(message.content);
             return Math.ceil(chars / 4);
         }
         case "assistant": {
@@ -192,19 +198,7 @@ export function estimateTokens(message) {
         }
         case "custom":
         case "toolResult": {
-            if (typeof message.content === "string") {
-                chars = message.content.length;
-            }
-            else if (Array.isArray(message.content)) {
-                for (const block of message.content) {
-                    if (block.type === "text" && block.text) {
-                        chars += block.text.length;
-                    }
-                    if (block.type === "image") {
-                        chars += 4800; // Estimate images as 4000 chars, or 1200 tokens
-                    }
-                }
-            }
+            chars = estimateTextAndImageContentChars(message.content);
             return Math.ceil(chars / 4);
         }
         case "bashExecution": {
@@ -425,12 +419,26 @@ Use this EXACT format:
 - [Preserve important context, add new if needed]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+function createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel) {
+    const options = { maxTokens, signal, apiKey, headers };
+    if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
+        options.reasoning = thinkingLevel;
+    }
+    return options;
+}
+async function completeSummarization(model, context, options, streamFn) {
+    if (!streamFn) {
+        return completeSimple(model, context, options);
+    }
+    const stream = await streamFn(model, context, options);
+    return stream.result();
+}
 /**
  * Generate a summary of the conversation using the LLM.
  * If previousSummary is provided, uses the update prompt to merge.
  */
-export async function generateSummary(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel) {
-    const maxTokens = Math.floor(0.8 * reserveTokens);
+export async function generateSummary(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn) {
+    const maxTokens = Math.min(Math.floor(0.8 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
     // Use update prompt if we have a previous summary, otherwise initial prompt
     let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
     if (customInstructions) {
@@ -453,10 +461,8 @@ export async function generateSummary(currentMessages, model, reserveTokens, api
             timestamp: Date.now(),
         },
     ];
-    const completionOptions = model.reasoning && thinkingLevel && thinkingLevel !== "off"
-        ? { maxTokens, signal, apiKey, headers, reasoning: thinkingLevel }
-        : { maxTokens, signal, apiKey, headers };
-    const response = await completeSimple(model, { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }, completionOptions);
+    const completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel);
+    const response = await completeSummarization(model, { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }, completionOptions, streamFn);
     if (response.stopReason === "error") {
         throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
     }
@@ -554,7 +560,7 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
  * @param preparation - Pre-calculated preparation from prepareCompaction()
  * @param customInstructions - Optional custom focus for the summary
  */
-export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel) {
+export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn) {
     const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;
     // Generate summaries (can be parallel if both needed) and merge into one
     let summary;
@@ -562,16 +568,16 @@ export async function compact(preparation, model, apiKey, headers, customInstruc
         // Generate both summaries in parallel
         const [historyResult, turnPrefixResult] = await Promise.all([
             messagesToSummarize.length > 0
-                ? generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel)
+                ? generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn)
                 : Promise.resolve("No prior history."),
-            generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, signal, thinkingLevel),
+            generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, signal, thinkingLevel, streamFn),
         ]);
         // Merge into single summary
         summary = `${historyResult}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult}`;
     }
     else {
         // Just generate history summary
-        summary = await generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel);
+        summary = await generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn);
     }
     // Compute file lists and append to summary
     const { readFiles, modifiedFiles } = computeFileLists(fileOps);
@@ -589,8 +595,8 @@ export async function compact(preparation, model, apiKey, headers, customInstruc
 /**
  * Generate a summary for a turn prefix (when splitting a turn).
  */
-async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey, headers, signal, thinkingLevel) {
-    const maxTokens = Math.floor(0.5 * reserveTokens); // Smaller budget for turn prefix
+async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey, headers, signal, thinkingLevel, streamFn) {
+    const maxTokens = Math.min(Math.floor(0.5 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY); // Smaller budget for turn prefix
     const llmMessages = convertToLlm(messages);
     const conversationText = serializeConversation(llmMessages);
     const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
@@ -601,9 +607,7 @@ async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey,
             timestamp: Date.now(),
         },
     ];
-    const response = await completeSimple(model, { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }, model.reasoning && thinkingLevel && thinkingLevel !== "off"
-        ? { maxTokens, signal, apiKey, headers, reasoning: thinkingLevel }
-        : { maxTokens, signal, apiKey, headers });
+    const response = await completeSummarization(model, { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }, createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel), streamFn);
     if (response.stopReason === "error") {
         throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
     }

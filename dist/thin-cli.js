@@ -669,7 +669,7 @@ async function healthCheck() {
       const pkgPath = join(CORE_DIR, "package.json");
       if (existsSync(pkgPath)) {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-        const declaredPi = (pkg.dependencies || {})["@mariozechner/pi-coding-agent"];
+        const declaredPi = (pkg.dependencies || {})["@earendil-works/pi-coding-agent"];
         const declaredClean = (declaredPi || "").replace(/^[\^~]/, "");
 
         // Authoritative: what Pi version is in dist/ (the one that actually runs)?
@@ -685,7 +685,7 @@ async function healthCheck() {
         // Fallback: node_modules (stale-prone, warn if we had to use it).
         let fallbackUsed = false;
         if (!bundledPi) {
-          const piPkgPath = join(CORE_DIR, "node_modules", "@mariozechner", "pi-coding-agent", "package.json");
+          const piPkgPath = join(CORE_DIR, "node_modules", "@earendil-works", "pi-coding-agent", "package.json");
           if (existsSync(piPkgPath)) {
             try {
               bundledPi = JSON.parse(readFileSync(piPkgPath, "utf-8")).version;
@@ -1338,7 +1338,7 @@ async function projectDoctor() {
 // ── Delegation ───────────────────────────────────────────────────────
 
 async function delegateToCore() {
-  const piPkg = join(CORE_DIR, "node_modules", "@mariozechner", "pi-coding-agent");
+  const piPkg = join(CORE_DIR, "node_modules", "@earendil-works", "pi-coding-agent");
   if (!existsSync(piPkg)) {
     console.log(`  ${red("✗")} Runtime dependencies missing.`);
     console.log(`  ${dim("Run")} ${green("soma init")} ${dim("to repair the installation.")}`);

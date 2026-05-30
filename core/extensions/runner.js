@@ -790,14 +790,20 @@ export class ExtensionRunner {
         return { skillPaths, promptPaths, themePaths };
     }
     /** Emit input event. Transforms chain, "handled" short-circuits. */
-    async emitInput(text, images, source) {
+    async emitInput(text, images, source, streamingBehavior) {
         const ctx = this.createContext();
         let currentText = text;
         let currentImages = images;
         for (const ext of this.extensions) {
             for (const handler of ext.handlers.get("input") ?? []) {
                 try {
-                    const event = { type: "input", text: currentText, images: currentImages, source };
+                    const event = {
+                        type: "input",
+                        text: currentText,
+                        images: currentImages,
+                        source,
+                        streamingBehavior,
+                    };
                     const result = (await handler(event, ctx));
                     if (result?.action === "handled")
                         return result;

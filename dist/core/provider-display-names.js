@@ -34,6 +34,7 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES = {
     "opencode-go": "OpenCode Go",
     openai: "OpenAI",
     openrouter: "OpenRouter",
+    together: "Together AI",
     "vercel-ai-gateway": "Vercel AI Gateway",
     xai: "xAI",
     zai: "ZAI",

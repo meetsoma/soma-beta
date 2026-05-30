@@ -14,7 +14,7 @@
 /**
  * Model resolution, scoping, and initial selection
  */
-import { modelsAreEqual } from "@mariozechner/pi-ai";
+import { modelsAreEqual } from "@earendil-works/pi-ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.js";
@@ -22,7 +22,7 @@ import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 /** Default model IDs for each known provider */
 export const defaultModelPerProvider = {
     "amazon-bedrock": "us.anthropic.claude-opus-4-6-v1",
-    anthropic: "claude-opus-4-7",
+    anthropic: "claude-opus-4-8",
     openai: "gpt-5.4",
     "azure-openai-responses": "gpt-5.4",
     "openai-codex": "gpt-5.5",
@@ -43,6 +43,7 @@ export const defaultModelPerProvider = {
     "moonshotai-cn": "kimi-k2.6",
     huggingface: "moonshotai/Kimi-K2.6",
     fireworks: "accounts/fireworks/models/kimi-k2p6",
+    together: "moonshotai/Kimi-K2.6",
     opencode: "kimi-k2.6",
     "opencode-go": "kimi-k2.6",
     "kimi-coding": "kimi-for-coding",

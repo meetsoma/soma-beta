@@ -1,11 +1,7 @@
 import { accessSync, constants } from "node:fs";
-import * as os from "node:os";
-import { isAbsolute, resolve as resolvePath } from "node:path";
-const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+import { access } from "node:fs/promises";
+import { normalizePath, resolvePath } from "../../utils/paths.js";
 const NARROW_NO_BREAK_SPACE = "\u202F";
-function normalizeUnicodeSpaces(str) {
-    return str.replace(UNICODE_SPACES, " ");
-}
 function tryMacOSScreenshotPath(filePath) {
     return filePath.replace(/ (AM|PM)\./gi, `${NARROW_NO_BREAK_SPACE}$1.`);
 }
@@ -27,29 +23,24 @@ function fileExists(filePath) {
         return false;
     }
 }
-function normalizeAtPrefix(filePath) {
-    return filePath.startsWith("@") ? filePath.slice(1) : filePath;
+export async function pathExists(filePath) {
+    try {
+        await access(filePath, constants.F_OK);
+        return true;
+    }
+    catch {
+        return false;
+    }
 }
 export function expandPath(filePath) {
-    const normalized = normalizeUnicodeSpaces(normalizeAtPrefix(filePath));
-    if (normalized === "~") {
-        return os.homedir();
-    }
-    if (normalized.startsWith("~/")) {
-        return os.homedir() + normalized.slice(1);
-    }
-    return normalized;
+    return normalizePath(filePath, { normalizeUnicodeSpaces: true, stripAtPrefix: true });
 }
 /**
  * Resolve a path relative to the given cwd.
  * Handles ~ expansion and absolute paths.
  */
 export function resolveToCwd(filePath, cwd) {
-    const expanded = expandPath(filePath);
-    if (isAbsolute(expanded)) {
-        return expanded;
-    }
-    return resolvePath(cwd, expanded);
+    return resolvePath(filePath, cwd, { normalizeUnicodeSpaces: true, stripAtPrefix: true });
 }
 export function resolveReadPath(filePath, cwd) {
     const resolved = resolveToCwd(filePath, cwd);
@@ -74,6 +65,33 @@ export function resolveReadPath(filePath, cwd) {
     // Try combined NFD + curly quote (for French macOS screenshots like "Capture d'écran")
     const nfdCurlyVariant = tryCurlyQuoteVariant(nfdVariant);
     if (nfdCurlyVariant !== resolved && fileExists(nfdCurlyVariant)) {
+        return nfdCurlyVariant;
+    }
+    return resolved;
+}
+export async function resolveReadPathAsync(filePath, cwd) {
+    const resolved = resolveToCwd(filePath, cwd);
+    if (await pathExists(resolved)) {
+        return resolved;
+    }
+    // Try macOS AM/PM variant (narrow no-break space before AM/PM)
+    const amPmVariant = tryMacOSScreenshotPath(resolved);
+    if (amPmVariant !== resolved && (await pathExists(amPmVariant))) {
+        return amPmVariant;
+    }
+    // Try NFD variant (macOS stores filenames in NFD form)
+    const nfdVariant = tryNFDVariant(resolved);
+    if (nfdVariant !== resolved && (await pathExists(nfdVariant))) {
+        return nfdVariant;
+    }
+    // Try curly quote variant (macOS uses U+2019 in screenshot names)
+    const curlyVariant = tryCurlyQuoteVariant(resolved);
+    if (curlyVariant !== resolved && (await pathExists(curlyVariant))) {
+        return curlyVariant;
+    }
+    // Try combined NFD + curly quote (for French macOS screenshots like "Capture d'écran")
+    const nfdCurlyVariant = tryCurlyQuoteVariant(nfdVariant);
+    if (nfdCurlyVariant !== resolved && (await pathExists(nfdCurlyVariant))) {
         return nfdCurlyVariant;
     }
     return resolved;

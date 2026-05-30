@@ -9,13 +9,14 @@ import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 // RPC Client
 // ============================================================================
 export class RpcClient {
-    options;
     process = null;
     stopReadingStdout = null;
     eventListeners = [];
     pendingRequests = new Map();
     requestId = 0;
     stderr = "";
+    exitError = null;
+    options;
     constructor(options = {}) {
         this.options = options;
     }
@@ -26,6 +27,7 @@ export class RpcClient {
         if (this.process) {
             throw new Error("Client already started");
         }
+        this.exitError = null;
         const cliPath = this.options.cliPath ?? "dist/cli.js";
         const args = ["--mode", "rpc"];
         if (this.options.provider) {
@@ -37,24 +39,48 @@ export class RpcClient {
         if (this.options.args) {
             args.push(...this.options.args);
         }
-        this.process = spawn("node", [cliPath, ...args], {
+        const childProcess = spawn("node", [cliPath, ...args], {
             cwd: this.options.cwd,
             env: { ...process.env, ...this.options.env },
             stdio: ["pipe", "pipe", "pipe"],
         });
+        this.process = childProcess;
         // Collect stderr for debugging
-        this.process.stderr?.on("data", (data) => {
+        childProcess.stderr?.on("data", (data) => {
             this.stderr += data.toString();
             process.stderr.write(data);
         });
+        childProcess.once("exit", (code, signal) => {
+            if (this.process !== childProcess)
+                return;
+            const error = this.createProcessExitError(code, signal);
+            this.exitError = error;
+            this.rejectPendingRequests(error);
+        });
+        childProcess.once("error", (error) => {
+            if (this.process !== childProcess)
+                return;
+            const processError = new Error(`Agent process error: ${error.message}. Stderr: ${this.stderr}`);
+            this.exitError = processError;
+            this.rejectPendingRequests(processError);
+        });
+        childProcess.stdin?.on("error", (error) => {
+            if (this.process !== childProcess)
+                return;
+            const stdinError = this.exitError ?? new Error(`Agent process stdin error: ${error.message}. Stderr: ${this.stderr}`);
+            this.exitError = stdinError;
+            this.rejectPendingRequests(stdinError);
+        });
         // Set up strict JSONL reader for stdout.
-        this.stopReadingStdout = attachJsonlLineReader(this.process.stdout, (line) => {
+        this.stopReadingStdout = attachJsonlLineReader(childProcess.stdout, (line) => {
             this.handleLine(line);
         });
         // Wait a moment for process to initialize
         await new Promise((resolve) => setTimeout(resolve, 100));
         if (this.process.exitCode !== null) {
-            throw new Error(`Agent process exited immediately with code ${this.process.exitCode}. Stderr: ${this.stderr}`);
+            const error = this.exitError ?? this.createProcessExitError(this.process.exitCode, this.process.signalCode);
+            this.exitError = error;
+            throw error;
         }
     }
     /**
@@ -371,14 +397,37 @@ export class RpcClient {
             // Ignore non-JSON lines
         }
     }
+    createProcessExitError(code, signal) {
+        return new Error(`Agent process exited (code=${code} signal=${signal}). Stderr: ${this.stderr}`);
+    }
+    rejectPendingRequests(error) {
+        for (const pending of this.pendingRequests.values()) {
+            pending.reject(error);
+        }
+        this.pendingRequests.clear();
+    }
     async send(command) {
-        if (!this.process?.stdin) {
+        const childProcess = this.process;
+        const stdin = childProcess?.stdin;
+        if (!childProcess || !stdin) {
             throw new Error("Client not started");
+        }
+        if (this.exitError) {
+            throw this.exitError;
+        }
+        if (childProcess.exitCode !== null) {
+            const error = this.createProcessExitError(childProcess.exitCode, childProcess.signalCode);
+            this.exitError = error;
+            throw error;
+        }
+        if (stdin.destroyed || !stdin.writable) {
+            const error = new Error(`Agent process stdin is not writable. Stderr: ${this.stderr}`);
+            this.exitError = error;
+            throw error;
         }
         const id = `req_${++this.requestId}`;
         const fullCommand = { ...command, id };
         return new Promise((resolve, reject) => {
-            this.pendingRequests.set(id, { resolve, reject });
             const timeout = setTimeout(() => {
                 this.pendingRequests.delete(id);
                 reject(new Error(`Timeout waiting for response to ${command.type}. Stderr: ${this.stderr}`));
@@ -393,7 +442,15 @@ export class RpcClient {
                     reject(error);
                 },
             });
-            this.process.stdin.write(serializeJsonLine(fullCommand));
+            try {
+                stdin.write(serializeJsonLine(fullCommand));
+            }
+            catch (error) {
+                const writeError = error instanceof Error ? error : new Error(String(error));
+                const pending = this.pendingRequests.get(id);
+                this.pendingRequests.delete(id);
+                pending?.reject(writeError);
+            }
         });
     }
     getData(response) {

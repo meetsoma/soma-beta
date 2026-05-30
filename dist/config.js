@@ -1,9 +1,9 @@
-import { spawnSync } from "child_process";
 import { accessSync, constants, existsSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join, resolve, sep, win32 } from "path";
 import { fileURLToPath } from "url";
-import { shouldUseWindowsShell } from "./utils/child-process.js";
+import { spawnProcessSync } from "./utils/child-process.js";
+import { normalizePath } from "./utils/paths.js";
 // =============================================================================
 // Package Detection
 // =============================================================================
@@ -51,25 +51,22 @@ export function detectInstallMethod() {
     }
     return "unknown";
 }
-function getInferredNpmInstall(packageName) {
+function getInferredNpmInstall() {
     const packageDir = getPackageDir();
     const path = process.platform === "win32" || packageDir.includes("\\") ? win32 : { basename, dirname };
-    const [scope, name] = packageName.split("/");
+    const parent = path.dirname(packageDir);
     let root;
-    if (name &&
-        scope?.startsWith("@") &&
-        path.basename(path.dirname(packageDir)) === scope &&
-        path.basename(packageDir) === name) {
-        root = path.dirname(path.dirname(packageDir));
+    if (path.basename(parent).startsWith("@") && path.basename(path.dirname(parent)) === "node_modules") {
+        root = path.dirname(parent);
     }
-    else if (!name && path.basename(packageDir) === packageName) {
-        root = path.dirname(packageDir);
+    else if (path.basename(parent) === "node_modules") {
+        root = parent;
     }
-    if (!root || path.basename(root) !== "node_modules")
+    if (!root)
         return undefined;
-    const parent = path.dirname(root);
-    if (path.basename(parent) === "lib")
-        return { root, prefix: path.dirname(parent) };
+    const rootParent = path.dirname(root);
+    if (path.basename(rootParent) === "lib")
+        return { root, prefix: path.dirname(rootParent) };
     // Windows global npm prefixes use `<prefix>\\node_modules`, which is
     // indistinguishable from local project installs by path shape alone. Do not
     // infer unsupported Windows custom prefixes without `npm root -g` evidence.
@@ -80,22 +77,41 @@ function getSelfUpdateCommandForMethod(method, installedPackageName, updatePacka
         case "bun-binary":
             return undefined;
         case "pnpm":
-            return makeSelfUpdateCommand(makeSelfUpdateCommandStep("pnpm", ["install", "-g", updatePackageName]), updatePackageName === installedPackageName
+            return makeSelfUpdateCommand(makeSelfUpdateCommandStep("pnpm", [
+                "install",
+                "-g",
+                "--ignore-scripts",
+                "--config.minimumReleaseAge=0",
+                updatePackageName,
+            ]), updatePackageName === installedPackageName
                 ? undefined
                 : makeSelfUpdateCommandStep("pnpm", ["remove", "-g", installedPackageName]));
         case "yarn":
-            return makeSelfUpdateCommand(makeSelfUpdateCommandStep("yarn", ["global", "add", updatePackageName]), updatePackageName === installedPackageName
+            return makeSelfUpdateCommand(makeSelfUpdateCommandStep("yarn", ["global", "add", "--ignore-scripts", updatePackageName]), updatePackageName === installedPackageName
                 ? undefined
                 : makeSelfUpdateCommandStep("yarn", ["global", "remove", installedPackageName]));
         case "bun":
-            return makeSelfUpdateCommand(makeSelfUpdateCommandStep("bun", ["install", "-g", updatePackageName]), updatePackageName === installedPackageName
+            return makeSelfUpdateCommand(makeSelfUpdateCommandStep("bun", [
+                "install",
+                "-g",
+                "--ignore-scripts",
+                "--minimum-release-age=0",
+                updatePackageName,
+            ]), updatePackageName === installedPackageName
                 ? undefined
                 : makeSelfUpdateCommandStep("bun", ["uninstall", "-g", installedPackageName]));
         case "npm": {
             const [command = "npm", ...npmArgs] = npmCommand ?? [];
-            const inferred = npmCommand?.length ? undefined : getInferredNpmInstall(installedPackageName);
+            const inferred = npmCommand?.length ? undefined : getInferredNpmInstall();
             const prefixArgs = [...npmArgs, ...(inferred ? ["--prefix", inferred.prefix] : [])];
-            const installStep = makeSelfUpdateCommandStep(command, [...prefixArgs, "install", "-g", updatePackageName]);
+            const installStep = makeSelfUpdateCommandStep(command, [
+                ...prefixArgs,
+                "install",
+                "-g",
+                "--ignore-scripts",
+                "--min-release-age=0",
+                updatePackageName,
+            ]);
             const uninstallStep = updatePackageName === installedPackageName
                 ? undefined
                 : makeSelfUpdateCommandStep(command, [...prefixArgs, "uninstall", "-g", installedPackageName]);
@@ -106,10 +122,9 @@ function getSelfUpdateCommandForMethod(method, installedPackageName, updatePacka
     }
 }
 function readCommandOutput(command, args, options = {}) {
-    const result = spawnSync(command, args, {
+    const result = spawnProcessSync(command, args, {
         encoding: "utf-8",
         stdio: ["ignore", "pipe", "pipe"],
-        shell: shouldUseWindowsShell(command),
     });
     if (result.status === 0)
         return result.stdout.trim() || undefined;
@@ -119,7 +134,7 @@ function readCommandOutput(command, args, options = {}) {
     }
     return undefined;
 }
-function getGlobalPackageRoots(method, packageName, npmCommand) {
+function getGlobalPackageRoots(method, _packageName, npmCommand) {
     switch (method) {
         case "npm": {
             const configured = !!npmCommand?.length;
@@ -137,7 +152,7 @@ function getGlobalPackageRoots(method, packageName, npmCommand) {
             const root = readCommandOutput(command, [...npmArgs, "root", "-g"], {
                 requireSuccess: configured,
             });
-            const inferred = configured ? undefined : getInferredNpmInstall(packageName);
+            const inferred = configured ? undefined : getInferredNpmInstall();
             return [root, inferred?.root].filter((x) => !!x);
         }
         case "pnpm": {
@@ -161,22 +176,40 @@ function getGlobalPackageRoots(method, packageName, npmCommand) {
             return [];
     }
 }
-function normalizeExistingPathForComparison(path) {
+function normalizeExistingPathForComparison(path, resolveSymlinks) {
     const resolvedPath = resolve(path);
     if (!existsSync(resolvedPath)) {
         return undefined;
     }
-    let normalizedPath;
-    try {
-        normalizedPath = realpathSync(resolvedPath);
-    }
-    catch {
-        return undefined;
+    let normalizedPath = resolvedPath;
+    if (resolveSymlinks) {
+        try {
+            normalizedPath = realpathSync(resolvedPath);
+        }
+        catch {
+            return undefined;
+        }
     }
     if (process.platform === "win32") {
         normalizedPath = normalizedPath.toLowerCase();
     }
     return normalizedPath;
+}
+function getPathComparisonCandidates(path) {
+    return Array.from(new Set([normalizeExistingPathForComparison(path, false), normalizeExistingPathForComparison(path, true)].filter((candidate) => !!candidate)));
+}
+function getEntrypointPackageDir() {
+    const entrypoint = process.argv[1];
+    if (!entrypoint)
+        return undefined;
+    let dir = dirname(entrypoint);
+    while (dir !== dirname(dir)) {
+        if (existsSync(join(dir, "package.json"))) {
+            return dir;
+        }
+        dir = dirname(dir);
+    }
+    return undefined;
 }
 function isSelfUpdatePathWritable() {
     const packageDir = getPackageDir();
@@ -190,13 +223,14 @@ function isSelfUpdatePathWritable() {
     }
 }
 function isManagedByGlobalPackageManager(method, packageName, npmCommand) {
-    const packageDir = normalizeExistingPathForComparison(getPackageDir());
-    return (!!packageDir &&
-        getGlobalPackageRoots(method, packageName, npmCommand).some((root) => {
-            const normalizedRoot = normalizeExistingPathForComparison(root);
-            return (!!normalizedRoot &&
-                packageDir.startsWith(normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`));
-        }));
+    const packageDirs = [getPackageDir(), getEntrypointPackageDir()].filter((dir) => !!dir);
+    const packageDirCandidates = packageDirs.flatMap((dir) => getPathComparisonCandidates(dir));
+    return getGlobalPackageRoots(method, packageName, npmCommand).some((root) => {
+        return getPathComparisonCandidates(root).some((normalizedRoot) => {
+            const rootPrefix = normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`;
+            return packageDirCandidates.some((packageDir) => packageDir.startsWith(rootPrefix));
+        });
+    });
 }
 export function getSelfUpdateCommand(packageName, npmCommand, updatePackageName = packageName) {
     const method = detectInstallMethod();
@@ -209,7 +243,7 @@ export function getSelfUpdateCommand(packageName, npmCommand, updatePackageName 
 export function getSelfUpdateUnavailableInstruction(packageName, npmCommand, updatePackageName = packageName) {
     const method = detectInstallMethod();
     if (method === "bun-binary") {
-        return `Download from: https://github.com/badlogic/pi-mono/releases/latest`;
+        return `Download from: https://github.com/earendil-works/pi-mono/releases/latest`;
     }
     const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
     if (command) {
@@ -241,11 +275,7 @@ export function getPackageDir() {
     // Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
     const envDir = process.env.PI_PACKAGE_DIR;
     if (envDir) {
-        if (envDir === "~")
-            return homedir();
-        if (envDir.startsWith("~/"))
-            return homedir() + envDir.slice(1);
-        return envDir;
+        return normalizePath(envDir);
     }
     if (isBunBinary) {
         // Bun binary: process.execPath points to the compiled executable
@@ -331,7 +361,7 @@ export function getBundledInteractiveAssetPath(name) {
 }
 const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
 const piConfigName = pkg.piConfig?.name;
-export const PACKAGE_NAME = pkg.name || "@mariozechner/pi-coding-agent";
+export const PACKAGE_NAME = pkg.name || "@earendil-works/pi-coding-agent";
 export const APP_NAME = piConfigName || "pi";
 export const APP_TITLE = piConfigName ? APP_NAME : "π";
 export const CONFIG_DIR_NAME = pkg.piConfig?.configDir || ".pi";
@@ -340,11 +370,7 @@ export const VERSION = pkg.version || "0.0.0";
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
 export function expandTildePath(path) {
-    if (path === "~")
-        return homedir();
-    if (path.startsWith("~/"))
-        return homedir() + path.slice(1);
-    return path;
+    return normalizePath(path);
 }
 const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
 /** Get the share viewer URL for a gist ID */

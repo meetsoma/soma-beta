@@ -1,10 +1,10 @@
-import { Text } from "@mariozechner/pi-tui";
-import { existsSync, readdirSync, statSync } from "fs";
+import { readdir as fsReaddir, stat as fsStat } from "node:fs/promises";
+import { Text } from "@earendil-works/pi-tui";
 import nodePath from "path";
 import { Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
-import { resolveToCwd } from "./path-utils.js";
-import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
+import { pathExists, resolveToCwd } from "./path-utils.js";
+import { getTextOutput, renderToolPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, formatSize, truncateHead } from "./truncate.js";
 const lsSchema = Type.Object({
@@ -13,16 +13,14 @@ const lsSchema = Type.Object({
 });
 const DEFAULT_LIMIT = 500;
 const defaultLsOperations = {
-    exists: existsSync,
-    stat: statSync,
-    readdir: readdirSync,
+    exists: pathExists,
+    stat: fsStat,
+    readdir: fsReaddir,
 };
-function formatLsCall(args, theme) {
-    const rawPath = str(args?.path);
-    const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
+function formatLsCall(args, theme, cwd) {
     const limit = args?.limit;
-    const invalidArg = invalidArgText(theme);
-    let text = `${theme.fg("toolTitle", theme.bold("ls"))} ${path === null ? invalidArg : theme.fg("accent", path)}`;
+    const pathDisplay = renderToolPath(str(args?.path), theme, cwd, { emptyFallback: "." });
+    let text = `${theme.fg("toolTitle", theme.bold("ls"))} ${pathDisplay}`;
     if (limit !== undefined) {
         text += theme.fg("toolOutput", ` (limit ${limit})`);
     }
@@ -153,7 +151,7 @@ export function createLsToolDefinition(cwd, options) {
         },
         renderCall(args, theme, context) {
             const text = context.lastComponent ?? new Text("", 0, 0);
-            text.setText(formatLsCall(args, theme));
+            text.setText(formatLsCall(args, theme, context.cwd));
             return text;
         },
         renderResult(result, options, theme, context) {

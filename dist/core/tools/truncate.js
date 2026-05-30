@@ -10,6 +10,16 @@
 export const DEFAULT_MAX_LINES = 2000;
 export const DEFAULT_MAX_BYTES = 50 * 1024; // 50KB
 export const GREP_MAX_LINE_LENGTH = 500; // Max chars per grep match line
+function splitLinesForCounting(content) {
+    if (content.length === 0) {
+        return [];
+    }
+    const lines = content.split("\n");
+    if (content.endsWith("\n")) {
+        lines.pop();
+    }
+    return lines;
+}
 /**
  * Format bytes as human-readable size.
  */
@@ -35,7 +45,7 @@ export function truncateHead(content, options = {}) {
     const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
     const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     const totalBytes = Buffer.byteLength(content, "utf-8");
-    const lines = content.split("\n");
+    const lines = splitLinesForCounting(content);
     const totalLines = lines.length;
     // Check if no truncation needed
     if (totalLines <= maxLines && totalBytes <= maxBytes) {
@@ -114,7 +124,7 @@ export function truncateTail(content, options = {}) {
     const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
     const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     const totalBytes = Buffer.byteLength(content, "utf-8");
-    const lines = content.split("\n");
+    const lines = splitLinesForCounting(content);
     const totalLines = lines.length;
     // Check if no truncation needed
     if (totalLines <= maxLines && totalBytes <= maxBytes) {

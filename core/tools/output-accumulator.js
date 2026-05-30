@@ -29,8 +29,10 @@ export class OutputAccumulator {
     tailStartsAtLineBoundary = true;
     totalRawBytes = 0;
     totalDecodedBytes = 0;
-    totalLines = 1;
+    completedLines = 0;
+    totalLines = 0;
     currentLineBytes = 0;
+    hasOpenLine = false;
     finished = false;
     tempFilePath;
     tempFileStream;
@@ -133,11 +135,15 @@ export class OutputAccumulator {
         }
         if (newlines === 0) {
             this.currentLineBytes += bytes;
+            this.hasOpenLine = true;
         }
         else {
-            this.totalLines += newlines;
-            this.currentLineBytes = byteLength(text.slice(lastNewline + 1));
+            this.completedLines += newlines;
+            const tail = text.slice(lastNewline + 1);
+            this.currentLineBytes = byteLength(tail);
+            this.hasOpenLine = tail.length > 0;
         }
+        this.totalLines = this.completedLines + (this.hasOpenLine ? 1 : 0);
     }
     trimTail() {
         const buffer = Buffer.from(this.tailText, "utf-8");

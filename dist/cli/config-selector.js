@@ -1,7 +1,7 @@
 /**
  * TUI config selector for `pi config` command
  */
-import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
+import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
 import { ConfigSelectorComponent } from "../modes/interactive/components/config-selector.js";
 import { initTheme, stopThemeWatcher } from "../modes/interactive/theme/theme.js";
 /** Show TUI config selector and return when closed */
@@ -22,7 +22,7 @@ export async function selectConfig(options) {
             ui.stop();
             stopThemeWatcher();
             process.exit(0);
-        }, () => ui.requestRender());
+        }, () => ui.requestRender(), ui.terminal.rows);
         ui.addChild(selector);
         ui.setFocus(selector.getResourceList());
         ui.start();

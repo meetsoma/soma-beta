@@ -1,8 +1,9 @@
 /**
  * TUI component for managing package resources (enable/disable)
  */
+import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
-import { Container, getKeybindings, Input, matchesKey, Spacer, truncateToWidth, visibleWidth, } from "@mariozechner/pi-tui";
+import { Container, getKeybindings, Input, matchesKey, Spacer, truncateToWidth, visibleWidth, } from "@earendil-works/pi-tui";
 import { CONFIG_DIR_NAME } from "../../../config.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -13,12 +14,33 @@ const RESOURCE_TYPE_LABELS = {
     prompts: "Prompts",
     themes: "Themes",
 };
+function formatBaseDir(baseDir) {
+    const homeDir = homedir();
+    let displayPath;
+    if (baseDir === homeDir) {
+        displayPath = "~";
+    }
+    else if (baseDir.startsWith(homeDir)) {
+        // Replace home prefix with ~, normalize separators for display
+        const rest = baseDir.slice(homeDir.length);
+        displayPath = `~${rest.replace(/\\/g, "/")}`;
+    }
+    else {
+        displayPath = baseDir.replace(/\\/g, "/");
+    }
+    return displayPath.endsWith("/") ? displayPath : `${displayPath}/`;
+}
 function getGroupLabel(metadata) {
     if (metadata.origin === "package") {
         return `${metadata.source} (${metadata.scope})`;
     }
     // Top-level resources
     if (metadata.source === "auto") {
+        if (metadata.baseDir) {
+            return metadata.scope === "user"
+                ? `User (${formatBaseDir(metadata.baseDir)})`
+                : `Project (${formatBaseDir(metadata.baseDir)})`;
+        }
         return metadata.scope === "user" ? "User (~/.pi/agent/)" : "Project (.pi/)";
     }
     return metadata.scope === "user" ? "User settings" : "Project settings";
@@ -28,7 +50,7 @@ function buildGroups(resolved) {
     const addToGroup = (resources, resourceType) => {
         for (const res of resources) {
             const { path, enabled, metadata } = res;
-            const groupKey = `${metadata.origin}:${metadata.scope}:${metadata.source}`;
+            const groupKey = `${metadata.origin}:${metadata.scope}:${metadata.source}:${metadata.baseDir ?? ""}`;
             if (!groupMap.has(groupKey)) {
                 groupMap.set(groupKey, {
                     key: groupKey,
@@ -119,7 +141,7 @@ class ResourceList {
     filteredItems = [];
     selectedIndex = 0;
     searchInput;
-    maxVisible = 15;
+    maxVisible;
     settingsManager;
     cwd;
     agentDir;
@@ -134,12 +156,15 @@ class ResourceList {
         this._focused = value;
         this.searchInput.focused = value;
     }
-    constructor(groups, settingsManager, cwd, agentDir) {
+    constructor(groups, settingsManager, cwd, agentDir, terminalHeight) {
         this.groups = groups;
         this.settingsManager = settingsManager;
         this.cwd = cwd;
         this.agentDir = agentDir;
         this.searchInput = new Input();
+        // 8 lines of chrome: top spacer + top border + spacer + header (2 lines) + spacer + bottom spacer + bottom border
+        const chrome = 8;
+        this.maxVisible = Math.max(5, (terminalHeight ?? 24) - chrome);
         this.buildFlatList();
         this.filteredItems = [...this.flatItems];
     }
@@ -437,7 +462,7 @@ class ResourceList {
     }
     getResourcePattern(item) {
         const scope = item.metadata.scope;
-        const baseDir = this.getTopLevelBaseDir(scope);
+        const baseDir = item.metadata.baseDir ?? this.getTopLevelBaseDir(scope);
         return relative(baseDir, item.path);
     }
     getPackageResourcePattern(item) {
@@ -455,7 +480,7 @@ export class ConfigSelectorComponent extends Container {
         this._focused = value;
         this.resourceList.focused = value;
     }
-    constructor(resolvedPaths, settingsManager, cwd, agentDir, onClose, onExit, requestRender) {
+    constructor(resolvedPaths, settingsManager, cwd, agentDir, onClose, onExit, requestRender, terminalHeight) {
         super();
         const groups = buildGroups(resolvedPaths);
         // Add header
@@ -465,7 +490,7 @@ export class ConfigSelectorComponent extends Container {
         this.addChild(new ConfigSelectorHeader());
         this.addChild(new Spacer(1));
         // Resource list
-        this.resourceList = new ResourceList(groups, settingsManager, cwd, agentDir);
+        this.resourceList = new ResourceList(groups, settingsManager, cwd, agentDir, terminalHeight);
         this.resourceList.onCancel = onClose;
         this.resourceList.onExit = onExit;
         this.resourceList.onToggle = () => requestRender();

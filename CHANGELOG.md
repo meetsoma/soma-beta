@@ -10,6 +10,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.28.0] — 2026-05-30
+
+### Added
+- **All models from Together AI, OpenCode Go, Gemini 3.x** — Pi 0.74+ unlocked new providers and model families. Together AI inference, Google Gemini 3.x support, OpenCode Go models — all available without configuration.
+- **Claude Opus 4.8 support** — Pi 0.77+ supports Anthropic's latest model.
+- **842+ models total** — Pi 0.78 resolver sees everything the ecosystem offers.
+- **roadmap tone-check as hard gate** in release prepare script Phase 5.5.
+
+### Changed
+- **Pi runtime upgraded 5 versions** — `@mariozechner/*@0.73.1` → `@earendil-works/*@0.78.0`. Full namespace migration across all four Pi packages, 61 source files swept, 8 patches audited against new compiled shapes. (3414a84)
+- **Two patches retired** — title-symbol (Pi now reads `piConfig.name` → APP_TITLE dynamically) and compaction.js estimateTokens guard (upstream refactored to guard internally). One patch rewritten for 0.78.0 API (pi-tui image height cap).
+
+### Fixed
+- **`soma model <p> set` now actually works** — `enabledModels[0]` always unshifts to front. Pi's model resolver picks `scopedModels[0]` before `defaultModel`, so in-place updates never took effect. Months-old bug.
+- **`soma model <p> project` support** — project-local defaults via `.soma/settings.json`. Four options: global, project-only, global+start, cancel.
+- **`soma inhale --model <p>` flag forwarding** — inhale now extracts `--model`, `--provider`, `--thinking-level`, and `--models` flags and passes them through to Pi. Previously all three inhale paths called `main([])`, silently dropping flags.
+- **Stale project `defaultModel` removed** — `claude-opus-4-7` was silently overriding global via deep-merge, producing nonexistent `openrouter/claude-opus-4-7`.
+- **13 transitive deps restored** — `npm uninstall` dropped undici, chalk, minimatch, diff, glob, highlight.js, hosted-git-info, jiti, typebox, cross-spawn, execa, proper-lockfile.
+- **Test suite hardened for migration** — 3 stale grep patterns updated, resetBreatheState now resets preloadNotifyState, seam/trace and compaction tests fixed for 0.78.0.
+
+
 ## [0.27.6] — 2026-05-28
 
 ### Added
@@ -119,7 +140,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ### Added
 
-- **Pi upstream monitor — live version gap in every session** (s01-8b3cb3). GitHub Actions workflow (`.github/workflows/upstream-monitor.yml`) watches `badlogic/pi-mono` (source of `@mariozechner/pi-coding-agent`) every 6 hours. Writes `PI_UPSTREAM.md` to the agent root with: current pinned version, latest npm version, releases behind count, and flagged commits relevant to Soma (covers all 33 Pi API usages: `registerTool`, `registerCommand`, `sendUserMessage`, 11 event hooks, 7 patch targets). New `{{pi_gap}}` body var in `resolveBlockVariables` reads `PI_UPSTREAM.md` at session start and injects live gap into the system prompt. `soma-dev status` surfaces flagged ⚠️ items in yellow. Eliminates manually tracking Pi version drift.
+- **Pi upstream monitor — live version gap in every session** (s01-8b3cb3). GitHub Actions workflow (`.github/workflows/upstream-monitor.yml`) watches `badlogic/pi-mono` (source of `@earendil-works/pi-coding-agent`) every 6 hours. Writes `PI_UPSTREAM.md` to the agent root with: current pinned version, latest npm version, releases behind count, and flagged commits relevant to Soma (covers all 33 Pi API usages: `registerTool`, `registerCommand`, `sendUserMessage`, 11 event hooks, 7 patch targets). New `{{pi_gap}}` body var in `resolveBlockVariables` reads `PI_UPSTREAM.md` at session start and injects live gap into the system prompt. `soma-dev status` surfaces flagged ⚠️ items in yellow. Eliminates manually tracking Pi version drift.
 
 - **Autonomous CI loop — nightly tests + issue filing + fix pipeline** (s01-8b3cb3, smoke-validated s01-ae942e). Three-layer self-healing CI: (1) `.github/workflows/test-nightly.yml` runs 25 portable tests on schedule (4am UTC) and on push to dev/main; on failure, auto-files a structured GitHub issue tagged `nightly-failure` with failing tests, error excerpts, Pi version, last 5 commits, and a fix brief for the next agent. Dedupe gate skips filing when an open issue already exists for the same failure. (2) `dev:issue.create` + `dev:issue.list` addon caps for agent-filed issues from within sessions. (3) `soma-dev delegate ci-fix <url>` orchestrates: `issue_investigator` → `builder` → `verifier`. 18 tests gained `CI=true` skip guards (workspace/dist-dependent tests self-skip). `pr-check.yml` hardened: tsc typecheck job + changelog blocking + conventional-commit format validation. End-to-end smoke s01-ae942e drove a deliberate test failure through nightly→issue→dedupe→revert→green.
 
@@ -258,7 +279,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 ### Fixed
 - **add required Actions section to v0.23.0-to-v0.23.1.md**
 - **bump pi-* to 0.71.0 — clears CVE-2026-41686 (GHSA-p7fg-763f-g4gf)**
-- **Bump pi-* deps 0.71.0 + clear CVE-2026-41686 (GHSA-p7fg-763f-g4gf)** — upgraded `@mariozechner/pi-{ai,coding-agent,tui,agent-core}` from `^0.69.0` to `^0.71.0`. Clears `@anthropic-ai/sdk` advisory (affects `>=0.79.0 <0.91.1`). Also picks up: cache-control model-compat awareness, fine-grained tool streaming beta, empty tools array fix, stream truncation detection. fast-xml-parser (AWS Bedrock SDK transitive) remains at moderate — not reachable through soma's Anthropic provider path.
+- **Bump pi-* deps 0.71.0 + clear CVE-2026-41686 (GHSA-p7fg-763f-g4gf)** — upgraded `@earendil-works/pi-{ai,coding-agent,tui,agent-core}` from `^0.69.0` to `^0.71.0`. Clears `@anthropic-ai/sdk` advisory (affects `>=0.79.0 <0.91.1`). Also picks up: cache-control model-compat awareness, fine-grained tool streaming beta, empty tools array fix, stream truncation detection. fast-xml-parser (AWS Bedrock SDK transitive) remains at moderate — not reachable through soma's Anthropic provider path.
 
 ### Added
 - **soma:github.* v2 (SX-720)** — 21 caps total. API-mode (metadata; 13 caps including new audit/releases/diff/compare/file_diff parity wires) + new local-mode (tarball + soma-code shim; 8 caps): `local_path`, `local_map`, `local_find`, `local_refs`, `local_blast`, `local_structure`, `cache_list`, `cache_clean`. Treat any GitHub repo as local: fetch tarball ~1–5s to `~/.soma/cache/gh/<owner>--<repo>--<sha>/`, then run soma-code (12 langs, full ripgrep regex, DEF/IMP/USE refs, blast radius). Architectural pivot from "per-file API" to "fetch-once-then-local-toolchain." Plan: `releases/v0.23.x/plans/github-tool-10x.md`. Commits: `e7ff177`, `907013a`, `96a511c`. Guide: `docs/_dev/github-scanner.md`.
@@ -868,7 +889,7 @@ T1 scalar back-compat, T3 chain gemma→qwen→haiku fall-through, T4 cooldown s
 - **`soma-2x-cmux.sh`** launcher. Opens a cmux workspace with Sonnet parent + invocation-monitor pane. `--focus` / `--close` / `--restart` flags for iteration cycle.
 
 ### Fixed (during MVP verification, same release cycle)
-- **`pi-agent-core.Agent` via `createRequire` bypass.** Pi's extension loader aliases `@mariozechner/pi-agent-core` and can resolve to wrong package under jiti. Switched to `createRequire(import.meta.url)` for that one import — native Node resolution bypasses jiti. `pi-ai` + `pi-coding-agent` stay ESM-only (static imports at module top).
+- **`pi-agent-core.Agent` via `createRequire` bypass.** Pi's extension loader aliases `@earendil-works/pi-agent-core` and can resolve to wrong package under jiti. Switched to `createRequire(import.meta.url)` for that one import — native Node resolution bypasses jiti. `pi-ai` + `pi-coding-agent` stay ESM-only (static imports at module top).
 - **Inline flow YAML arrays.** `inherits: []` was parsed as the string `"[]"`; parser now detects and splits `[a, b, c]` inline.
 - **Inline YAML comments.** `default-model: claude-sonnet-4-5  # comment` previously included the comment in the value. `stripComment` handles this now (respects `#` inside quoted strings).
 - **`getModel` returning `undefined`** (not throwing) when a model id was unknown. Now surfaces as a typed error the chain walker can react to.
@@ -1932,7 +1953,7 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 - Dev-only scripts no longer shipped to users (#2c8db4a)
 - Restart signal cleared at factory load time, not `session_start` (#0bddce2)
 - Dynamic muscle read and script execution detection for heat tracking (#99a7663)
-- `soma-route.ts` import path — uses `@mariozechner/pi-coding-agent`, not `@anthropic-ai/claude-code` (#49454ea)
+- `soma-route.ts` import path — uses `@earendil-works/pi-coding-agent`, not `@anthropic-ai/claude-code` (#49454ea)
 - Internal protocols (`content-triage`, `community-safe`) removed from bundled set (#3ad0884)
 - Auto-init `.soma/.git` when `autoCommit` is true (#276f6f2)
 - Missing TL;DRs on 4 self-awareness protocols (#c457752)

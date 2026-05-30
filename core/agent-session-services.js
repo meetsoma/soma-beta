@@ -13,6 +13,7 @@
 
 import { join } from "node:path";
 import { getAgentDir } from "../config.js";
+import { resolvePath } from "../utils/paths.js";
 import { AuthStorage } from "./auth-storage.js";
 import { ModelRegistry } from "./model-registry.js";
 import { DefaultResourceLoader } from "./resource-loader.js";
@@ -64,8 +65,8 @@ function applyExtensionFlagValues(resourceLoader, extensionFlagValues) {
  * Returns services plus diagnostics. It does not create an AgentSession.
  */
 export async function createAgentSessionServices(options) {
-    const cwd = options.cwd;
-    const agentDir = options.agentDir ?? getAgentDir();
+    const cwd = resolvePath(options.cwd);
+    const agentDir = options.agentDir ? resolvePath(options.agentDir) : getAgentDir();
     const authStorage = options.authStorage ?? AuthStorage.create(join(agentDir, "auth.json"));
     const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
     const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, join(agentDir, "models.json"));
@@ -122,6 +123,7 @@ export async function createAgentSessionFromServices(options) {
         thinkingLevel: options.thinkingLevel,
         scopedModels: options.scopedModels,
         tools: options.tools,
+        excludeTools: options.excludeTools,
         noTools: options.noTools,
         customTools: options.customTools,
         sessionStartEvent: options.sessionStartEvent,
