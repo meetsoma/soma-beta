@@ -10,6 +10,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.28.1] — 2026-06-01
+
+### Fixed
+- **`soma inhale --model <model>` now loads the preload instead of treating the model name as a preload target** — the CLI's `nameArg` extraction stole model values (e.g. `opencode/big-pickle`) as preload names, setting `SOMA_INHALE_TARGET` and failing `findPreloadByName`. PassThrough values are now excluded from nameArg extraction. (s01-14580a)
+- **Full preload format at all context thresholds — minimal format loses context** — high-context preloads now use the full structured template with Resume Point, What Shipped, and In-Flight sections. (1ae67a38)
+- **`/exhale note` now captures user direction** — text typed after `/exhale` was silently dropped; it's now injected as `### User's Note for Next Session` in the preload template. The agent writing the preload sees Curtis's stated priorities and puts them at the top of Start Here, overriding inferred next steps. (89efd1b6, s01-65fd1e)
+- **ANSI colors replaced with `theme.fg()` calls** — header and statusline in the TUI now respect Pi's theme system instead of hardcoded escape codes across 33 points. (5a824c6c, s01-6a544e)
+- **Release Step 6 delegates to `soma-dev sync main`** — replaces inline push+branch logic with the dedicated command. (256e968d)
+- **Release Step 6 main-sync is now a HARD gate** — `⚠ push failed` no longer lets the release continue; exits 1 if main-sync fails, preventing v0.28.0-style stale-runtime-after-ship. (3c51de02, s01-5c0055)
+
+### Added
+- **`soma-dev sync main` as a proper command** — release Step 6 extracted from inline bash into a proper `soma-dev sync main` command that handles CI-drift detection, rebase + merge, conflict resolution, dist rebuild, and version verification. (4d53663c)
+
+
 ## [0.28.0] — 2026-05-30
 
 ### Added

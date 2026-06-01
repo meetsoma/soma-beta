@@ -695,12 +695,12 @@ if (args[0] === "map") {
 		if (i > 0 && injFlags.includes(inhaleArgs[i-1])) return false;
 		return true;
 	});
-	const nameArg = cleanedInhaleArgs.filter(a => !a.startsWith("-") && a !== loadPath)[0];
-
-	// Forward Pi-level flags (--model, --provider, --thinking-level, etc.)
+	// Forward Pi-level flags (--model, --provider, --thinking-level, --models)
 	// that were passed on `soma inhale` so Pi sees them at boot.
 	// Without this, `soma inhale --model openrouter/deepseek-v4-flash` silently
 	// drops the model flag because inhale calls main([]) with an empty args array.
+	// Run this FIRST so we know which args are consumed as flag values and can
+	// exclude them from nameArg extraction below.
 	const piFlags = ["--model", "--provider", "--thinking-level", "--models"];
 	const passThrough = [];
 	for (let i = 0; i < inhaleArgs.length; i++) {
@@ -711,6 +711,12 @@ if (args[0] === "map") {
 			}
 		}
 	}
+	// Build set of values consumed by Pi flags so nameArg doesn't steal them.
+	// Without this, `soma inhale --model opencode/big-pickle` treats the model
+	// name as a preload target name (doesn't start with "-"), sets
+	// SOMA_INHALE_TARGET="opencode/big-pickle", and findPreloadByName fails.
+	const piConsumed = new Set(passThrough);
+	const nameArg = cleanedInhaleArgs.filter(a => !a.startsWith("-") && a !== loadPath && !piConsumed.has(a))[0];
 
 	if (listFlag) {
 		// List available preloads
