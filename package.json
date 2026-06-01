@@ -1,6 +1,6 @@
 {
   "name": "soma-beta-runtime",
-  "version": "0.28.1",
+  "version": "0.28.2",
   "description": "Soma compiled runtime — the AI agent that remembers",
   "private": true,
   "type": "module",

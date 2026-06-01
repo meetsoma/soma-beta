@@ -3,8 +3,23 @@ type: template
 name: memory
 description: Preload format — what the agent writes at exhale to brief the next session
 created: 2026-03-23
-updated: 2026-05-04
+updated: 2026-06-01
 ---
+## Check for Exhale Note
+
+If a `### Note` block appears in the EXHALE message, the user added
+instructions for THIS exhale. Process it in two ways:
+
+1. **Scope the wrap.** If the note says "quick" / "minimal" / "just preload" —
+   skip Steps 1 and 3-4 (body audit + MLR + voice/body distillation).
+   Run only the core steps. If it says "full ritual" — run all steps.
+
+2. **Pass directives forward.** If the note says "tell the next agent X" or
+   is a directive for the next session, put it at the TOP of **Start Here**
+   in the preload, before inferred priorities.
+
+---
+
 **Step 1.5: Update living docs** — before the preload, update the sources it points to.
 The preload points to these — if they're stale, the preload is misleading.
 - Check off completed kanban items, add new ones discovered this session

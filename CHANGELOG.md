@@ -10,12 +10,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.28.2] — 2026-06-01
+
+### Added
+- **gap-safe settings backfill + template auto-update (v0.28.1)** — three sentinel-gated migrations run at every boot regardless of migration chain gaps: settings keys backfill, template auto-update, exhale-note template header update.
+- **v0.28.0 → v0.28.1 migration phase file** — exhale note + template drift + inhale model fix documented with gap-safe sentinel pattern.
+- **`/exhale note` header redesign** — `### User's Note for Next Session` renamed to `### Note`, dual-purpose: scopes the current wrap AND passes directives forward. Template (`_memory.md`) and docs updated.
+
+### Fixed
+- **Theme crash on `/inhale --model`** — `"warm"`, `"gitCyan"`, `"gitYellow"`, `"gitBlue"` weren't in Pi's `ThemeColor` union, causing TUI render crash. Replaced with valid union members: `"muted"`, `"warning"`, `"accent"`. (47a0de5f, s01-72adde)
+- **`PROPOSAL_FILE` unbound variable in release prepare Phase 5.5** — `set -euo pipefail` halted the script before Phase 6 created the proposal file.
+
 ## [0.28.1] — 2026-06-01
 
 ### Fixed
 - **`soma inhale --model <model>` now loads the preload instead of treating the model name as a preload target** — the CLI's `nameArg` extraction stole model values (e.g. `opencode/big-pickle`) as preload names, setting `SOMA_INHALE_TARGET` and failing `findPreloadByName`. PassThrough values are now excluded from nameArg extraction. (s01-14580a)
 - **Full preload format at all context thresholds — minimal format loses context** — high-context preloads now use the full structured template with Resume Point, What Shipped, and In-Flight sections. (1ae67a38)
-- **`/exhale note` now captures user direction** — text typed after `/exhale` was silently dropped; it's now injected as `### User's Note for Next Session` in the preload template. The agent writing the preload sees Curtis's stated priorities and puts them at the top of Start Here, overriding inferred next steps. (89efd1b6, s01-65fd1e)
+- **`/exhale <note>` directs the current agent during preload writing.** Text after `/exhale` is injected as a `### Note` block in the EXHALE follow-up. The agent uses it to scope the wrap ("quick" → skip body audit + MLR) AND to pass directives forward to the next session's Start Here. `--note` prefix and quotes stripped. `/exhale` alone works the same. (89efd1b6, s01-65fd1e)
 - **ANSI colors replaced with `theme.fg()` calls** — header and statusline in the TUI now respect Pi's theme system instead of hardcoded escape codes across 33 points. (5a824c6c, s01-6a544e)
 - **Release Step 6 delegates to `soma-dev sync main`** — replaces inline push+branch logic with the dedicated command. (256e968d)
 - **Release Step 6 main-sync is now a HARD gate** — `⚠ push failed` no longer lets the release continue; exits 1 if main-sync fails, preventing v0.28.0-style stale-runtime-after-ship. (3c51de02, s01-5c0055)
