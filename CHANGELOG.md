@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.29.0] — 2026-06-02
 
 ### Fixed
 - **poll preload file on disk to detect manual exhale writes (s01-e56328)**
@@ -20,8 +23,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ### Infrastructure
 - **Bridge CDP endpoints committed** — `cdp.ts` click() via Input.dispatchMouseEvent (bypasses React Aria isTrusted), fill() with value injection + events, waitForElement() with polling. `bridge.ts` POST /api/browser/xray, /click, /fill, /wait endpoints. (somaverse 7093f62)
-
-<!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.28.4] — 2026-06-01
 
