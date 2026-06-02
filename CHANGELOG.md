@@ -8,6 +8,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+
+### Fixed
+- **poll preload file on disk to detect manual exhale writes (s01-e56328)**
+- **muscle_digests slot estimate now capped by configured tokenBudget (s01-e56328)**
+- **system-core.md now ships from correct source + adds structure-aware tools guidance** — build was copying from wrong path, runtime couldn't find it. Now ships from `repos/agent/prompts/` to `dist/prompts/`. Added "Structure-aware before raw" reflex: `soma:code.map`, `.find`, `.outline`, `soma:seam.trace` listed as first-reach tools. (ebdd6306)
+
 ### Improved
 - **Website docs synced for 21 caps** — tools.md (20→21), cli-tools.md (17→21), browser-setup.md (new caps in matrix, cap-based quick start, bridge note), pro-tools.md (updated browser entry).
 - **Roadmap browser-tools.svg** — DOM scanning + click/fill/wait visualization for the browser automation story.
