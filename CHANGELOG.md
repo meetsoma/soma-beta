@@ -8,7 +8,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+### Pending (not yet shipped)
+- **Browser Ship 2** — end-to-end smoke across CDP ports (needs bridge running).
+
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.29.1] — 2026-06-02
+
+### Added
+- **`/body update` CLI command** — version-aware template comparison and update workflow. Subcommand on `/body`, reads `prompts/body-update.md` and sends as followUp. Agent walks user through classified comparison (current/updateable/customized/legacy/extra), respects `customized: true` flag, creates backups before overwriting. (5d1a965b, s01-34d9de)
+- **Doctor `/body update` suggestion** — both "current" and "migration needed" paths now suggest `/body update` when stale or missing templates are detected. Bridges the gap between structural migrations (doctor) and content evolution (`/body update`). (f092e239, s01-34d9de)
+
+### Fixed
+- **`/exhale <note>` now processed in all paths** — note extracted before early-return check so it works when preload already exists (new, update-existing, already-saved). Note format upgraded to `⚠️ USER NOTE` with action hint. (a241d635, b788848e, s01-8f2308)
+- **Statusline preload detection simplified** — checks preload file directly on disk instead of depending on `breatheDetail.preloadWritten` lifecycle state. (a241d635, s01-8f2308)
+- **Preload validator no longer warns about missing "Next Session"** — renamed to "Start Here" in required + recommended section checks. Recommended sections updated to match current template (Who You Were, Gaps, Unfinished, Traps, Patterns). (s01-8f2308)
+
+### Changed
+- **Exhale note visibility** — `### Note` → `⚠️ USER NOTE` with scope/directive hint. Template `_memory.md` and docs (`commands.md`, `getting-started.md`) updated. (a241d635, b788848e, s01-8f2308)
+- **Preload template fallback synced with `_memory.md`** — hardcoded fallback in `core/preload.ts` now matches canonical format. (f73d75e9, s01-8f2308)
 
 ## [0.29.0] — 2026-06-02
 
