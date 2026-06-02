@@ -1,7 +1,7 @@
 {
-  "version": "0.28.2",
-  "buildId": "3198e8ab92eb5798",
-  "buildDate": "2026-06-01T19:02:38.137Z",
+  "version": "0.28.4",
+  "buildId": "1756bd29d211f57a",
+  "buildDate": "2026-06-02T06:19:55.029Z",
   "piVersion": "0.78.0",
   "fileCount": 238,
   "files": {
@@ -117,7 +117,7 @@
     "extensions/dev-tools.js": "b6646bee1cc966e0901b121cc68d43007c69f49ef53785ba67a7f02e6a6ee2c8",
     "extensions/soma-addons/agent.js": "1918e03f40edf7bd42777a20203a108d8bce9aec23089844831597e424efeddb",
     "extensions/soma-addons/body.js": "06ba4e126c684ee8a7aa25e8dc95c2a2e803ed5b4709eae3621b24c06e3d7ee8",
-    "extensions/soma-addons/browser.js": "7e05e906eeafabd27a209bb8221a0a65979d389c26325c00462cb8949c0d3bde",
+    "extensions/soma-addons/browser.js": "0008c3d485fdec567f31cfe73f3f41549f9e3213cf4976cfabd227956a4b16bb",
     "extensions/soma-addons/code.js": "36b75d0cb5aac29ccae5f9960ac2db4834a5ba3c171440f6224d18f46a549e50",
     "extensions/soma-addons/docs.js": "fabc24f2243c39ec4d06a6eb94d61bde20cddc5e2e02eacaea507121575b8071",
     "extensions/soma-addons/focus.js": "01d7c8583fef0af994675009b0a17e721bc76df76f34410a8e65d589e45c2c91",

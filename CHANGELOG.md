@@ -8,9 +8,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+### Improved
+- **Website docs synced for 21 caps** — tools.md (20→21), cli-tools.md (17→21), browser-setup.md (new caps in matrix, cap-based quick start, bridge note), pro-tools.md (updated browser entry).
+- **Roadmap browser-tools.svg** — DOM scanning + click/fill/wait visualization for the browser automation story.
+
+### Infrastructure
+- **Bridge CDP endpoints committed** — `cdp.ts` click() via Input.dispatchMouseEvent (bypasses React Aria isTrusted), fill() with value injection + events, waitForElement() with polling. `bridge.ts` POST /api/browser/xray, /click, /fill, /wait endpoints. (somaverse 7093f62)
+
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
-## [0.28.2] — 2026-06-01
+## [0.28.4] — 2026-06-01
 
 ### Added
 - **gap-safe settings backfill + template auto-update (v0.28.1)** — three sentinel-gated migrations run at every boot regardless of migration chain gaps: settings keys backfill, template auto-update, exhale-note template header update.
