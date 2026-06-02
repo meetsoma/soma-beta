@@ -9,7 +9,7 @@ soma_template_version: 0.29.0
 
 ## Exhale note
 
-If a `### Note` appears in the EXHALE message, the user added instructions for THIS exhale. Process it:
+If a `⚠️  USER NOTE` block appears at the top of this EXHALE message, the user added instructions for THIS exhale. Process it:
 - **"quick"** / **"minimal"** → skip body audit + reflection. Core steps only.
 - **"full ritual"** → run all steps.
 - **Anything else** → directive for the next session. Put at top of **Start Here**.
