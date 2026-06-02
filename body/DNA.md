@@ -4,6 +4,7 @@ name: dna
 status: active
 created: 2026-03-23
 updated: 2026-04-23
+soma_template_version: 0.29.0
 description: Body blueprint — how your files work, how to grow them
 lazy: true
 ---

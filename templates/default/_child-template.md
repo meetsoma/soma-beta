@@ -1,6 +1,7 @@
 ---
 name: <role-name>
 version: 0.1.0
+soma_template_version: 0.29.0
 status: draft
 description: <one-line: what this role specializes in>
 default-model: claude-sonnet-4-6   # claude-haiku-4-5 for cheap focused work, claude-opus-4-7 when depth needed

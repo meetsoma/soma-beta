@@ -9,6 +9,7 @@ triggers: [{{triggers}}]
 applies-to: [any]
 created: {{date}}
 updated: {{date}}
+soma_template_version: 0.29.0
 related: []
 origin: {{session}}
 version: 1.0.0

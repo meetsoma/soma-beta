@@ -8,6 +8,7 @@ description: >
   volatile content last. Run `soma body slots` to inspect live cost.
 created: 2026-03-23
 updated: 2026-04-23
+soma_template_version: 0.29.0
 ---
 
 <!-- Cache economics: editing a slot invalidates everything BELOW it

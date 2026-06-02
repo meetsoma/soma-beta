@@ -3,6 +3,7 @@ type: template
 name: doctor-update
 status: active
 created: 2026-04-02
+soma_template_version: 0.29.0
 description: Migration boot template — spawned by soma doctor when project needs updating
 ---
 # Doctor Mode — Project Migration

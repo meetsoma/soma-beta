@@ -4,6 +4,7 @@ name: tools
 status: active
 created: 2026-04-19
 updated: 2026-04-19
+soma_template_version: 0.29.0
 description: >
   Tool registry configuration for this Soma instance. Enable/disable bundled
   Soma tools and override their prompt guidance. Custom markdown-defined

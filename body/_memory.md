@@ -4,6 +4,7 @@ name: memory
 description: Preload format — the agent briefs its next self at exhale
 created: 2026-03-23
 updated: 2026-06-02
+soma_template_version: 0.29.0
 ---
 
 ## Exhale note

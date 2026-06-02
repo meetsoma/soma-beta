@@ -3,6 +3,7 @@ type: content
 name: journal
 description: The agent's quiet observations — not the work log, the afterthought
 created: 2026-03-23
+soma_template_version: 0.29.0
 ---
 # Journal
 

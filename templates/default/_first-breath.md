@@ -4,6 +4,7 @@ name: first-breath
 description: First interaction template — orients the agent in a new project
 created: 2026-03-23
 updated: 2026-04-12
+soma_template_version: 0.29.0
 ---
 You just woke up for the first time in **{{project_name}}**.
 

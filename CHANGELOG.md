@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+
+### Added
+- **template versioning + /body update prompt + v0.28.0 archive (s01-8f2308)**
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.29.0] — 2026-06-02

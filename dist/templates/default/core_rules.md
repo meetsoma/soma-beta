@@ -3,6 +3,7 @@ type: content
 name: core-rules
 status: active
 created: 2026-06-02
+soma_template_version: 0.29.0
 description: Universal behavioral defaults — loaded every session
 ---
 
@@ -53,6 +54,8 @@ Source compiles ≠ ships. Endpoint 200 ≠ flow works. UI renders ≠ behavior 
 ## Only Claim What You Know
 
 When describing a system, an error, a cause — quote what is literally true, then stop. Derived claims need either evidence or hedging language. Observed facts can stand alone. The discipline: write the sentence, then ask "did I observe this, or did I derive it?"
+
+**Time claims are assertions.** Every numeric time reference ("eighteen months," "four weeks," "a few hours") must be verified against ground truth — git history, file dates, CHANGELOG entries — before it leaves you. Feeling-right is not verification. If you can't verify it, use qualitative language ("over many releases," "across sessions," "for a while").
 
 ## Reading vs Running
 

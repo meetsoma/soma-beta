@@ -4,6 +4,7 @@ name: pulse
 description: Tasks to check on heartbeat pings
 created: 2026-03-23
 updated: 2026-04-02
+soma_template_version: 0.29.0
 ---
 # Pulse
 
