@@ -8,10 +8,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ## [Unreleased]
 
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.30.0] — 2026-06-04
+
+### Added
+- **Headless delegation — `soma:agent.delegate {headless:true}`** — a minimal-inference delegation path that spawns `soma -p` as a subprocess (not a tmux TUI), captures structured output, and detects completion via exit code (fixing the flaky pane-tail completion of background mode). Routes to OpenCode **free** models (`big-pickle` → `deepseek-v4-flash-free`), off the Claude subscription extra-usage wall, with auto-retry + model fallback on rate-limit. Role system prompts inject via `--append-system-prompt`. `runHeadless`/`loadRole`/`stripPreamble` in `extensions/soma-delegate.ts`. Patterns adapted from upstream pi-mono's subagent example. (v0.30.0 Phase 1, s01-3a1d9b)
+- **Chain delegation — `soma:agent.delegate {chain:[{role,task,model?},...]}`** — sequential headless steps where `{previous}` is substituted with the prior step's output (scout→planner→worker style). Each step gets the same retry+fallback. (v0.30.0 Phase 2)
+- **`soma-dev cycle`** — the test-before-main dev→release flow: curate CHANGELOG (headless, free) → commit → build dev dist → **smoke the dev build before main** → gate → hand off to the release orchestrator. Main only ever receives tested-good code. Only the changelog + smoke steps use a model (both free); the rest is bash. (v0.30.0 Phase 3)
+- **`soma-series-rollover.sh`** — scaffolds `releases/vX.Y.x/INDEX.md` + sweeps current-series markers on a minor bump, closing the orphaned-step drift the version-truth gate flags but couldn't fix. (s01-3a1d9b)
+
+### Changed
+- **npm and agent are independent version trains (supersedes SX-659 collapsed train)** — the npm thin-CLI is a one-time bootstrap; `soma update` pulls the agent runtime via `git pull` from soma-beta and never re-fetches npm, so publishing npm on an agent-only release delivers users nothing. npm now publishes **only when the thin-CLI code changes** (`ship.sh` Step 5 is conditional on `npm/thin-cli.js`/`npm/lib/` diffs); when it does publish, the version syncs to the agent's so `soma --version` stays legible (it shows both, labeled). The version-drift gates (`test-doctor`, `test-release-completeness`) now treat npm *lagging* the agent as the expected steady state. This is what RELEASE-FLOW.md + body/soma-cli.md already documented; the collapsed-train enforcement was the stale half. (s01-cfe9ac)
+- **RELEASE-FLOW.md rewired to two modes** (orchestrated / manual) — Step 7 now calls the gated `soma-release-prepare.sh` orchestrator instead of bypassing it; the doc describes decisions, the scripts own mechanics (stops the doc↔script drift). phase-5-release.md slimmed 390→169 lines (history lifted to `release-lessons.md`). (s01-3a1d9b)
+
+### Fixed
+- **`soma --help` shows Soma's commands when a project has extensions** — `--help` delegates to the runtime cli.js via `delegateToCore()`, which prepends project `-e <ext>` flags before the command. cli.js checked `args[0] === "--help"`, so with extensions present --help fell through to Pi's native help instead of Soma's command list. Fixed by skipping leading `-e`/`--extension` pairs to find the effective command (subcommand help like `soma focus --help` stays intact). Manifested with a project `.soma/extensions` dir (dogfood + power users). (s01-cfe9ac)
+- **release-prepare crash: `PREP_VERSION` unbound in Phase 5.5** — the website-readiness phase referenced `$PREP_VERSION` at a `[[ -z ]]` check but only assigned it inside the `PROPOSAL_FILE` conditional; with `set -u`, the common unset-PROPOSAL_FILE path crashed the whole prepare run at the tone-check. Initialized before the block. (Completes the partial fix `a7ba618c` made on main.) (s01-cfe9ac)
+- **universal timeout for all providers (upstream 7c531d05)**
+- **`soma:body.audit` no longer false-flags compiler-prepended slots** — the audit told users to "move `muscle_digests` after `<rules>`," but that slot is prepended by `compileFrontalCortex` (not template-interpolated, gate-locked) and `essential: true` (removing it breaks muscle loading). The advice could have moved a load-bearing slot. Check 3 now skips prepended slots (`muscle_digests`/`protocol_summaries`/`scripts_table`) and the audit gained a "Slot mechanics" footer that points at `body/DNA.md` (the canonical explanation) rather than duplicating it. (s01-3a1d9b)
+
+### Internal
+- Test-suite hygiene (s01-cfe9ac): `test-keepalive` asserted a refactored-out `bonus10` literal → now checks the `_getTier()` mechanism; `test-meta-hygiene` required an inline `Results:` echo → now also recognizes the shared `_shared.sh` `results` helper (227/227); removed a stray gitignored empty `.soma/amps/muscles/` dir that false-tripped `test-muscles`.
+- Headless-delegation polish: `delegate` help text documents the `headless`/`chain` modes; new `tests/test-delegate-headless.sh` unit-tests `loadRole` + `stripPreamble` (non-flaky, no model call). (v0.30.0 Phase 4)
+
 ### Pending (not yet shipped)
 - **Browser Ship 2** — end-to-end smoke across CDP ports (needs bridge running).
 
-<!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.29.1] — 2026-06-02
 

@@ -217,9 +217,12 @@ export async function createAgentSession(options = {}) {
                 throw new Error(auth.error);
             }
             const providerRetrySettings = settingsManager.getProviderRetrySettings();
+            // Soma patch: apply httpIdleTimeoutMs to ALL providers, not just openai-codex-responses
+            const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
+            const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
             const timeoutMs = options?.timeoutMs ??
                 providerRetrySettings.timeoutMs ??
-                (model.api === "openai-codex-responses" ? settingsManager.getHttpIdleTimeoutMs() : undefined);
+                effectiveTimeoutMs;
             const websocketConnectTimeoutMs = options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
             const attributionHeaders = getAttributionHeaders(model, settingsManager, options?.sessionId);
             return streamSimple(model, context, {

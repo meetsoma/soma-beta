@@ -290,8 +290,16 @@ if (args[0] === "--version" || args[0] === "-V" || args[0] === "-v" || args[0] =
 	process.exit(0);
 }
 
-// Help flag — Soma-branded help with our commands + Pi options
-if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
+// Help flag — Soma-branded help with our commands + Pi options.
+// Skip leading `-e <path>` / `--extension <path>` pairs: thin-cli's
+// delegateToCore() prepends project extension flags before the real command,
+// so `--help` is often NOT args[0]. Skipping the ext pairs finds the effective
+// command and keeps subcommand help (e.g. `soma focus --help`) intact, since
+// then the effective command is `focus`, not `--help`. (s01-cfe9ac)
+let _helpScan = 0;
+while (args[_helpScan] === "-e" || args[_helpScan] === "--extension") _helpScan += 2;
+const _helpCmd = args[_helpScan];
+if (_helpCmd === "--help" || _helpCmd === "-h" || _helpCmd === "help") {
 	const { readFileSync: rf, existsSync: ex, readdirSync: rd } = await import("fs");
 	const { fileURLToPath } = await import("url");
 	const { dirname, join: j } = await import("path");
@@ -303,7 +311,7 @@ if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
 	const g = s => `\x1b[32m${s}\x1b[0m`;
 	const c = s => `\x1b[36m${s}\x1b[0m`;
 
-	const subHelp = args[1];
+	const subHelp = args[_helpScan + 1];  // offset past skipped -e pairs + the help token
 
 	// ── soma --help scripts ──
 	if (subHelp === "scripts") {
