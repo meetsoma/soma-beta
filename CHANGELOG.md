@@ -10,6 +10,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.30.1] — 2026-06-04
+
+### Fixed
+- **Image reads no longer silently break — `@silvia-odwyer/photon-node` is now a direct dependency.** Soma bundles the engine's image code (resize via photon WASM), which imports photon by bare specifier. Photon was only a *transitive* dep, so when npm nested it instead of hoisting, image reads died with a misleading "could not be resized below size limit" note — regardless of actual size. Declaring it directly (pinned 0.3.4) forces top-level hoisting; `soma update` runs npm install on pull, so installs self-heal. (s01-cfe9ac, reported by a sibling soma)
+- **Release-prepare gate: Phase 1 split into unit vs release-state tests (SX-765).** The gate ran the full suite as one blunt hard-block, but tests validating *release state* (installed-runtime version, dev↔main parity, npm registry) can't pass before ship — so they false-blocked releases whose code was sound. Tests now opt into release-state handling with a `# @release-state` marker; pre-ship failures route to NEEDS-REVIEW (re-checked in their dedicated phases + post-ship), while unit failures still hard-gate. (s01-cfe9ac)
+
+
 ## [0.30.0] — 2026-06-04
 
 ### Added
