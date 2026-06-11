@@ -15,6 +15,12 @@ const THINKING_DESCRIPTIONS = {
     high: "Deep reasoning (~16k tokens)",
     xhigh: "Maximum reasoning (~32k tokens)",
 };
+const DEFAULT_PROJECT_TRUST_LABELS = {
+    ask: "Ask",
+    always: "Always trust",
+    never: "Never trust",
+};
+const DEFAULT_PROJECT_TRUST_BY_LABEL = new Map(Object.entries(DEFAULT_PROJECT_TRUST_LABELS).map(([value, label]) => [label, value]));
 /**
  * A submenu component for selecting from a list of options.
  */
@@ -158,6 +164,13 @@ export class SettingsSelectorComponent extends Container {
                 description: "Send an anonymous version/update ping after changelog-detected updates",
                 currentValue: config.enableInstallTelemetry ? "true" : "false",
                 values: ["true", "false"],
+            },
+            {
+                id: "default-project-trust",
+                label: "Default project trust",
+                description: "Fallback behavior when no extension or saved trust decision decides project trust",
+                currentValue: DEFAULT_PROJECT_TRUST_LABELS[config.defaultProjectTrust],
+                values: Object.values(DEFAULT_PROJECT_TRUST_LABELS),
             },
             {
                 id: "double-escape-action",
@@ -357,6 +370,13 @@ export class SettingsSelectorComponent extends Container {
                 case "install-telemetry":
                     callbacks.onEnableInstallTelemetryChange(newValue === "true");
                     break;
+                case "default-project-trust": {
+                    const defaultProjectTrust = DEFAULT_PROJECT_TRUST_BY_LABEL.get(newValue);
+                    if (defaultProjectTrust) {
+                        callbacks.onDefaultProjectTrustChange(defaultProjectTrust);
+                    }
+                    break;
+                }
                 case "double-escape-action":
                     callbacks.onDoubleEscapeActionChange(newValue);
                     break;

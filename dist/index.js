@@ -1,7 +1,7 @@
 // Core session management
 export { parseArgs } from "./cli/args.js";
 // Config paths
-export { getAgentDir, VERSION } from "./config.js";
+export { getAgentDir, getDocsPath, getExamplesPath, getPackageDir, getReadmePath, VERSION } from "./config.js";
 export { AgentSession, parseSkillBlock, } from "./core/agent-session.js";
 // Auth and model registry
 export { AuthStorage, FileAuthStorageBackend, InMemoryAuthStorageBackend, } from "./core/auth-storage.js";
@@ -26,6 +26,7 @@ export { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, } from "./core/sk
 export { createSyntheticSourceInfo } from "./core/source-info.js";
 // Tools
 export { createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLocalBashOperations, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, truncateLine, truncateTail, withFileMutationQueue, } from "./core/tools/index.js";
+export { hasProjectTrustInputs, ProjectTrustStore, } from "./core/trust-manager.js";
 // Main entry point
 export { main } from "./main.js";
 // Run modes for programmatic SDK usage

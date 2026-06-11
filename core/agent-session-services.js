@@ -16,7 +16,7 @@ import { getAgentDir } from "../config.js";
 import { resolvePath } from "../utils/paths.js";
 import { AuthStorage } from "./auth-storage.js";
 import { ModelRegistry } from "./model-registry.js";
-import { DefaultResourceLoader } from "./resource-loader.js";
+import { DefaultResourceLoader, } from "./resource-loader.js";
 import { createAgentSession } from "./sdk.js";
 import { SettingsManager } from "./settings-manager.js";
 function applyExtensionFlagValues(resourceLoader, extensionFlagValues) {
@@ -76,7 +76,7 @@ export async function createAgentSessionServices(options) {
         agentDir,
         settingsManager,
     });
-    await resourceLoader.reload();
+    await resourceLoader.reload(options.resourceLoaderReloadOptions);
     const diagnostics = [];
     const extensionsResult = resourceLoader.getExtensions();
     for (const { name, config, extensionPath } of extensionsResult.runtime.pendingProviderRegistrations) {

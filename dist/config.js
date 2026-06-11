@@ -359,7 +359,15 @@ export function getInteractiveAssetsDir() {
 export function getBundledInteractiveAssetPath(name) {
     return join(getInteractiveAssetsDir(), name);
 }
-const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
+let pkg = {};
+try {
+    pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
+}
+catch (e) {
+    const err = e;
+    if (err.code !== "ENOENT")
+        throw e;
+}
 const piConfigName = pkg.piConfig?.name;
 export const PACKAGE_NAME = pkg.name || "@earendil-works/pi-coding-agent";
 export const APP_NAME = piConfigName || "pi";

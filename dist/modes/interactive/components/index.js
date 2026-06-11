@@ -27,6 +27,7 @@ export { ThemeSelectorComponent } from "./theme-selector.js";
 export { ThinkingSelectorComponent } from "./thinking-selector.js";
 export { ToolExecutionComponent } from "./tool-execution.js";
 export { TreeSelectorComponent } from "./tree-selector.js";
+export { TrustSelectorComponent } from "./trust-selector.js";
 export { UserMessageComponent } from "./user-message.js";
 export { UserMessageSelectorComponent } from "./user-message-selector.js";
 export { truncateToVisualLines } from "./visual-truncate.js";

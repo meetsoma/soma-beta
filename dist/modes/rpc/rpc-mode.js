@@ -228,6 +228,7 @@ export async function runRpcMode(runtimeHost) {
         session = runtimeHost.session;
         await session.bindExtensions({
             uiContext: createExtensionUIContext(),
+            mode: "rpc",
             commandContextActions: {
                 waitForIdle: () => session.agent.waitForIdle(),
                 newSession: async (options) => runtimeHost.newSession(options),

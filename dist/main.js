@@ -6,13 +6,14 @@
  */
 import { createInterface } from "node:readline";
 import { modelsAreEqual } from "@earendil-works/pi-ai";
-import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
+import { createProjectTrustContext } from "./cli/project-trust.js";
 import { selectSession } from "./cli/session-picker.js";
+import { showStartupSelector } from "./cli/startup-ui.js";
 import { ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.js";
 import { createAgentSessionRuntime } from "./core/agent-session-runtime.js";
 import { createAgentSessionFromServices, createAgentSessionServices, } from "./core/agent-session-services.js";
@@ -20,16 +21,16 @@ import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import { configureHttpDispatcher } from "./core/http-dispatcher.js";
-import { KeybindingsManager } from "./core/keybindings.js";
 import { resolveCliModel, resolveModelScope } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
+import { resolveProjectTrusted } from "./core/project-trust.js";
 import { formatMissingSessionCwdPrompt, getMissingSessionCwdIssue, MissingSessionCwdError, } from "./core/session-cwd.js";
 import { assertValidSessionId, SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
+import { hasProjectTrustInputs, ProjectTrustStore } from "./core/trust-manager.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
-import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.js";
@@ -73,20 +74,23 @@ function isTruthyEnvFlag(value) {
         return false;
     return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
-function resolveAppMode(parsed, stdinIsTTY) {
+function resolveAppMode(parsed, stdinIsTTY, stdoutIsTTY) {
     if (parsed.mode === "rpc") {
         return "rpc";
     }
     if (parsed.mode === "json") {
         return "json";
     }
-    if (parsed.print || !stdinIsTTY) {
+    if (parsed.print || !stdinIsTTY || !stdoutIsTTY) {
         return "print";
     }
     return "interactive";
 }
 function toPrintOutputMode(appMode) {
     return appMode === "json" ? "json" : "text";
+}
+function isPlainRuntimeMetadataCommand(parsed) {
+    return !parsed.print && parsed.mode === undefined && (parsed.help === true || parsed.listModels !== undefined);
 }
 async function prepareInitialMessage(parsed, autoResizeImages, stdinContent) {
     if (parsed.fileArgs.length === 0) {
@@ -340,25 +344,10 @@ function resolveCliPaths(cwd, paths) {
     return paths?.map((value) => (isLocalPath(value) ? resolvePath(value, cwd) : value));
 }
 async function promptForMissingSessionCwd(issue, settingsManager) {
-    initTheme(settingsManager.getTheme());
-    setKeybindings(KeybindingsManager.create());
-    return new Promise((resolve) => {
-        const ui = new TUI(new ProcessTerminal(), settingsManager.getShowHardwareCursor());
-        ui.setClearOnShrink(settingsManager.getClearOnShrink());
-        let settled = false;
-        const finish = (result) => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            ui.stop();
-            resolve(result);
-        };
-        const selector = new ExtensionSelectorComponent(formatMissingSessionCwdPrompt(issue), ["Continue", "Cancel"], (option) => finish(option === "Continue" ? issue.fallbackCwd : undefined), () => finish(undefined), { tui: ui });
-        ui.addChild(selector);
-        ui.setFocus(selector);
-        ui.start();
-    });
+    return showStartupSelector(settingsManager, formatMissingSessionCwdPrompt(issue), [
+        { label: "Continue", value: issue.fallbackCwd },
+        { label: "Cancel", value: undefined },
+    ]);
 }
 export async function main(args, options) {
     resetTimings();
@@ -370,10 +359,10 @@ export async function main(args, options) {
     if (process.platform === "win32") {
         cleanupWindowsSelfUpdateQuarantine(getPackageDir());
     }
-    if (await handlePackageCommand(args)) {
+    if (await handlePackageCommand(args, { extensionFactories: options?.extensionFactories })) {
         return;
     }
-    if (await handleConfigCommand(args)) {
+    if (await handleConfigCommand(args, { extensionFactories: options?.extensionFactories })) {
         return;
     }
     const parsed = parseArgs(args);
@@ -387,11 +376,6 @@ export async function main(args, options) {
         }
     }
     time("parseArgs");
-    let appMode = resolveAppMode(parsed, process.stdin.isTTY);
-    const shouldTakeOverStdout = appMode !== "interactive";
-    if (shouldTakeOverStdout) {
-        takeOverStdout();
-    }
     if (parsed.version) {
         console.log(VERSION);
         process.exit(0);
@@ -409,6 +393,11 @@ export async function main(args, options) {
         }
         console.log(`Exported to: ${result}`);
         process.exit(0);
+    }
+    let appMode = resolveAppMode(parsed, process.stdin.isTTY, process.stdout.isTTY);
+    const shouldTakeOverStdout = appMode !== "interactive" && !isPlainRuntimeMetadataCommand(parsed);
+    if (shouldTakeOverStdout) {
+        takeOverStdout();
     }
     if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
         console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
@@ -456,17 +445,55 @@ export async function main(args, options) {
         sessionManager.appendSessionInfo(name);
     }
     time("createSessionManager");
+    const trustStore = new ProjectTrustStore(agentDir);
+    const sessionCwd = sessionManager.getCwd();
+    const autoTrustOnReloadCwd = parsed.projectTrustOverride === undefined && !hasProjectTrustInputs(sessionCwd) ? sessionCwd : undefined;
+    const trustPromptMode = parsed.help || parsed.listModels !== undefined ? "print" : appMode;
+    const projectTrustByCwd = new Map();
     const resolvedExtensionPaths = resolveCliPaths(cwd, parsed.extensions);
     const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
     const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
     const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
     const authStorage = AuthStorage.create();
-    const createRuntime = async ({ cwd, agentDir, sessionManager, sessionStartEvent, }) => {
+    const createRuntime = async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext, }) => {
+        const isInitialRuntime = sessionStartEvent === undefined;
+        const projectTrustDiagnostics = [];
+        const cachedProjectTrust = projectTrustByCwd.get(cwd);
+        const hasTrustInputs = hasProjectTrustInputs(cwd);
+        const shouldResolveProjectTrust = parsed.projectTrustOverride === undefined && cachedProjectTrust === undefined && hasTrustInputs;
+        const projectTrusted = shouldResolveProjectTrust
+            ? false
+            : (cachedProjectTrust ?? parsed.projectTrustOverride ?? (!hasTrustInputs || trustStore.get(cwd) === true));
+        const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
         const services = await createAgentSessionServices({
             cwd,
             agentDir,
             authStorage,
+            settingsManager: runtimeSettingsManager,
             extensionFlagValues: parsed.unknownFlags,
+            resourceLoaderReloadOptions: shouldResolveProjectTrust
+                ? {
+                    resolveProjectTrust: async ({ extensionsResult }) => {
+                        const trusted = await resolveProjectTrusted({
+                            cwd,
+                            trustStore,
+                            trustOverride: parsed.projectTrustOverride,
+                            defaultProjectTrust: startupSettingsManager.getDefaultProjectTrust(),
+                            extensionsResult,
+                            projectTrustContext: projectTrustContext ??
+                                createProjectTrustContext({
+                                    cwd,
+                                    mode: isInitialRuntime ? trustPromptMode : appMode,
+                                    settingsManager: startupSettingsManager,
+                                    hasUI: isInitialRuntime && trustPromptMode === "interactive",
+                                }),
+                            onExtensionError: (message) => projectTrustDiagnostics.push({ type: "warning", message }),
+                        });
+                        projectTrustByCwd.set(cwd, trusted);
+                        return trusted;
+                    },
+                }
+                : undefined,
             resourceLoaderOptions: {
                 additionalExtensionPaths: resolvedExtensionPaths,
                 additionalSkillPaths: resolvedSkillPaths,
@@ -484,6 +511,7 @@ export async function main(args, options) {
         });
         const { settingsManager, modelRegistry, resourceLoader } = services;
         const diagnostics = [
+            ...projectTrustDiagnostics,
             ...services.diagnostics,
             ...collectSettingsDiagnostics(settingsManager, "runtime creation"),
             ...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
@@ -590,6 +618,7 @@ export async function main(args, options) {
         const interactiveMode = new InteractiveMode(runtime, {
             migratedProviders,
             modelFallbackMessage,
+            autoTrustOnReloadCwd,
             initialMessage,
             initialImages,
             initialMessages: parsed.messages,

@@ -136,6 +136,7 @@ export class SettingsManager {
     globalSettings;
     projectSettings;
     settings;
+    projectTrusted;
     modifiedFields = new Set(); // Track global fields modified during session
     modifiedNestedFields = new Map(); // Track global nested field modifications
     modifiedProjectFields = new Set(); // Track project fields modified during session
@@ -144,24 +145,26 @@ export class SettingsManager {
     projectSettingsLoadError = null; // Track if project settings file had parse errors
     writeQueue = Promise.resolve();
     errors;
-    constructor(storage, initialGlobal, initialProject, globalLoadError = null, projectLoadError = null, initialErrors = []) {
+    constructor(storage, initialGlobal, initialProject, globalLoadError = null, projectLoadError = null, initialErrors = [], projectTrusted = true) {
         this.storage = storage;
         this.globalSettings = initialGlobal;
         this.projectSettings = initialProject;
+        this.projectTrusted = projectTrusted;
         this.globalSettingsLoadError = globalLoadError;
         this.projectSettingsLoadError = projectLoadError;
         this.errors = [...initialErrors];
         this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
     }
     /** Create a SettingsManager that loads from files */
-    static create(cwd, agentDir = getAgentDir()) {
+    static create(cwd, agentDir = getAgentDir(), options = {}) {
         const storage = new FileSettingsStorage(cwd, agentDir);
-        return SettingsManager.fromStorage(storage);
+        return SettingsManager.fromStorage(storage, options);
     }
     /** Create a SettingsManager from an arbitrary storage backend */
-    static fromStorage(storage) {
+    static fromStorage(storage, options = {}) {
+        const projectTrusted = options.projectTrusted ?? true;
         const globalLoad = SettingsManager.tryLoadFromStorage(storage, "global");
-        const projectLoad = SettingsManager.tryLoadFromStorage(storage, "project");
+        const projectLoad = SettingsManager.tryLoadFromStorage(storage, "project", projectTrusted);
         const initialErrors = [];
         if (globalLoad.error) {
             initialErrors.push({ scope: "global", error: globalLoad.error });
@@ -169,7 +172,7 @@ export class SettingsManager {
         if (projectLoad.error) {
             initialErrors.push({ scope: "project", error: projectLoad.error });
         }
-        return new SettingsManager(storage, globalLoad.settings, projectLoad.settings, globalLoad.error, projectLoad.error, initialErrors);
+        return new SettingsManager(storage, globalLoad.settings, projectLoad.settings, globalLoad.error, projectLoad.error, initialErrors, projectTrusted);
     }
     /** Create an in-memory SettingsManager (no file I/O) */
     static inMemory(settings = {}) {
@@ -178,7 +181,10 @@ export class SettingsManager {
         storage.withLock("global", () => JSON.stringify(initialSettings, null, 2));
         return SettingsManager.fromStorage(storage);
     }
-    static loadFromStorage(storage, scope) {
+    static loadFromStorage(storage, scope, projectTrusted = true) {
+        if (scope === "project" && !projectTrusted) {
+            return {};
+        }
         let content;
         storage.withLock(scope, (current) => {
             content = current;
@@ -190,9 +196,9 @@ export class SettingsManager {
         const settings = JSON.parse(content);
         return SettingsManager.migrateSettings(settings);
     }
-    static tryLoadFromStorage(storage, scope) {
+    static tryLoadFromStorage(storage, scope, projectTrusted = true) {
         try {
-            return { settings: SettingsManager.loadFromStorage(storage, scope), error: null };
+            return { settings: SettingsManager.loadFromStorage(storage, scope, projectTrusted), error: null };
         }
         catch (error) {
             return { settings: {}, error: error };
@@ -252,6 +258,30 @@ export class SettingsManager {
     getProjectSettings() {
         return structuredClone(this.projectSettings);
     }
+    isProjectTrusted() {
+        return this.projectTrusted;
+    }
+    setProjectTrusted(trusted) {
+        if (this.projectTrusted === trusted) {
+            return;
+        }
+        this.projectTrusted = trusted;
+        this.modifiedProjectFields.clear();
+        this.modifiedProjectNestedFields.clear();
+        if (!trusted) {
+            this.projectSettings = {};
+            this.projectSettingsLoadError = null;
+            this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+            return;
+        }
+        const projectLoad = SettingsManager.tryLoadFromStorage(this.storage, "project", trusted);
+        this.projectSettings = projectLoad.settings;
+        this.projectSettingsLoadError = projectLoad.error;
+        if (projectLoad.error) {
+            this.recordError("project", projectLoad.error);
+        }
+        this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+    }
     async reload() {
         await this.writeQueue;
         const globalLoad = SettingsManager.tryLoadFromStorage(this.storage, "global");
@@ -267,7 +297,7 @@ export class SettingsManager {
         this.modifiedNestedFields.clear();
         this.modifiedProjectFields.clear();
         this.modifiedProjectNestedFields.clear();
-        const projectLoad = SettingsManager.tryLoadFromStorage(this.storage, "project");
+        const projectLoad = SettingsManager.tryLoadFromStorage(this.storage, "project", this.projectTrusted);
         if (!projectLoad.error) {
             this.projectSettings = projectLoad.settings;
             this.projectSettingsLoadError = null;
@@ -302,6 +332,11 @@ export class SettingsManager {
             this.modifiedProjectNestedFields.get(field).add(nestedKey);
         }
     }
+    assertProjectTrustedForWrite() {
+        if (!this.projectTrusted) {
+            throw new Error("Project is not trusted; refusing to write project settings");
+        }
+    }
     recordError(scope, error) {
         const normalizedError = error instanceof Error ? error : new Error(String(error));
         this.errors.push({ scope, error: normalizedError });
@@ -318,6 +353,9 @@ export class SettingsManager {
     enqueueWrite(scope, task) {
         this.writeQueue = this.writeQueue
             .then(() => {
+            if (scope === "project") {
+                this.assertProjectTrustedForWrite();
+            }
             task();
             this.clearModifiedScope(scope);
         })
@@ -370,6 +408,7 @@ export class SettingsManager {
         });
     }
     saveProjectSettings(settings) {
+        this.assertProjectTrustedForWrite();
         this.projectSettings = structuredClone(settings);
         this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
         if (this.projectSettingsLoadError) {
@@ -381,6 +420,13 @@ export class SettingsManager {
         this.enqueueWrite("project", () => {
             this.persistScopedSettings("project", snapshotProjectSettings, modifiedFields, modifiedNestedFields);
         });
+    }
+    updateProjectSettings(field, update) {
+        this.assertProjectTrustedForWrite();
+        const projectSettings = structuredClone(this.projectSettings);
+        update(projectSettings);
+        this.markProjectModified(field);
+        this.saveProjectSettings(projectSettings);
     }
     async flush() {
         await this.writeQueue;
@@ -561,6 +607,15 @@ export class SettingsManager {
         this.markModified("quietStartup");
         this.save();
     }
+    getDefaultProjectTrust() {
+        const value = this.globalSettings.defaultProjectTrust;
+        return value === "always" || value === "never" ? value : "ask";
+    }
+    setDefaultProjectTrust(defaultProjectTrust) {
+        this.globalSettings.defaultProjectTrust = defaultProjectTrust;
+        this.markModified("defaultProjectTrust");
+        this.save();
+    }
     getShellCommandPrefix() {
         return this.settings.shellCommandPrefix;
     }
@@ -602,10 +657,9 @@ export class SettingsManager {
         this.save();
     }
     setProjectPackages(packages) {
-        const projectSettings = structuredClone(this.projectSettings);
-        projectSettings.packages = packages;
-        this.markProjectModified("packages");
-        this.saveProjectSettings(projectSettings);
+        this.updateProjectSettings("packages", (settings) => {
+            settings.packages = packages;
+        });
     }
     getExtensionPaths() {
         return [...(this.settings.extensions ?? [])];
@@ -616,10 +670,9 @@ export class SettingsManager {
         this.save();
     }
     setProjectExtensionPaths(paths) {
-        const projectSettings = structuredClone(this.projectSettings);
-        projectSettings.extensions = paths;
-        this.markProjectModified("extensions");
-        this.saveProjectSettings(projectSettings);
+        this.updateProjectSettings("extensions", (settings) => {
+            settings.extensions = paths;
+        });
     }
     getSkillPaths() {
         return [...(this.settings.skills ?? [])];
@@ -630,10 +683,9 @@ export class SettingsManager {
         this.save();
     }
     setProjectSkillPaths(paths) {
-        const projectSettings = structuredClone(this.projectSettings);
-        projectSettings.skills = paths;
-        this.markProjectModified("skills");
-        this.saveProjectSettings(projectSettings);
+        this.updateProjectSettings("skills", (settings) => {
+            settings.skills = paths;
+        });
     }
     getPromptTemplatePaths() {
         return [...(this.settings.prompts ?? [])];
@@ -644,10 +696,9 @@ export class SettingsManager {
         this.save();
     }
     setProjectPromptTemplatePaths(paths) {
-        const projectSettings = structuredClone(this.projectSettings);
-        projectSettings.prompts = paths;
-        this.markProjectModified("prompts");
-        this.saveProjectSettings(projectSettings);
+        this.updateProjectSettings("prompts", (settings) => {
+            settings.prompts = paths;
+        });
     }
     getThemePaths() {
         return [...(this.settings.themes ?? [])];
@@ -658,10 +709,9 @@ export class SettingsManager {
         this.save();
     }
     setProjectThemePaths(paths) {
-        const projectSettings = structuredClone(this.projectSettings);
-        projectSettings.themes = paths;
-        this.markProjectModified("themes");
-        this.saveProjectSettings(projectSettings);
+        this.updateProjectSettings("themes", (settings) => {
+            settings.themes = paths;
+        });
     }
     getEnableSkillCommands() {
         return this.settings.enableSkillCommands ?? true;

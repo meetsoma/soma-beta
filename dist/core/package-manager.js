@@ -12,8 +12,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 function getEnv() {
     if (process.platform !== "linux" || Object.keys(process.env).length > 0) {
         return process.env;
@@ -82,6 +82,12 @@ function toPosixPath(p) {
 }
 function getHomeDir() {
     return process.env.HOME || homedir();
+}
+export function getExtensionTempFolder(agentDir) {
+    const tempFolder = join(agentDir, "tmp", "extensions");
+    mkdirSync(tempFolder, { recursive: true, mode: 0o700 });
+    chmodSync(tempFolder, 0o700);
+    return tempFolder;
 }
 function prefixIgnorePattern(line, prefix) {
     const trimmed = line.trim();
@@ -746,6 +752,7 @@ export class DefaultPackageManager {
     async install(source, options) {
         const parsed = this.parseSource(source);
         const scope = options?.local ? "project" : "user";
+        this.assertProjectTrustedForScope(scope);
         await this.withProgress("install", source, `Installing ${source}...`, async () => {
             if (parsed.type === "npm") {
                 await this.installNpm(parsed, scope, false);
@@ -772,6 +779,7 @@ export class DefaultPackageManager {
     async remove(source, options) {
         const parsed = this.parseSource(source);
         const scope = options?.local ? "project" : "user";
+        this.assertProjectTrustedForScope(scope);
         await this.withProgress("remove", source, `Removing ${source}...`, async () => {
             if (parsed.type === "npm") {
                 await this.uninstallNpm(parsed, scope);
@@ -1376,6 +1384,11 @@ export class DefaultPackageManager {
         const version = match[2];
         return { name, version };
     }
+    assertProjectTrustedForScope(scope) {
+        if (scope === "project" && !this.settingsManager.isProjectTrusted()) {
+            throw new Error("Project is not trusted; refusing to access project package storage");
+        }
+    }
     getNpmCommand() {
         const configuredCommand = this.settingsManager.getNpmCommand();
         if (!configuredCommand || configuredCommand.length === 0) {
@@ -1577,6 +1590,7 @@ export class DefaultPackageManager {
             return this.getTemporaryDir("npm");
         }
         if (scope === "project") {
+            this.assertProjectTrustedForScope(scope);
             return join(this.cwd, CONFIG_DIR_NAME, "npm");
         }
         return join(this.agentDir, "npm");
@@ -1615,6 +1629,7 @@ export class DefaultPackageManager {
             return join(this.getTemporaryDir("npm"), "node_modules", source.name);
         }
         if (scope === "project") {
+            this.assertProjectTrustedForScope(scope);
             return join(this.cwd, CONFIG_DIR_NAME, "npm", "node_modules", source.name);
         }
         return join(this.agentDir, "npm", "node_modules", source.name);
@@ -1639,29 +1654,41 @@ export class DefaultPackageManager {
         if (scope === "temporary") {
             return this.getTemporaryDir(`git-${source.host}`, source.path);
         }
-        if (scope === "project") {
-            return join(this.cwd, CONFIG_DIR_NAME, "git", source.host, source.path);
+        const installRoot = this.getGitInstallRoot(scope);
+        if (!installRoot) {
+            throw new Error("Missing git install root");
         }
-        return join(this.agentDir, "git", source.host, source.path);
+        return this.resolveManagedPath(installRoot, source.host, source.path);
     }
     getGitInstallRoot(scope) {
         if (scope === "temporary") {
             return undefined;
         }
         if (scope === "project") {
+            this.assertProjectTrustedForScope(scope);
             return join(this.cwd, CONFIG_DIR_NAME, "git");
         }
         return join(this.agentDir, "git");
     }
     getTemporaryDir(prefix, suffix) {
+        const root = this.resolveManagedPath(getExtensionTempFolder(this.agentDir), prefix);
         const hash = createHash("sha256")
             .update(`${prefix}-${suffix ?? ""}`)
             .digest("hex")
             .slice(0, 8);
-        return join(tmpdir(), "pi-extensions", prefix, hash, suffix ?? "");
+        return this.resolveManagedPath(root, hash, suffix ?? "");
+    }
+    resolveManagedPath(root, ...parts) {
+        const resolvedRoot = resolve(root);
+        const resolvedPath = resolve(resolvedRoot, ...parts);
+        if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}${sep}`)) {
+            throw new Error(`Refusing to use path outside package install root: ${resolvedPath}`);
+        }
+        return resolvedPath;
     }
     getBaseDirForScope(scope) {
         if (scope === "project") {
+            this.assertProjectTrustedForScope(scope);
             return join(this.cwd, CONFIG_DIR_NAME);
         }
         if (scope === "user") {
@@ -1857,7 +1884,10 @@ export class DefaultPackageManager {
             themes: join(projectBaseDir, "themes"),
         };
         const userAgentsSkillsDir = join(getHomeDir(), ".agents", "skills");
-        const projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(this.cwd).filter((dir) => resolve(dir) !== resolve(userAgentsSkillsDir));
+        const projectTrusted = this.settingsManager.isProjectTrusted();
+        const projectAgentsSkillDirs = projectTrusted
+            ? collectAncestorAgentsSkillDirs(this.cwd).filter((dir) => resolve(dir) !== resolve(userAgentsSkillsDir))
+            : [];
         const addResources = (resourceType, paths, metadata, overrides, baseDir) => {
             const target = this.getTargetMap(accumulator, resourceType);
             for (const path of paths) {
@@ -1865,10 +1895,12 @@ export class DefaultPackageManager {
                 this.addResource(target, path, metadata, enabled);
             }
         };
-        // Project extensions from .pi/
-        addResources("extensions", collectAutoExtensionEntries(projectDirs.extensions), projectMetadata, projectOverrides.extensions, projectBaseDir);
-        // Project skills from .pi/
-        addResources("skills", collectAutoSkillEntries(projectDirs.skills, "pi"), projectMetadata, projectOverrides.skills, projectBaseDir);
+        if (projectTrusted) {
+            // Project extensions from .pi/
+            addResources("extensions", collectAutoExtensionEntries(projectDirs.extensions), projectMetadata, projectOverrides.extensions, projectBaseDir);
+            // Project skills from .pi/
+            addResources("skills", collectAutoSkillEntries(projectDirs.skills, "pi"), projectMetadata, projectOverrides.skills, projectBaseDir);
+        }
         // Project skills from .agents/ (each with its own baseDir)
         for (const agentsSkillsDir of projectAgentsSkillDirs) {
             const agentsBaseDir = dirname(agentsSkillsDir); // the .agents directory
@@ -1878,8 +1910,10 @@ export class DefaultPackageManager {
             };
             addResources("skills", collectAutoSkillEntries(agentsSkillsDir, "agents"), agentsMetadata, projectOverrides.skills, agentsBaseDir);
         }
-        addResources("prompts", collectAutoPromptEntries(projectDirs.prompts), projectMetadata, projectOverrides.prompts, projectBaseDir);
-        addResources("themes", collectAutoThemeEntries(projectDirs.themes), projectMetadata, projectOverrides.themes, projectBaseDir);
+        if (projectTrusted) {
+            addResources("prompts", collectAutoPromptEntries(projectDirs.prompts), projectMetadata, projectOverrides.prompts, projectBaseDir);
+            addResources("themes", collectAutoThemeEntries(projectDirs.themes), projectMetadata, projectOverrides.themes, projectBaseDir);
+        }
         // User extensions from ~/.pi/agent/
         addResources("extensions", collectAutoExtensionEntries(userDirs.extensions), userMetadata, userOverrides.extensions, globalBaseDir);
         // User skills from ~/.pi/agent/

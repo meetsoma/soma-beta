@@ -1,9 +1,13 @@
 import { Markdown } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { selectConfig } from "./cli/config-selector.js";
+import { createProjectTrustContext } from "./cli/project-trust.js";
 import { APP_NAME, detectInstallMethod, getAgentDir, getPackageDir, getSelfUpdateCommand, getSelfUpdateUnavailableInstruction, PACKAGE_NAME, VERSION, } from "./config.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
+import { resolveProjectTrusted } from "./core/project-trust.js";
+import { DefaultResourceLoader } from "./core/resource-loader.js";
 import { SettingsManager } from "./core/settings-manager.js";
+import { hasProjectTrustInputs, ProjectTrustStore } from "./core/trust-manager.js";
 import { spawnProcess } from "./utils/child-process.js";
 import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.js";
 import { cleanupWindowsSelfUpdateQuarantine, quarantineWindowsNativeDependencies, } from "./utils/windows-self-update.js";
@@ -35,13 +39,13 @@ function reportSettingsErrors(settingsManager, context) {
 function getPackageCommandUsage(command) {
     switch (command) {
         case "install":
-            return `${APP_NAME} install <source> [-l]`;
+            return `${APP_NAME} install <source> [-l] [--approve|--no-approve]`;
         case "remove":
-            return `${APP_NAME} remove <source> [-l]`;
+            return `${APP_NAME} remove <source> [-l] [--approve|--no-approve]`;
         case "update":
-            return `${APP_NAME} update [source|self|pi] [--self] [--extensions] [--extension <source>] [--force]`;
+            return `${APP_NAME} update [source|self|pi] [--self] [--extensions] [--extension <source>] [--approve|--no-approve] [--force]`;
         case "list":
-            return `${APP_NAME} list`;
+            return `${APP_NAME} list [--approve|--no-approve]`;
     }
 }
 function printPackageCommandHelp(command) {
@@ -53,7 +57,9 @@ function printPackageCommandHelp(command) {
 Install a package and add it to settings.
 
 Options:
-  -l, --local    Install project-locally (.pi/settings.json)
+  -l, --local       Install project-locally (.pi/settings.json)
+  -a, --approve     Trust project-local files for this command
+  -na, --no-approve Ignore project-local files for this command
 
 Examples:
   ${APP_NAME} install npm:@foo/bar
@@ -72,7 +78,9 @@ Remove a package and its source from settings.
 Alias: ${APP_NAME} uninstall <source> [-l]
 
 Options:
-  -l, --local    Remove from project settings (.pi/settings.json)
+  -l, --local       Remove from project settings (.pi/settings.json)
+  -a, --approve     Trust project-local files for this command
+  -na, --no-approve Ignore project-local files for this command
 
 Examples:
   ${APP_NAME} remove npm:@foo/bar
@@ -89,6 +97,8 @@ Options:
   --self                  Update pi only
   --extensions            Update installed packages only
   --extension <source>    Update one package only
+  -a, --approve           Trust project-local files for this command
+  -na, --no-approve       Ignore project-local files for this command
   --force                 Reinstall pi even if the current version is latest
 
 Short forms:
@@ -102,6 +112,10 @@ Short forms:
   ${getPackageCommandUsage("list")}
 
 List installed packages from user and project settings.
+
+Options:
+  -a, --approve      Trust project-local files for this command
+  -na, --no-approve  Ignore project-local files for this command
 `);
             return;
     }
@@ -120,6 +134,7 @@ function parsePackageCommand(args) {
     }
     let local = false;
     let force = false;
+    let projectTrustOverride;
     let help = false;
     let invalidOption;
     let invalidArgument;
@@ -160,6 +175,14 @@ function parsePackageCommand(args) {
             else {
                 invalidOption = invalidOption ?? arg;
             }
+            continue;
+        }
+        if (arg === "--approve" || arg === "-a") {
+            projectTrustOverride = true;
+            continue;
+        }
+        if (arg === "--no-approve" || arg === "-na") {
+            projectTrustOverride = false;
             continue;
         }
         if (arg === "--force") {
@@ -244,6 +267,7 @@ function parsePackageCommand(args) {
         updateTarget,
         local,
         force,
+        projectTrustOverride,
         help,
         invalidOption,
         invalidArgument,
@@ -337,13 +361,71 @@ function prepareWindowsNpmSelfUpdate() {
     cleanupWindowsSelfUpdateQuarantine(packageDir);
     quarantineWindowsNativeDependencies(packageDir);
 }
-export async function handleConfigCommand(args) {
+function parseProjectTrustOverride(args) {
+    let trustOverride;
+    for (const arg of args) {
+        if (arg === "--approve" || arg === "-a") {
+            trustOverride = true;
+        }
+        else if (arg === "--no-approve" || arg === "-na") {
+            trustOverride = false;
+        }
+    }
+    return trustOverride;
+}
+function getCommandAppMode() {
+    return process.stdin.isTTY && process.stdout.isTTY ? "interactive" : "print";
+}
+function reportProjectTrustWarnings(warnings) {
+    for (const warning of warnings) {
+        console.error(chalk.yellow(`Warning: ${warning}`));
+    }
+}
+async function createCommandSettingsManager(options) {
+    const settingsManager = SettingsManager.create(options.cwd, options.agentDir, { projectTrusted: false });
+    const projectTrustWarnings = [];
+    const appMode = getCommandAppMode();
+    const extensionsResult = options.projectTrustOverride === undefined && hasProjectTrustInputs(options.cwd)
+        ? await new DefaultResourceLoader({
+            cwd: options.cwd,
+            agentDir: options.agentDir,
+            settingsManager,
+            extensionFactories: options.extensionFactories,
+        }).loadProjectTrustExtensions()
+        : undefined;
+    for (const error of extensionsResult?.errors ?? []) {
+        projectTrustWarnings.push(`Failed to load extension "${error.path}": ${error.error}`);
+    }
+    const projectTrusted = await resolveProjectTrusted({
+        cwd: options.cwd,
+        trustStore: new ProjectTrustStore(options.agentDir),
+        trustOverride: options.projectTrustOverride,
+        defaultProjectTrust: settingsManager.getDefaultProjectTrust(),
+        extensionsResult,
+        projectTrustContext: createProjectTrustContext({
+            cwd: options.cwd,
+            mode: appMode,
+            settingsManager,
+            hasUI: appMode === "interactive",
+        }),
+        onExtensionError: (message) => projectTrustWarnings.push(message),
+    });
+    settingsManager.setProjectTrusted(projectTrusted);
+    return { settingsManager, projectTrustWarnings };
+}
+export async function handleConfigCommand(args, runtimeOptions = {}) {
     if (args[0] !== "config") {
         return false;
     }
     const cwd = process.cwd();
     const agentDir = getAgentDir();
-    const settingsManager = SettingsManager.create(cwd, agentDir);
+    const { settingsManager, projectTrustWarnings } = await createCommandSettingsManager({
+        cwd,
+        agentDir,
+        projectTrustOverride: parseProjectTrustOverride(args),
+        extensionFactories: runtimeOptions.extensionFactories,
+    });
+    reportProjectTrustWarnings(projectTrustWarnings);
     reportSettingsErrors(settingsManager, "config command");
     const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
     const resolvedPaths = await packageManager.resolve();
@@ -355,7 +437,7 @@ export async function handleConfigCommand(args) {
     });
     process.exit(0);
 }
-export async function handlePackageCommand(args) {
+export async function handlePackageCommand(args, runtimeOptions = {}) {
     const options = parsePackageCommand(args);
     if (!options) {
         return false;
@@ -397,7 +479,19 @@ export async function handlePackageCommand(args) {
     }
     const cwd = process.cwd();
     const agentDir = getAgentDir();
-    const settingsManager = SettingsManager.create(cwd, agentDir);
+    const writesProjectPackageConfig = (options.command === "install" || options.command === "remove") && options.local;
+    const { settingsManager, projectTrustWarnings } = await createCommandSettingsManager({
+        cwd,
+        agentDir,
+        projectTrustOverride: options.projectTrustOverride,
+        extensionFactories: runtimeOptions.extensionFactories,
+    });
+    reportProjectTrustWarnings(projectTrustWarnings);
+    if (!settingsManager.isProjectTrusted() && writesProjectPackageConfig) {
+        console.error(chalk.red("Project is not trusted. Use --approve to modify local package config."));
+        process.exitCode = 1;
+        return true;
+    }
     reportSettingsErrors(settingsManager, "package command");
     const selfUpdateNpmCommand = settingsManager.getGlobalSettings().npmCommand;
     const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });

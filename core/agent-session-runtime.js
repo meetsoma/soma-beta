@@ -149,6 +149,7 @@ export class AgentSessionRuntime {
             agentDir: this.services.agentDir,
             sessionManager,
             sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
+            projectTrustContext: options?.projectTrustContextFactory?.(sessionManager.getCwd()),
         }));
         await this.finishSessionReplacement(options?.withSession);
         return { cancelled: false };
@@ -160,7 +161,9 @@ export class AgentSessionRuntime {
         }
         const previousSessionFile = this.session.sessionFile;
         const sessionDir = this.session.sessionManager.getSessionDir();
-        const sessionManager = SessionManager.create(this.cwd, sessionDir);
+        const sessionManager = this.session.sessionManager.isPersisted()
+            ? SessionManager.create(this.cwd, sessionDir)
+            : SessionManager.inMemory(this.cwd);
         if (options?.parentSession) {
             sessionManager.newSession({ parentSession: options.parentSession });
         }

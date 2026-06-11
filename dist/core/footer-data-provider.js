@@ -83,6 +83,15 @@ function resolveBranchWithGitAsync(repoDir) {
         });
     });
 }
+function isWslEnvironment() {
+    return process.platform === "linux" && !!(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
+}
+function isWindowsMountedRepoPath(repoDir) {
+    return /^\/mnt\/[a-z](?:\/|$)/i.test(repoDir);
+}
+function shouldPollGitHead(repoDir) {
+    return isWslEnvironment() && isWindowsMountedRepoPath(repoDir);
+}
 /**
  * Provides git branch and extension statuses - data not otherwise accessible to extensions.
  * Token stats, model info available via ctx.sessionManager and ctx.model.
@@ -94,6 +103,8 @@ export class FooterDataProvider {
     cachedBranch = undefined;
     gitPaths = undefined;
     headWatcher = null;
+    headWatchFilePath = null;
+    headWatchFileListener = null;
     reftableWatcher = null;
     reftableTablesListWatcher = null;
     reftableTablesListPath = null;
@@ -249,6 +260,11 @@ export class FooterDataProvider {
     clearGitWatchers() {
         closeWatcher(this.headWatcher);
         this.headWatcher = null;
+        if (this.headWatchFilePath && this.headWatchFileListener) {
+            unwatchFile(this.headWatchFilePath, this.headWatchFileListener);
+            this.headWatchFilePath = null;
+            this.headWatchFileListener = null;
+        }
         closeWatcher(this.reftableWatcher);
         this.reftableWatcher = null;
         closeWatcher(this.reftableTablesListWatcher);
@@ -279,6 +295,7 @@ export class FooterDataProvider {
         this.clearGitWatchers();
         if (!this.gitPaths)
             return;
+        const pollGitHead = shouldPollGitHead(this.gitPaths.repoDir);
         // Watch the directory containing HEAD, not HEAD itself.
         // Git uses atomic writes (write temp, rename over HEAD), which changes the inode.
         // fs.watch on a file stops working after the inode changes.
@@ -287,7 +304,18 @@ export class FooterDataProvider {
                 this.scheduleRefresh();
             }
         }, () => this.handleGitWatcherError());
-        if (!this.headWatcher) {
+        if (pollGitHead) {
+            this.headWatchFilePath = this.gitPaths.headPath;
+            this.headWatchFileListener = (current, previous) => {
+                if (current.mtimeMs !== previous.mtimeMs ||
+                    current.ctimeMs !== previous.ctimeMs ||
+                    current.size !== previous.size) {
+                    this.scheduleRefresh();
+                }
+            };
+            watchFile(this.headWatchFilePath, { interval: 1000 }, this.headWatchFileListener);
+        }
+        if (!this.headWatcher && !pollGitHead) {
             return;
         }
         // In reftable repos, branch switches update files in the reftable directory

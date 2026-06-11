@@ -185,7 +185,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
  * @param options - Generation options
  */
 export async function generateBranchSummary(entries, options) {
-    const { model, apiKey, headers, signal, customInstructions, replaceInstructions, reserveTokens = 16384 } = options;
+    const { model, apiKey, headers, signal, customInstructions, replaceInstructions, reserveTokens = 16384, streamFn, } = options;
     // Token budget = context window minus reserved space for prompt + response
     const contextWindow = model.contextWindow || 128000;
     const tokenBudget = contextWindow - reserveTokens;
@@ -216,8 +216,14 @@ export async function generateBranchSummary(entries, options) {
             timestamp: Date.now(),
         },
     ];
-    // Call LLM for summarization
-    const response = await completeSimple(model, { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }, { apiKey, headers, signal, maxTokens: 2048 });
+    // Call LLM for summarization. Prefer the session stream function so SDK
+    // request behavior (timeouts, retries, attribution headers) stays consistent
+    // without running through agent state/events.
+    const context = { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages };
+    const requestOptions = { apiKey, headers, signal, maxTokens: 2048 };
+    const response = streamFn
+        ? await (await streamFn(model, context, requestOptions)).result()
+        : await completeSimple(model, context, requestOptions);
     // Check if aborted or errored
     if (response.stopReason === "aborted") {
         return { aborted: true };

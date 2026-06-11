@@ -323,14 +323,14 @@ export async function loadExtensionFromFactory(factory, cwd, eventBus, runtime, 
 /**
  * Load extensions from paths.
  */
-export async function loadExtensions(paths, cwd, eventBus) {
+export async function loadExtensions(paths, cwd, eventBus, runtime) {
     const extensions = [];
     const errors = [];
     const resolvedCwd = resolvePath(cwd);
     const resolvedEventBus = eventBus ?? createEventBus();
-    const runtime = createExtensionRuntime();
+    const resolvedRuntime = runtime ?? createExtensionRuntime();
     for (const extPath of paths) {
-        const { extension, error } = await loadExtension(extPath, resolvedCwd, resolvedEventBus, runtime);
+        const { extension, error } = await loadExtension(extPath, resolvedCwd, resolvedEventBus, resolvedRuntime);
         if (error) {
             errors.push({ path: extPath, error });
             continue;
@@ -342,7 +342,7 @@ export async function loadExtensions(paths, cwd, eventBus) {
     return {
         extensions,
         errors,
-        runtime,
+        runtime: resolvedRuntime,
     };
 }
 function readPiManifest(packageJsonPath) {

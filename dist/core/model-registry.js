@@ -101,6 +101,7 @@ const OpenAICompletionsCompatSchema = Type.Object({
     supportsLongCacheRetention: Type.Optional(Type.Boolean()),
 });
 const OpenAIResponsesCompatSchema = Type.Object({
+    supportsDeveloperRole: Type.Optional(Type.Boolean()),
     sendSessionIdHeader: Type.Optional(Type.Boolean()),
     supportsLongCacheRetention: Type.Optional(Type.Boolean()),
 });

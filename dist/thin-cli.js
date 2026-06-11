@@ -731,6 +731,24 @@ async function healthCheck() {
     check(false, "", "git not found");
   }
 
+  // Cadence adoption hint (advisory — not a warning/issue). Project-specific:
+  // the meta-workflow protocol is installed but no META_WORKFLOW.md instance
+  // exists yet, so the cadence is inert. No-ops gracefully outside a project.
+  try {
+    const projSoma = join(process.cwd(), ".soma");
+    const hasCadenceProto = existsSync(join(projSoma, "amps", "protocols", "meta-workflow.md"));
+    const hasCadenceInstance = [
+      join(projSoma, "META_WORKFLOW.md"),            // default (docs)
+      join(projSoma, "cycles", "META_WORKFLOW.md"),  // board convention
+      join(projSoma, "releases", "META_WORKFLOW.md"), // release-ledger convention
+    ].some(p => existsSync(p));
+    if (hasCadenceProto && !hasCadenceInstance) {
+      console.log("");
+      console.log(`  ${cyan("ℹ")} meta-workflow protocol installed, but no cadence instance yet.`);
+      console.log(`    ${dim('Ask Soma "set up the meta-workflow cadence" — or see')} ${green("docs/meta-workflow.md")}`);
+    }
+  } catch { /* advisory only */ }
+
   console.log("");
   if (issues === 0 && warnings === 0) {
     console.log(`  ${green("✓ All checks passed")}`);

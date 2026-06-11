@@ -14,6 +14,7 @@
 export const BUILT_IN_PROVIDER_DISPLAY_NAMES = {
     anthropic: "Anthropic",
     "amazon-bedrock": "Amazon Bedrock",
+    "ant-ling": "Ant Ling",
     "azure-openai-responses": "Azure OpenAI Responses",
     cerebras: "Cerebras",
     "cloudflare-ai-gateway": "Cloudflare AI Gateway",
@@ -30,6 +31,7 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES = {
     "minimax-cn": "MiniMax (China)",
     moonshotai: "Moonshot AI",
     "moonshotai-cn": "Moonshot AI (China)",
+    nvidia: "NVIDIA NIM",
     opencode: "OpenCode Zen",
     "opencode-go": "OpenCode Go",
     openai: "OpenAI",
@@ -38,6 +40,7 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES = {
     "vercel-ai-gateway": "Vercel AI Gateway",
     xai: "xAI",
     zai: "ZAI",
+    "zai-coding-cn": "ZAI Coding Plan (China)",
     xiaomi: "Xiaomi MiMo",
     "xiaomi-token-plan-cn": "Xiaomi MiMo Token Plan (China)",
     "xiaomi-token-plan-ams": "Xiaomi MiMo Token Plan (Amsterdam)",

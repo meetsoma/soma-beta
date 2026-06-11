@@ -13,9 +13,11 @@
 
 import { uuidv7 } from "@earendil-works/pi-agent-core";
 import { randomUUID } from "crypto";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync, } from "fs";
-import { readdir, readFile, stat } from "fs/promises";
+import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readdirSync, readSync, statSync, writeFileSync, } from "fs";
+import { readdir, stat } from "fs/promises";
 import { join, resolve } from "path";
+import { createInterface } from "readline";
+import { StringDecoder } from "string_decoder";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.js";
 import { normalizePath, resolvePath } from "../utils/paths.js";
 import { createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage, } from "./messages.js";
@@ -241,24 +243,52 @@ export function getDefaultSessionDir(cwd, agentDir = getDefaultAgentDir()) {
     }
     return sessionDir;
 }
+const SESSION_READ_BUFFER_SIZE = 1024 * 1024;
+function parseSessionEntryLine(line) {
+    if (!line.trim())
+        return null;
+    try {
+        return JSON.parse(line);
+    }
+    catch {
+        // Skip malformed lines
+        return null;
+    }
+}
 /** Exported for testing */
 export function loadEntriesFromFile(filePath) {
     const resolvedFilePath = normalizePath(filePath);
     if (!existsSync(resolvedFilePath))
         return [];
-    const content = readFileSync(resolvedFilePath, "utf8");
     const entries = [];
-    const lines = content.trim().split("\n");
-    for (const line of lines) {
-        if (!line.trim())
-            continue;
-        try {
-            const entry = JSON.parse(line);
-            entries.push(entry);
+    const fd = openSync(resolvedFilePath, "r");
+    try {
+        const decoder = new StringDecoder("utf8");
+        const buffer = Buffer.allocUnsafe(SESSION_READ_BUFFER_SIZE);
+        let pending = "";
+        while (true) {
+            const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+            if (bytesRead === 0)
+                break;
+            pending += decoder.write(buffer.subarray(0, bytesRead));
+            let lineStart = 0;
+            let newlineIndex = pending.indexOf("\n", lineStart);
+            while (newlineIndex !== -1) {
+                const entry = parseSessionEntryLine(pending.slice(lineStart, newlineIndex));
+                if (entry)
+                    entries.push(entry);
+                lineStart = newlineIndex + 1;
+                newlineIndex = pending.indexOf("\n", lineStart);
+            }
+            pending = pending.slice(lineStart);
         }
-        catch {
-            // Skip malformed lines
-        }
+        pending += decoder.end();
+        const finalEntry = parseSessionEntryLine(pending);
+        if (finalEntry)
+            entries.push(finalEntry);
+    }
+    finally {
+        closeSync(fd);
     }
     // Validate session header
     if (entries.length === 0)
@@ -327,73 +357,53 @@ function extractTextContent(message) {
         .map((block) => block.text)
         .join(" ");
 }
-function getLastActivityTime(entries) {
-    let lastActivityTime;
-    for (const entry of entries) {
-        if (entry.type !== "message")
-            continue;
-        const message = entry.message;
-        if (!isMessageWithContent(message))
-            continue;
-        if (message.role !== "user" && message.role !== "assistant")
-            continue;
-        const msgTimestamp = message.timestamp;
-        if (typeof msgTimestamp === "number") {
-            lastActivityTime = Math.max(lastActivityTime ?? 0, msgTimestamp);
-            continue;
-        }
-        const entryTimestamp = entry.timestamp;
-        if (typeof entryTimestamp === "string") {
-            const t = new Date(entryTimestamp).getTime();
-            if (!Number.isNaN(t)) {
-                lastActivityTime = Math.max(lastActivityTime ?? 0, t);
-            }
-        }
+function getMessageActivityTime(entry) {
+    const message = entry.message;
+    if (!isMessageWithContent(message))
+        return undefined;
+    if (message.role !== "user" && message.role !== "assistant")
+        return undefined;
+    const msgTimestamp = message.timestamp;
+    if (typeof msgTimestamp === "number") {
+        return msgTimestamp;
     }
-    return lastActivityTime;
-}
-function getSessionModifiedDate(entries, header, statsMtime) {
-    const lastActivityTime = getLastActivityTime(entries);
-    if (typeof lastActivityTime === "number" && lastActivityTime > 0) {
-        return new Date(lastActivityTime);
-    }
-    const headerTime = typeof header.timestamp === "string" ? new Date(header.timestamp).getTime() : NaN;
-    return !Number.isNaN(headerTime) ? new Date(headerTime) : statsMtime;
+    const t = new Date(entry.timestamp).getTime();
+    return Number.isNaN(t) ? undefined : t;
 }
 async function buildSessionInfo(filePath) {
     try {
-        const content = await readFile(filePath, "utf8");
-        const entries = [];
-        const lines = content.trim().split("\n");
-        for (const line of lines) {
-            if (!line.trim())
-                continue;
-            try {
-                entries.push(JSON.parse(line));
-            }
-            catch {
-                // Skip malformed lines
-            }
-        }
-        if (entries.length === 0)
-            return null;
-        const header = entries[0];
-        if (header.type !== "session")
-            return null;
         const stats = await stat(filePath);
+        let header = null;
         let messageCount = 0;
         let firstMessage = "";
         const allMessages = [];
         let name;
-        for (const entry of entries) {
+        let lastActivityTime;
+        const rl = createInterface({
+            input: createReadStream(filePath, { encoding: "utf8" }),
+            crlfDelay: Infinity,
+        });
+        for await (const line of rl) {
+            const entry = parseSessionEntryLine(line);
+            if (!entry)
+                continue;
+            if (!header) {
+                if (entry.type !== "session")
+                    return null;
+                header = entry;
+                continue;
+            }
             // Extract session name (use latest, including explicit clears)
             if (entry.type === "session_info") {
-                const infoEntry = entry;
-                name = infoEntry.name?.trim() || undefined;
+                name = entry.name?.trim() || undefined;
             }
             if (entry.type !== "message")
                 continue;
             messageCount++;
+            const activityTime = getMessageActivityTime(entry);
+            if (typeof activityTime === "number") {
+                lastActivityTime = Math.max(lastActivityTime ?? 0, activityTime);
+            }
             const message = entry.message;
             if (!isMessageWithContent(message))
                 continue;
@@ -407,9 +417,16 @@ async function buildSessionInfo(filePath) {
                 firstMessage = textContent;
             }
         }
+        if (!header)
+            return null;
         const cwd = typeof header.cwd === "string" ? header.cwd : "";
         const parentSessionPath = header.parentSession;
-        const modified = getSessionModifiedDate(entries, header, stats.mtime);
+        const headerTime = typeof header.timestamp === "string" ? new Date(header.timestamp).getTime() : NaN;
+        const modified = typeof lastActivityTime === "number" && lastActivityTime > 0
+            ? new Date(lastActivityTime)
+            : !Number.isNaN(headerTime)
+                ? new Date(headerTime)
+                : stats.mtime;
         return {
             path: filePath,
             id: header.id,
@@ -602,8 +619,15 @@ export class SessionManager {
     _rewriteFile() {
         if (!this.persist || !this.sessionFile)
             return;
-        const content = `${this.fileEntries.map((e) => JSON.stringify(e)).join("\n")}\n`;
-        writeFileSync(this.sessionFile, content);
+        const fd = openSync(this.sessionFile, "w");
+        try {
+            for (const entry of this.fileEntries) {
+                writeFileSync(fd, `${JSON.stringify(entry)}\n`);
+            }
+        }
+        finally {
+            closeSync(fd);
+        }
     }
     isPersisted() {
         return this.persist;

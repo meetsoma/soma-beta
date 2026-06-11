@@ -26,6 +26,7 @@ import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.js";
 import { normalizePath } from "../utils/paths.js";
 import { resolveConfigValue } from "./resolve-config-value.js";
+const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 };
 export class FileAuthStorageBackend {
     authPath;
     constructor(authPath = join(getAgentDir(), "auth.json")) {
@@ -39,7 +40,7 @@ export class FileAuthStorageBackend {
     }
     ensureFileExists() {
         if (!existsSync(this.authPath)) {
-            writeFileSync(this.authPath, "{}", "utf-8");
+            writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
             chmodSync(this.authPath, 0o600);
         }
     }
@@ -76,7 +77,7 @@ export class FileAuthStorageBackend {
             const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
             const { result, next } = fn(current);
             if (next !== undefined) {
-                writeFileSync(this.authPath, next, "utf-8");
+                writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
                 chmodSync(this.authPath, 0o600);
             }
             return result;
@@ -118,7 +119,7 @@ export class FileAuthStorageBackend {
             const { result, next } = await fn(current);
             throwIfCompromised();
             if (next !== undefined) {
-                writeFileSync(this.authPath, next, "utf-8");
+                writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
                 chmodSync(this.authPath, 0o600);
             }
             throwIfCompromised();

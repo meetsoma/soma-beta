@@ -1,6 +1,6 @@
 import { getOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { Container, getKeybindings, Input, Spacer, Text } from "@earendil-works/pi-tui";
-import { exec } from "child_process";
+import { openBrowser } from "../../../utils/open-browser.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
@@ -42,7 +42,9 @@ export class LoginDialogComponent extends Container {
         this.input = new Input();
         this.input.onSubmit = () => {
             if (this.inputResolver) {
-                this.inputResolver(this.input.getValue());
+                const value = this.input.getValue();
+                this.replaceInputWithSubmittedText(value);
+                this.inputResolver(value);
                 this.inputResolver = undefined;
                 this.inputRejecter = undefined;
             }
@@ -55,6 +57,9 @@ export class LoginDialogComponent extends Container {
     }
     get signal() {
         return this.abortController.signal;
+    }
+    replaceInputWithSubmittedText(value) {
+        this.contentContainer.children = this.contentContainer.children.map((child) => child === this.input ? new Text(`> ${value}`, 0, 0) : child);
     }
     cancel() {
         this.abortController.abort();
@@ -80,7 +85,7 @@ export class LoginDialogComponent extends Container {
             this.contentContainer.addChild(new Spacer(1));
             this.contentContainer.addChild(new Text(theme.fg("warning", instructions), 1, 0));
         }
-        this.openUrl(url);
+        openBrowser(url);
         this.tui.requestRender();
     }
     /**
@@ -96,22 +101,14 @@ export class LoginDialogComponent extends Container {
         this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
         this.contentContainer.addChild(new Spacer(1));
         this.contentContainer.addChild(new Text(theme.fg("warning", `Enter code: ${info.userCode}`), 1, 0));
-        this.openUrl(info.verificationUri);
+        openBrowser(info.verificationUri);
         this.tui.requestRender();
-    }
-    openUrl(url) {
-        const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-        try {
-            exec(`${openCmd} "${url}"`, () => { });
-        }
-        catch {
-            // Ignore browser launch failures. The URL remains visible for manual opening/copying.
-        }
     }
     /**
      * Show input for manual code/URL entry (for callback server providers)
      */
     showManualInput(prompt) {
+        this.input.setValue("");
         this.contentContainer.addChild(new Spacer(1));
         this.contentContainer.addChild(new Text(theme.fg("dim", prompt), 1, 0));
         this.contentContainer.addChild(this.input);

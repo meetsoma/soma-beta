@@ -56,6 +56,53 @@ function splitRef(url) {
         ref,
     };
 }
+function decodeForValidation(value) {
+    try {
+        return decodeURIComponent(value);
+    }
+    catch {
+        return null;
+    }
+}
+function hasUnsafeGitInstallPart(value, allowSlash) {
+    const decoded = decodeForValidation(value);
+    if (decoded === null) {
+        return true;
+    }
+    const candidates = [value, decoded];
+    for (const candidate of candidates) {
+        if (candidate.includes("\0") || candidate.includes("\\") || candidate.startsWith("/")) {
+            return true;
+        }
+        if (!allowSlash && candidate.includes("/")) {
+            return true;
+        }
+        if (candidate.split("/").includes("..")) {
+            return true;
+        }
+    }
+    return false;
+}
+function buildGitSource(args) {
+    if (args.path.startsWith("/")) {
+        return null;
+    }
+    const normalizedPath = args.path.replace(/\.git$/, "").replace(/^\/+/, "");
+    if (!args.host || !normalizedPath || normalizedPath.split("/").length < 2) {
+        return null;
+    }
+    if (hasUnsafeGitInstallPart(args.host, false) || hasUnsafeGitInstallPart(normalizedPath, true)) {
+        return null;
+    }
+    return {
+        type: "git",
+        repo: args.repo,
+        host: args.host,
+        path: normalizedPath,
+        ref: args.ref,
+        pinned: Boolean(args.ref),
+    };
+}
 function parseGenericGitUrl(url) {
     const { repo: repoWithoutRef, ref } = splitRef(url);
     let repo = repoWithoutRef;
@@ -91,18 +138,7 @@ function parseGenericGitUrl(url) {
         }
         repo = `https://${repoWithoutRef}`;
     }
-    const normalizedPath = path.replace(/\.git$/, "").replace(/^\/+/, "");
-    if (!host || !normalizedPath || normalizedPath.split("/").length < 2) {
-        return null;
-    }
-    return {
-        type: "git",
-        repo,
-        host,
-        path: normalizedPath,
-        ref,
-        pinned: Boolean(ref),
-    };
+    return buildGitSource({ repo, host, path, ref });
 }
 /**
  * Parse git source into a GitSource.
@@ -131,14 +167,12 @@ export function parseGitUrl(source) {
                 !split.repo.startsWith("ssh://") &&
                 !split.repo.startsWith("git://") &&
                 !split.repo.startsWith("git@");
-            return {
-                type: "git",
+            return buildGitSource({
                 repo: useHttpsPrefix ? `https://${split.repo}` : split.repo,
                 host: info.domain || "",
-                path: `${info.user}/${info.project}`.replace(/\.git$/, ""),
+                path: `${info.user}/${info.project}`,
                 ref: info.committish || split.ref || undefined,
-                pinned: Boolean(info.committish || split.ref),
-            };
+            });
         }
     }
     const httpsCandidates = [split.ref ? `https://${split.repo}#${split.ref}` : undefined, `https://${url}`].filter((value) => Boolean(value));
@@ -148,14 +182,12 @@ export function parseGitUrl(source) {
             if (split.ref && info.project?.includes("@")) {
                 continue;
             }
-            return {
-                type: "git",
+            return buildGitSource({
                 repo: `https://${split.repo}`,
                 host: info.domain || "",
-                path: `${info.user}/${info.project}`.replace(/\.git$/, ""),
+                path: `${info.user}/${info.project}`,
                 ref: info.committish || split.ref || undefined,
-                pinned: Boolean(info.committish || split.ref),
-            };
+            });
         }
     }
     return parseGenericGitUrl(url);

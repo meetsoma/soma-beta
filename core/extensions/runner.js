@@ -56,6 +56,34 @@ export async function emitSessionShutdownEvent(extensionRunner, event) {
     }
     return false;
 }
+export async function emitProjectTrustEvent(extensionsResult, event, ctx) {
+    const errors = [];
+    for (const ext of extensionsResult.extensions) {
+        // A single extension may register multiple handlers for the same event.
+        // The first project_trust handler that returns yes/no wins; undecided falls through.
+        const handlers = ext.handlers.get("project_trust");
+        if (!handlers || handlers.length === 0)
+            continue;
+        for (const handler of handlers) {
+            try {
+                const handlerResult = (await handler(event, ctx));
+                if (handlerResult.trusted === "undecided") {
+                    continue;
+                }
+                return { result: handlerResult, errors };
+            }
+            catch (error) {
+                errors.push({
+                    extensionPath: ext.path,
+                    event: event.type,
+                    error: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                });
+            }
+        }
+    }
+    return { errors };
+}
 const noOpUIContext = {
     select: async () => undefined,
     confirm: async () => false,
@@ -92,12 +120,14 @@ export class ExtensionRunner {
     extensions;
     runtime;
     uiContext;
+    mode = "print";
     cwd;
     sessionManager;
     modelRegistry;
     errorListeners = new Set();
     getModel = () => undefined;
     isIdleFn = () => true;
+    isProjectTrustedFn = () => true;
     getSignalFn = () => undefined;
     waitForIdleFn = async () => { };
     abortFn = () => { };
@@ -105,6 +135,7 @@ export class ExtensionRunner {
     getContextUsageFn = () => undefined;
     compactFn = () => { };
     getSystemPromptFn = () => "";
+    getSystemPromptOptionsFn = () => ({ cwd: this.cwd });
     newSessionHandler = async () => ({ cancelled: false });
     forkHandler = async () => ({ cancelled: false });
     navigateTreeHandler = async () => ({ cancelled: false });
@@ -141,6 +172,7 @@ export class ExtensionRunner {
         // Context actions (required)
         this.getModel = contextActions.getModel;
         this.isIdleFn = contextActions.isIdle;
+        this.isProjectTrustedFn = contextActions.isProjectTrusted;
         this.getSignalFn = contextActions.getSignal;
         this.abortFn = contextActions.abort;
         this.hasPendingMessagesFn = contextActions.hasPendingMessages;
@@ -148,6 +180,7 @@ export class ExtensionRunner {
         this.getContextUsageFn = contextActions.getContextUsage;
         this.compactFn = contextActions.compact;
         this.getSystemPromptFn = contextActions.getSystemPrompt;
+        this.getSystemPromptOptionsFn = contextActions.getSystemPromptOptions ?? (() => ({ cwd: this.cwd }));
         // Flush provider registrations queued during extension loading
         for (const { name, config, extensionPath } of this.runtime.pendingProviderRegistrations) {
             try {
@@ -202,8 +235,9 @@ export class ExtensionRunner {
         this.switchSessionHandler = async () => ({ cancelled: false });
         this.reloadHandler = async () => { };
     }
-    setUIContext(uiContext) {
+    setUIContext(uiContext, mode = "print") {
         this.uiContext = uiContext ?? noOpUIContext;
+        this.mode = mode;
     }
     getUIContext() {
         return this.uiContext;
@@ -382,6 +416,10 @@ export class ExtensionRunner {
                 runner.assertActive();
                 return runner.uiContext;
             },
+            get mode() {
+                runner.assertActive();
+                return runner.mode;
+            },
             get hasUI() {
                 runner.assertActive();
                 return runner.hasUI();
@@ -405,6 +443,10 @@ export class ExtensionRunner {
             isIdle: () => {
                 runner.assertActive();
                 return runner.isIdleFn();
+            },
+            isProjectTrusted: () => {
+                runner.assertActive();
+                return runner.isProjectTrustedFn();
             },
             get signal() {
                 runner.assertActive();
@@ -441,6 +483,10 @@ export class ExtensionRunner {
         // createContext() stay lazy. A spread would eagerly read them once and freeze the
         // old values into the returned object, bypassing stale-instance checks.
         const context = Object.defineProperties({}, Object.getOwnPropertyDescriptors(this.createContext()));
+        context.getSystemPromptOptions = () => {
+            this.assertActive();
+            return this.getSystemPromptOptionsFn();
+        };
         context.waitForIdle = () => {
             this.assertActive();
             return this.waitForIdleFn();
