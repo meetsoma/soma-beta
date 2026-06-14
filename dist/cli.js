@@ -102,6 +102,14 @@ process.exit = function somaRotationExit(code) {
 //
 // Meta-cycle 04 Phase 2 (s01-8657fc). Ancestor walk-up added s01-68563d
 // (SX-763). See body/ecosystem.md for the canonical layout rule.
+//
+// SX-776: snapshot the USER's argv boundary BEFORE injection appends
+// --extension/--skill/--prompt-template/--theme flag pairs below. Pi sessions
+// (main/inhale) parse the FULL `args` for those flags; utility subcommands
+// (model, …) parse positionals and must use `userArgs` (the clean prefix) or
+// they mis-read an injected resource path as their argument. `soma model --list`
+// read an injected `_template.ts` path as its search term → 0 results.
+const USER_ARGV_END = process.argv.length;
 (function injectUserGlobalPaths() {
 	try {
 		const home = process.env.HOME || "";
@@ -270,7 +278,8 @@ process.exit = function somaRotationExit(code) {
 })();
 
 // ── Command dispatch ───────────────────────────────────────────────────
-const args = process.argv.slice(2);
+const args = process.argv.slice(2);          // FULL — incl. injected resource flags (for Pi: main/inhale)
+const userArgs = process.argv.slice(2, USER_ARGV_END); // CLEAN — user's args only (for utility subcommands; SX-776)
 
 // Version flag
 if (args[0] === "--version" || args[0] === "-V" || args[0] === "-v" || args[0] === "version") {
@@ -641,7 +650,7 @@ if (args[0] === "map") {
 } else if (args[0] === "model") {
 	// soma model — interactive model switching
 	const { handleModelCommand } = await import("./lib/model-cmd.js");
-	const result = await handleModelCommand(args.slice(1));
+	const result = await handleModelCommand(userArgs.slice(1)); // SX-776: clean args (no injected resource paths)
 	if (result === "start") {
 		main([]);
 	} else {

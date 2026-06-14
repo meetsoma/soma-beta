@@ -10,6 +10,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.31.2] — 2026-06-14
+
+### Fixed
+- **SX-776 — `soma model --list` (and bare `soma model`) showed 0 models.** Resource-path injection (the `--extension`/`--skill`/… flags Soma appends for Pi's loader) leaked into utility-subcommand argument parsing, so `model` read an injected extension path as its search term → "0 models matching …/_template.ts". Utility subcommands now parse a clean copy of your args; Pi sessions still receive the full set (extension loading unaffected).
+- **SX-736 — statusline `/reload` worktree-mismatch label.** When an extension/core edit lands in a different worktree than the runtime actually loads from (e.g. editing a dev checkout while the runtime runs its own copy), the statusline now shows `⚠ sync dev + /reload` instead of a plain `🔄 /reload` that wouldn't pick up the change. Detection is topology-independent — it compares the edited path against the running code's own `import.meta.url`, so end users (whose runtime is their only worktree) never see it.
+
+
 ## [0.31.1] — 2026-06-14
 
 ### Changed
