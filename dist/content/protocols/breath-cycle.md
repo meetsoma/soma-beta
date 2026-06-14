@@ -9,7 +9,7 @@ applies-to: [always]
 scope: core
 tier: core
 created: 2026-03-09
-updated: 2026-06-10
+updated: 2026-06-11
 version: 3.0.0
 author: Curtis Mercier
 license: CC BY 4.0
@@ -51,8 +51,8 @@ Any of these — or `/exhale` / `/breathe`, or context ≥ 70% — means *run th
 
 The most common failure is an exhale that fires correctly but only writes a preload — dropping the reflection, the docs, the promotion. **A faithful trigger with an incomplete checklist still loses the session.** Run *all* of these, in order — the preload is **last**:
 
-1. **Verify state** — `git status` across every touched repo. Nothing important left uncommitted.
-2. **Ship-completeness** (below) — for everything shipped this session: docs? test? discoverable?
+1. **Verify state + consolidate** — `git status` **and** `git log @{u}..HEAD` across every touched repo (committed ≠ pushed; a handoff pointing to unpushed work is a lie). Then a **stale-ref / PCE sweep**: did anything you touched hardcode a current-state value (version, count, path, status) that has a source of truth? **Point to the SoT — don't re-hardcode it** (updating the number just re-stales it next time). Same fact in two places? Collapse to one SoT + pointers.
+2. **Ship-completeness** (below) — for everything shipped this session: docs (incl. *related* docs/index/changelog that reference it, not just its own)? test? discoverable?
 3. **Reflect** — Memory Lane Reflection (`memory-lane-reflection` muscle); 5+ cycles at 70%+ context. Surface lessons + gaps *explicitly* — corrections are the richest signal.
 4. **Promote what recurred** (below) — file each observation at its home; anything that recurred ≥2× becomes a muscle *now*.
 5. **Write the preload** — last. Resume point + what shipped + orient-from + next steps (see *Preload Quality*).

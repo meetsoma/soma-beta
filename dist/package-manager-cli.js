@@ -7,7 +7,7 @@ import { DefaultPackageManager } from "./core/package-manager.js";
 import { resolveProjectTrusted } from "./core/project-trust.js";
 import { DefaultResourceLoader } from "./core/resource-loader.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { hasProjectTrustInputs, ProjectTrustStore } from "./core/trust-manager.js";
+import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.js";
 import { spawnProcess } from "./utils/child-process.js";
 import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.js";
 import { cleanupWindowsSelfUpdateQuarantine, quarantineWindowsNativeDependencies, } from "./utils/windows-self-update.js";
@@ -384,8 +384,14 @@ function reportProjectTrustWarnings(warnings) {
 async function createCommandSettingsManager(options) {
     const settingsManager = SettingsManager.create(options.cwd, options.agentDir, { projectTrusted: false });
     const projectTrustWarnings = [];
+    const trustStore = new ProjectTrustStore(options.agentDir);
+    if (options.useSavedProjectTrustOnly) {
+        const savedProjectTrusted = trustStore.get(options.cwd) === true;
+        settingsManager.setProjectTrusted(options.projectTrustOverride ?? savedProjectTrusted);
+        return { settingsManager, projectTrustWarnings };
+    }
     const appMode = getCommandAppMode();
-    const extensionsResult = options.projectTrustOverride === undefined && hasProjectTrustInputs(options.cwd)
+    const extensionsResult = options.projectTrustOverride === undefined && hasTrustRequiringProjectResources(options.cwd)
         ? await new DefaultResourceLoader({
             cwd: options.cwd,
             agentDir: options.agentDir,
@@ -398,7 +404,7 @@ async function createCommandSettingsManager(options) {
     }
     const projectTrusted = await resolveProjectTrusted({
         cwd: options.cwd,
-        trustStore: new ProjectTrustStore(options.agentDir),
+        trustStore,
         trustOverride: options.projectTrustOverride,
         defaultProjectTrust: settingsManager.getDefaultProjectTrust(),
         extensionsResult,
@@ -484,6 +490,7 @@ export async function handlePackageCommand(args, runtimeOptions = {}) {
         cwd,
         agentDir,
         projectTrustOverride: options.projectTrustOverride,
+        useSavedProjectTrustOnly: options.command === "update",
         extensionFactories: runtimeOptions.extensionFactories,
     });
     reportProjectTrustWarnings(projectTrustWarnings);

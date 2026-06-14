@@ -1,14 +1,14 @@
 import { Container, getKeybindings, Spacer, Text } from "@earendil-works/pi-tui";
-import { getProjectTrustOptions, getProjectTrustPath, } from "../../../core/trust-manager.js";
+import { getProjectTrustOptions, } from "../../../core/trust-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, rawKeyHint } from "./keybinding-hints.js";
-function formatDecision(cwd, decision) {
+function formatDecision(trustPath, decision) {
     if (decision === null) {
         return "none";
     }
     const label = decision.decision ? "trusted" : "untrusted";
-    if (decision.path !== getProjectTrustPath(cwd)) {
+    if (trustPath !== undefined && decision.path !== trustPath) {
         return `${label} (inherited from ${decision.path})`;
     }
     return `${label} (${decision.path})`;
@@ -32,7 +32,7 @@ export class TrustSelectorComponent extends Container {
         this.addChild(new Text(theme.fg("accent", theme.bold("Project trust")), 1, 0));
         this.addChild(new Text(theme.fg("muted", options.cwd), 1, 0));
         this.addChild(new Spacer(1));
-        this.addChild(new Text(theme.fg("muted", `Saved decision: ${formatDecision(options.cwd, options.savedDecision)}`), 1, 0));
+        this.addChild(new Text(theme.fg("muted", `Saved decision: ${formatDecision(this.trustOptions[0]?.savedPath, options.savedDecision)}`), 1, 0));
         this.addChild(new Text(theme.fg("muted", `Current session: ${options.projectTrusted ? "trusted" : "untrusted"}`), 1, 0));
         this.addChild(new Spacer(1));
         this.listContainer = new Container();

@@ -28,7 +28,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { clampThinkingLevel, cleanupSessionResources, getSupportedThinkingLevels, isContextOverflow, modelsAreEqual, resetApiProviders, streamSimple, } from "@earendil-works/pi-ai";
-import { theme } from "../modes/interactive/theme/theme.js";
+import { getThemeByName, theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
 import { resolvePath } from "../utils/paths.js";
 import { sleep } from "../utils/sleep.js";
@@ -2447,7 +2447,8 @@ export class AgentSession {
      * @returns Path to exported file
      */
     async exportToHtml(outputPath) {
-        const themeName = this.settingsManager.getTheme();
+        const configuredThemeName = this.settingsManager.getTheme();
+        const themeName = configuredThemeName && getThemeByName(configuredThemeName) ? configuredThemeName : undefined;
         // Create tool renderer if we have an extension runner (for custom tool HTML rendering)
         const toolRenderer = createToolHtmlRenderer({
             getToolDefinition: (name) => this.getToolDefinition(name),

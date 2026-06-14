@@ -280,7 +280,7 @@ export async function resolveModelScope(patterns, modelRegistry) {
  * return a thinking level from "<pattern>:<thinking>" so the caller can apply it.
  */
 export function resolveCliModel(options) {
-    const { cliProvider, cliModel, modelRegistry } = options;
+    const { cliProvider, cliModel, cliThinking, modelRegistry } = options;
     if (!cliModel) {
         return { model: undefined, warning: undefined, error: undefined };
     }
@@ -347,6 +347,25 @@ export function resolveCliModel(options) {
         allowInvalidThinkingLevelFallback: false,
     });
     if (model) {
+        // If provider inference matched an unauthenticated provider/model pair, prefer
+        // one exact raw model-id match that is authenticated. This keeps
+        // "provider/model" syntax preferred when usable, but handles models whose
+        // literal id starts with a known provider name (for example
+        // commandcode model id "xiaomi/mimo-v2.5-pro").
+        if (inferredProvider) {
+            const rawExactMatches = availableModels.filter((m) => m.id.toLowerCase() === cliModel.toLowerCase() && !modelsAreEqual(m, model));
+            if (rawExactMatches.length > 0 && !modelRegistry.hasConfiguredAuth(model)) {
+                const authenticatedRawMatches = rawExactMatches.filter((m) => modelRegistry.hasConfiguredAuth(m));
+                if (authenticatedRawMatches.length === 1) {
+                    return {
+                        model: authenticatedRawMatches[0],
+                        thinkingLevel: undefined,
+                        warning: undefined,
+                        error: undefined,
+                    };
+                }
+            }
+        }
         return { model, thinkingLevel, warning, error: undefined };
     }
     // If we inferred a provider from the slash but found no match within that provider,
@@ -373,12 +392,29 @@ export function resolveCliModel(options) {
         }
     }
     if (provider) {
-        const fallbackModel = buildFallbackModel(provider, pattern, availableModels);
+        // Parse thinking level suffix from the pattern before building the fallback model,
+        // but only when --thinking is not explicitly provided.
+        // e.g. "zai-org/GLM-5.1-FP8:high" → modelId="zai-org/GLM-5.1-FP8", fallbackThinking="high"
+        let fallbackPattern = pattern;
+        let fallbackThinking;
+        if (!cliThinking) {
+            const lastColon = pattern.lastIndexOf(":");
+            if (lastColon !== -1) {
+                const suffix = pattern.substring(lastColon + 1);
+                if (isValidThinkingLevel(suffix)) {
+                    fallbackPattern = pattern.substring(0, lastColon);
+                    fallbackThinking = suffix;
+                }
+            }
+        }
+        const fallbackModel = buildFallbackModel(provider, fallbackPattern, availableModels);
         if (fallbackModel) {
+            const requestedThinking = cliThinking ?? fallbackThinking;
+            const model = requestedThinking && requestedThinking !== "off" ? { ...fallbackModel, reasoning: true } : fallbackModel;
             const fallbackWarning = warning
-                ? `${warning} Model "${pattern}" not found for provider "${provider}". Using custom model id.`
-                : `Model "${pattern}" not found for provider "${provider}". Using custom model id.`;
-            return { model: fallbackModel, thinkingLevel: undefined, warning: fallbackWarning, error: undefined };
+                ? `${warning} Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`
+                : `Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`;
+            return { model, thinkingLevel: fallbackThinking, warning: fallbackWarning, error: undefined };
         }
     }
     const display = provider ? `${provider}/${pattern}` : cliModel;

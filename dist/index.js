@@ -26,7 +26,7 @@ export { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, } from "./core/sk
 export { createSyntheticSourceInfo } from "./core/source-info.js";
 // Tools
 export { createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLocalBashOperations, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, truncateLine, truncateTail, withFileMutationQueue, } from "./core/tools/index.js";
-export { hasProjectTrustInputs, ProjectTrustStore, } from "./core/trust-manager.js";
+export { hasTrustRequiringProjectResources, ProjectTrustStore, } from "./core/trust-manager.js";
 // Main entry point
 export { main } from "./main.js";
 // Run modes for programmatic SDK usage

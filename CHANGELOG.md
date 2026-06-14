@@ -10,6 +10,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.31.1] — 2026-06-14
+
+### Changed
+- **Pi runtime bumped 0.79.1 → 0.79.3** (all 4 `@earendil-works/pi-*` in lockstep). Inherits upstream bug fixes: Codex context-window billing-hazard fix, GPT-5 metadata corrections, Anthropic refusal `stop_details` preserved in error messages, Claude Fable 5 thinking-off payload fix (#5567), project-trust detection fix (#5619), model-resolution / `/fork` / `/share` / loose-list fixes, and ignored late tool-progress updates. Soma patches re-derived against the new upstream shapes (agent-loop tool-result wrap, OpenRouter `session_id` body param); the `httpIdleTimeoutMs` patch was **dropped** — upstream now ships it natively for all providers.
+
+### Fixed
+- **SX-771/SX-736 — runtime-aware indicator, ungated + smart-show**
+- **SX-774 — sync dev now syncs source extensions/ (the loaded path)**
+- **SX-773 — path resolver broke from inside repos/agent**
+- **SX-770 — dev(op='list') showed 0 caps (untiered families)**
+- **ship Step 5 npm-publish detection excludes the just-created tag (was always skipping)**
+
+
 ## [0.31.0] — 2026-06-11
 
 ### Added

@@ -11,6 +11,7 @@
  * Contact for commercial licensing: meetsoma@gravicity.ai
  */
 
+import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
@@ -646,6 +647,22 @@ export class SettingsManager {
     setEnableInstallTelemetry(enabled) {
         this.globalSettings.enableInstallTelemetry = enabled;
         this.markModified("enableInstallTelemetry");
+        this.save();
+    }
+    getEnableAnalytics() {
+        return this.settings.enableAnalytics ?? false;
+    }
+    getTrackingId() {
+        return this.settings.trackingId;
+    }
+    /** Set the analytics opt-in preference; generates a tracking identifier on first opt-in */
+    setEnableAnalytics(enabled) {
+        this.globalSettings.enableAnalytics = enabled;
+        this.markModified("enableAnalytics");
+        if (enabled && !this.globalSettings.trackingId) {
+            this.globalSettings.trackingId = randomUUID();
+            this.markModified("trackingId");
+        }
         this.save();
     }
     getPackages() {

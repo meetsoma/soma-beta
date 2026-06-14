@@ -24,7 +24,7 @@ import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../cor
 import { SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.js";
-import { hasProjectConfigDir, hasProjectTrustInputs, ProjectTrustStore } from "../../core/trust-manager.js";
+import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.js";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
@@ -2668,7 +2668,7 @@ export class InteractiveMode {
         }
     }
     renderProjectTrustWarningIfNeeded() {
-        if (this.settingsManager.isProjectTrusted() || !hasProjectTrustInputs(this.sessionManager.getCwd())) {
+        if (this.settingsManager.isProjectTrusted() || !hasTrustRequiringProjectResources(this.sessionManager.getCwd())) {
             return;
         }
         if (this.chatContainer.children.length > 0) {
@@ -3500,7 +3500,7 @@ export class InteractiveMode {
         if (this.autoTrustOnReloadCwd !== cwd) {
             return false;
         }
-        if (!this.settingsManager.isProjectTrusted() || !hasProjectConfigDir(cwd)) {
+        if (!this.settingsManager.isProjectTrusted() || !hasTrustRequiringProjectResources(cwd)) {
             return false;
         }
         const trustStore = new ProjectTrustStore(this.runtimeHost.services.agentDir);

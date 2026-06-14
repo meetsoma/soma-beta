@@ -12,7 +12,7 @@
  */
 
 import { emitProjectTrustEvent } from "./extensions/runner.js";
-import { getProjectTrustOptions, hasProjectTrustInputs, } from "./trust-manager.js";
+import { getProjectTrustOptions, hasTrustRequiringProjectResources, } from "./trust-manager.js";
 function formatProjectTrustPrompt(cwd) {
     return `Trust project folder?\n${cwd}\n\nThis allows pi to load .pi settings and resources, install missing project packages, and execute project extensions.`;
 }
@@ -30,7 +30,7 @@ export async function resolveProjectTrusted(options) {
     if (options.trustOverride !== undefined) {
         return options.trustOverride;
     }
-    if (!hasProjectTrustInputs(options.cwd)) {
+    if (!hasTrustRequiringProjectResources(options.cwd)) {
         return true;
     }
     if (options.extensionsResult) {

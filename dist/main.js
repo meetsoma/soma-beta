@@ -13,7 +13,7 @@ import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { createProjectTrustContext } from "./cli/project-trust.js";
 import { selectSession } from "./cli/session-picker.js";
-import { showStartupSelector } from "./cli/startup-ui.js";
+import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.js";
 import { ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.js";
 import { createAgentSessionRuntime } from "./core/agent-session-runtime.js";
 import { createAgentSessionFromServices, createAgentSessionServices, } from "./core/agent-session-services.js";
@@ -28,7 +28,7 @@ import { formatMissingSessionCwdPrompt, getMissingSessionCwdIssue, MissingSessio
 import { assertValidSessionId, SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
-import { hasProjectTrustInputs, ProjectTrustStore } from "./core/trust-manager.js";
+import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
@@ -271,6 +271,7 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
         const resolved = resolveCliModel({
             cliProvider: parsed.provider,
             cliModel: parsed.model,
+            cliThinking: parsed.thinking,
             modelRegistry,
         });
         if (resolved.warning) {
@@ -412,6 +413,12 @@ export async function main(args, options) {
     const agentDir = getAgentDir();
     const startupSettingsManager = SettingsManager.create(cwd, agentDir);
     reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
+    // Experimental first-time setup: theme choice and analytics opt-in.
+    // Runs before any runtime services are created so the chosen settings apply everywhere.
+    if (appMode === "interactive" && !parsed.help && parsed.listModels === undefined && shouldRunFirstTimeSetup()) {
+        await showFirstTimeSetup(startupSettingsManager);
+        time("firstTimeSetup");
+    }
     // Decide the final runtime cwd before creating cwd-bound runtime services.
     // --session and --resume may select a session from another project, so project-local
     // settings, resources, provider registrations, and models must be resolved only after
@@ -447,7 +454,9 @@ export async function main(args, options) {
     time("createSessionManager");
     const trustStore = new ProjectTrustStore(agentDir);
     const sessionCwd = sessionManager.getCwd();
-    const autoTrustOnReloadCwd = parsed.projectTrustOverride === undefined && !hasProjectTrustInputs(sessionCwd) ? sessionCwd : undefined;
+    const autoTrustOnReloadCwd = parsed.projectTrustOverride === undefined && !hasTrustRequiringProjectResources(sessionCwd)
+        ? sessionCwd
+        : undefined;
     const trustPromptMode = parsed.help || parsed.listModels !== undefined ? "print" : appMode;
     const projectTrustByCwd = new Map();
     const resolvedExtensionPaths = resolveCliPaths(cwd, parsed.extensions);
@@ -459,11 +468,13 @@ export async function main(args, options) {
         const isInitialRuntime = sessionStartEvent === undefined;
         const projectTrustDiagnostics = [];
         const cachedProjectTrust = projectTrustByCwd.get(cwd);
-        const hasTrustInputs = hasProjectTrustInputs(cwd);
-        const shouldResolveProjectTrust = parsed.projectTrustOverride === undefined && cachedProjectTrust === undefined && hasTrustInputs;
+        const hasTrustRequiringResources = hasTrustRequiringProjectResources(cwd);
+        const shouldResolveProjectTrust = parsed.projectTrustOverride === undefined && cachedProjectTrust === undefined && hasTrustRequiringResources;
         const projectTrusted = shouldResolveProjectTrust
             ? false
-            : (cachedProjectTrust ?? parsed.projectTrustOverride ?? (!hasTrustInputs || trustStore.get(cwd) === true));
+            : (cachedProjectTrust ??
+                parsed.projectTrustOverride ??
+                (!hasTrustRequiringResources || trustStore.get(cwd) === true));
         const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
         const services = await createAgentSessionServices({
             cwd,
