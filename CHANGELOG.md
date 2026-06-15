@@ -10,6 +10,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.33.0] — 2026-06-15
+
+### Added
+- **Per-model guard allowlist (`guard.trustedModels`).** When the active model matches a glob in the list (e.g. `["*sonnet*", "*opus*"]`), the `coreFiles` and `bashCommands` prompts relax to `"allow"` for that turn — capable models skip the nags while weaker models and new users keep full protection. Settable per-project or globally (child wins). Empty by default = no change.
+- **Always-on irreversibility guards.** Destroying a `.soma` workspace or a `.git` history, running `git init`, destructive ops on the runtime install, and expensive operations (`npm publish`, `docker push`, …) now always require confirmation — they cannot be silenced by `bashCommands: "allow"` or a trusted model. Capability relaxes the routine prompts, never the catastrophic ones.
+- **New documentation: Statusline & Notices** — the canonical reference for all three statusline lines, every indicator, and Soma's toast notices (including the preload lifecycle).
+
+### Fixed
+- **Preload "saved" double-notification.** A single preload write now shows exactly one confirmation (`✅ Preload written`) plus the statusline `📝saved` indicator, instead of a redundant second toast.
+- **`guard.bashNotify` is now a real setting.** It was already in use but missing from the settings schema (so it was untyped and invisible); it's now documented and configurable (`"notify"` | `"off"`).
+- **git-identity pre-commit hook silently blocked all commits** in any repo whose `settings.json` had no configured email (a `pipefail` crash). Commits work again with no email set.
+- **Core-file guard now also covers `edit`.** Previously only `write` was gated, so a model could `edit` a runtime file or `settings.json` with no prompt. Editing them is now gated like writing (ordinary body files like `soul.md` remain free to edit).
+
+
 ## [0.32.1] — 2026-06-15
 
 ### Fixed
