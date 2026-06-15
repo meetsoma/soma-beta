@@ -10,6 +10,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.32.1] — 2026-06-15
+
+### Fixed
+- **consolidate map to v0.28.1-to-v0.32.0 (close the chain gap, SX-785)**
+- **archive-match protection in template-auto-update sentinel (SX-789)**
+- **gap-safe --fix actually migrates behind workspaces (SX-789)**
+- **npm-lag is SOFT for independent trains, not HARD (s01-542b99)**
+
+
 ## [0.32.0] — 2026-06-15
 
 ### Added

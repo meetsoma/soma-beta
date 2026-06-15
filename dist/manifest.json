@@ -1,7 +1,7 @@
 {
-  "version": "0.32.0",
-  "buildId": "dda7e98ad8ad169a",
-  "buildDate": "2026-06-15T10:28:06.753Z",
+  "version": "0.32.1",
+  "buildId": "4efe06f57a03a77c",
+  "buildDate": "2026-06-15T11:43:27.151Z",
   "piVersion": "0.79.3",
   "fileCount": 257,
   "files": {
@@ -133,7 +133,7 @@
     "extensions/soma-addons/seam.js": "04a632b4b72eb711034365c69bd4d4359e52e6190432b03a754d4c125e63632c",
     "extensions/soma-addons/search.js": "fde72aa4fb2c5135c5a0e6682796a5d6482cfb578fbe9d4ac068956321b2a3fc",
     "extensions/soma-addons/terminals.js": "00a5a978324132b88f0f0057d4598331eff87a64a0bc0daa548963a5feae9700",
-    "extensions/soma-boot.js": "c88cba7dc5fec39070797a08110277d776d4c908f9c9775e592841a6e2a1b358",
+    "extensions/soma-boot.js": "044f38e50da9ef1c6e8494233b5289eb4f864e52a7abc2d87b126d127427572d",
     "extensions/soma-breathe.js": "23b90b84198b20b86a62ed225f983890be086b6b0bb96e836a55d8ce614f32e0",
     "extensions/soma-capabilities.js": "8120da939c2580d2647106984545cb60017f6111d75f4fe5b4e97d1061564f77",
     "extensions/soma-context.js": "5e8b6374e1d9a238cb29fce49c85234478eaa38a36bd69586c278864713a9599",
