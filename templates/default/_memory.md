@@ -4,7 +4,7 @@ name: memory
 description: Preload format — the agent briefs its next self at exhale
 created: 2026-03-23
 updated: 2026-06-02
-soma_template_version: 0.29.0
+soma_template_version: 0.32.0
 ---
 
 ## Exhale note
@@ -55,6 +55,12 @@ tags: []
 
 ## Resume Point
 <!-- 2-3 sentences, present tense. What is this session, what's the state right now. -->
+
+## The Through-Line
+<!-- The single most valuable transfer: the MENTAL MODEL / reframe to inherit — NOT state, NOT self.
+     The one thought that, if the next self holds it, makes the whole session's lesson portable.
+     One dense paragraph. The reframe, not the work. e.g. "The system already knew — trace before
+     building, then verify the EFFECT." -->
 
 ## The Weather
 <!-- One line. "Clear — flow state, shipped clean." / "Stormy — three bugs, breakthrough at the end." -->

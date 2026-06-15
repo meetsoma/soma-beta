@@ -11,8 +11,8 @@ requires:
 scope: bundled
 tier: core
 created: 2026-06-10
-updated: 2026-06-10
-version: 1.1.0
+updated: 2026-06-15
+version: 1.2.0
 author: meetsoma
 license: CC BY 4.0
 ---
@@ -60,12 +60,12 @@ ping-pong (BUILD ↔ VERIFY) but never skips GROUND or REFLECT.
 
 | # | Stage | What you do | Gate (done = ) | Leans on |
 |---|---|---|---|---|
-| 1 | **GROUND** | Read the real consumers; verify *live* state (run it, don't assume); search for prior art / existing cycles before scoping. | You know the **real** current state, not the documented one. | `pre-flight`, `tool-discipline` |
+| 1 | **GROUND** | Read the real consumers; verify *live* state (run it, don't assume); search for prior art / existing cycles before scoping. **A record stamped "verified/probed" is itself a claim to re-run, not a fact to inherit** — esp. a "can't/dead/blocked/fatal" one (a past-self guessed it under pressure; verifications decay). | You know the **real** current state, not the documented one — including re-running inherited "verified" claims. | `pre-flight`, `tool-discipline` |
 | 2 | **DECIDE** | Surface the forks as options + leaning + implication. The user sets scope. | A scoped direction + open forks in the **Decision Register**. | §Decision Register |
 | 3 | **PLAN** | Turn scope into a living plan a fresh agent could execute (phases, forward-pointers). | A plan that survives amnesia. | `implementation-plans`, `plan-hygiene` |
 | 4 | **BUILD** | Lay pipe one unit at a time. Test → commit → push. No orphan/untested work. | Shipped, pushed, tested. | `workflow` |
 | 5 | **VERIFY** | Probe the **real artifact** — run the path, open the page, check the output. Not "should work." | Proof, not theory. | `quality-standards` |
-| 6 | **CONSOLIDATE** | Update the plan/index/body/breadcrumbs. Demote stale, preserve history, forward-point. | The substrate reflects reality. | `session-checkpoints` |
+| 6 | **CONSOLIDATE** | Update the plan/index/body/breadcrumbs. Demote stale, preserve history, forward-point. **Do this *per phase*** — the moment a phase changes a ticket's truth (a survey reframes it, a fix lands, a claim is overturned), update the cycle + board row then, not only at arc end. | The substrate reflects reality — each phase, so the close is a sum of current rows, not a reconstruction. | `session-checkpoints` |
 | 7 | **REFLECT** | Harvest observations → ledger. Write the preload + a roadmap-style session log. | Continuity + evolution-input captured. | `breath-cycle` (exhale), `pattern-evolution` |
 
 **The close:** REFLECT(n) → GROUND(n+1) (the next arc inherits real state) **and** → EVOLUTION (the

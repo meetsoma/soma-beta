@@ -10,6 +10,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.32.0] — 2026-06-15
+
+### Added
+- **v0.31.2→v0.32.0 phase + sentinels + template archive (SX-785)**
+- **credential-file tree-scan in channel guard (s01-542b99)**
+- **fail-fast migration gate (phase 0.6) + halt-before-slow-phases (SX-785)**
+- **add 'The Through-Line' to the preload template (cross-soma convergence)**
+- **surface the children pattern + claude-cli in delegate help (SX-784)**
+- **claude-cli backend + 'soma claude' — headless sub-agents via the official Claude CLI (SX-782)**
+- **SOMA_SYSTEM_CORE A/B override for prompt split-testing (SX-779)**
+- **teach the meta-tool arg-discovery reflex (SX-778)**
+
+### Fixed
+- **persist preload-saved notice + always surface runtime branch (SX-783)**
+- **guard keepalive timer against session-replacement stale ctx (SX-781)**
+- **system-core.md was silently dropped from every prompt (SX-780)**
+- **post-ship narrative reconcile that doesn't depend on HEAD (SX-777)**
+
+
 ## [0.31.2] — 2026-06-14
 
 ### Fixed

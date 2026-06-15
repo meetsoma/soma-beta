@@ -39,7 +39,7 @@ Your memory lives in `.soma/`:
 - **Orient first.** If the preload has "Orient From" targets, read those files before starting any work.
 - **Read before write.** Check what exists before creating. Use your scripts to map files before editing.
 - **Scripts first, then raw commands.** Your scripts in `.soma/amps/scripts/` are tools built for exactly this moment. Check if a script handles the task before writing raw grep, find, or manual commands. Run `--help` on any script.
-- **Discover your tools.** Run `soma(op='list')` or `capabilities(op='list')` to see every available tool. Don't reinvent what's already there.
+- **Discover your tools — and their args.** `soma(op='list')` (or `capabilities(op='list')`) is the catalog; `soma(op='call', cap='<family>')` (e.g. `soma:browser`) lists that family's caps *with their exact args*. Drill a family once before a multi-step workflow — it arms you for the whole sequence (navigate → evaluate → click) instead of eating a `Missing <arg>` retry on each. A `requires {X}` error IS the schema: add X and retry. Don't reinvent what's already there.
 - **Structure-aware before raw.** Before `grep` → `soma:code.find`. Before `cat` → `soma:code.outline`. Before `find` → `soma:code.map`. Before `git log` → `soma:seam.trace`. These tools are 10× faster and respect `.gitignore`, symlinks, and cache.
 - **Run before theorize.** When reading and running disagree, the run wins. A 5-line script beats a page of reasoning. Reach for a probe before drafting a paragraph.
 - **Build tools for yourself.** When you do the same thing twice manually, build a script. Scripts survive across sessions — memory doesn't. Name them descriptively, add `--help`, and leave comments.

@@ -656,6 +656,43 @@ if (args[0] === "map") {
 	} else {
 		process.exit(0);
 	}
+} else if (args[0] === "claude") {
+	// soma claude "<task>" [--model] [--append <sys>] [--tools "..."] [--budget N] [--json]
+	// SX-782: passthrough to the OFFICIAL `claude` CLI (subscription-billed,
+	// no extra-usage wall that pi -p hits). Reuses the canonical runClaudeCli.
+	const u = userArgs.slice(1); // SX-776: clean args
+	if (u.length === 0 || u[0] === "--help" || u[0] === "-h") {
+		console.log(`  ${green('soma claude "<task>"')} ${dim('[--model sonnet|opus|haiku] [--append <sys>] [--tools "Read Bash"] [--budget <usd>] [--json]')}`);
+		console.log(`  ${dim('Runs the official `claude -p` (first-party subscription billing). Exit 3 if it drew extra usage.')}`);
+		process.exit(u.length === 0 ? 1 : 0);
+	}
+	// Parse a tiny flag set; first non-flag is the task.
+	let task = "", model = "sonnet", append, tools, budget, asJson = false;
+	for (let i = 0; i < u.length; i++) {
+		const a = u[i];
+		if (a === "--model") model = u[++i];
+		else if (a === "--append") append = u[++i];
+		else if (a === "--tools") tools = u[++i];
+		else if (a === "--budget") budget = Number(u[++i]);
+		else if (a === "--json") asJson = true;
+		else if (!task) task = a;
+	}
+	if (!task) { console.error("✗ no task given"); process.exit(2); }
+	const agentDir = process.env.SOMA_CODING_AGENT_DIR || join(process.env.HOME || "", ".soma", "agent");
+	const core = await import(join(agentDir, "dist", "core", "index.js"));
+	const r = await core.runClaudeCli({
+		task, model, appendSystemPrompt: append,
+		allowedTools: tools ? tools.split(/[ ,]+/).filter(Boolean) : undefined,
+		maxBudgetUsd: budget || undefined, cwd: process.cwd(),
+	});
+	if (asJson) {
+		console.log(JSON.stringify(r, null, 2));
+	} else {
+		console.log(r.result || "(no text)");
+		console.error(dim(`  [claude -p] model=${model} cost≈$${r.costUsd} rate-limit=${r.rateLimitType} overage=${r.usingOverage ? "yes" : "no"}`));
+	}
+	if (r.usingOverage) { console.error("  ⚠ drew EXTRA USAGE, not plan — check claude.ai/settings/usage."); process.exit(3); }
+	process.exit(r.status === "success" ? 0 : 1);
 } else if (args[0] === "init" || args[0] === "content" || args[0] === "install" || args[0] === "list") {
 	// soma init / soma content init / soma install / soma list
 	// Route to content-cli for project scaffolding and hub operations
