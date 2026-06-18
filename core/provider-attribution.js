@@ -17,6 +17,7 @@ const NVIDIA_NIM_HOST = "integrate.api.nvidia.com";
 const CLOUDFLARE_API_HOST = "api.cloudflare.com";
 const CLOUDFLARE_AI_GATEWAY_HOST = "gateway.ai.cloudflare.com";
 const OPENCODE_HOST = "opencode.ai";
+const VERCEL_GATEWAY_HOST = "ai-gateway.vercel.sh";
 function matchesHost(baseUrl, expectedHost) {
     try {
         return new URL(baseUrl).hostname === expectedHost;
@@ -37,6 +38,9 @@ function isCloudflareModel(model) {
         matchesHost(model.baseUrl, CLOUDFLARE_API_HOST) ||
         matchesHost(model.baseUrl, CLOUDFLARE_AI_GATEWAY_HOST));
 }
+function isVercelGatewayModel(model) {
+    return model.provider === "vercel-ai-gateway" || matchesHost(model.baseUrl, VERCEL_GATEWAY_HOST);
+}
 function getDefaultAttributionHeaders(model, settingsManager) {
     if (!isInstallTelemetryEnabled(settingsManager)) {
         return undefined;
@@ -56,6 +60,12 @@ function getDefaultAttributionHeaders(model, settingsManager) {
     if (isCloudflareModel(model)) {
         return {
             "User-Agent": "pi-coding-agent",
+        };
+    }
+    if (isVercelGatewayModel(model)) {
+        return {
+            "http-referer": "https://pi.dev",
+            "x-title": "pi",
         };
     }
     return undefined;

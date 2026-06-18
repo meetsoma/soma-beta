@@ -10,6 +10,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.33.1] — 2026-06-18
+
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+### Changed
+- **Pi runtime bumped 0.79.3 → 0.79.6.** All four `@earendil-works/pi-*` packages in lockstep. Patch-grade gap — bug fixes and opt-in features only, no API or behavior changes. Picks up a bash-tool settlement/draining fix (#5753) and SIGTERM signal-exit hardening (#5724). The `edit` tool is unchanged.
+- **Dropped the `pi-tui-exit-cleanup` runtime patch** as redundant — Pi now restores the terminal on a crash natively (`InteractiveMode.uncaughtCrash` → `Terminal.stop()`), so the Soma-injected `process.on('exit')` handler is no longer needed. Terminal modes (bracketed-paste, Kitty keyboard, modifyOtherKeys, raw mode) are still restored on crash; the guarding test now verifies the native path.
+
+### Fixed
+- **`soma init` could fail on a clean production install** with `ERR_MODULE_NOT_FOUND` for `semver` (and latently `ignore` / `yaml`). The bundled runtime imports these packages, but they were undeclared dependencies that only resolved via dev-only transitive hoisting; under `npm install --omit=dev` they vanished. They're now declared explicitly. (Caught by the pre-release sandbox during the Pi 0.79.6 bump.)
+
+
 ## [0.33.0] — 2026-06-15
 
 ### Added

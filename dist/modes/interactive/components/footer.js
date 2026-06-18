@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { areExperimentalFeaturesEnabled } from "../../../core/experimental.js";
 import { theme } from "../theme/theme.js";
 /**
  * Sanitize text for display in a single-line status.
@@ -144,6 +145,9 @@ export class FooterComponent {
             contextPercentStr = contextPercentDisplay;
         }
         statsParts.push(contextPercentStr);
+        if (areExperimentalFeaturesEnabled()) {
+            statsParts.push(`${theme.fg("dim", "•")} ${theme.bold(theme.fg("warning", "xp"))}`);
+        }
         let statsLeft = statsParts.join(" ");
         // Add model name on the right side, plus thinking level if model supports it
         const modelName = state.model?.id || "no-model";

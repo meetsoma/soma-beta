@@ -21,11 +21,10 @@ import { join } from "path";
 import { Type } from "typebox";
 import { Compile } from "typebox/compile";
 import { getAgentDir } from "../config.js";
-import { warnDeprecation } from "../utils/deprecation.js";
 import { stripJsonComments } from "../utils/json.js";
 import { normalizePath } from "../utils/paths.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.js";
-import { clearConfigValueCache, getConfigValueEnvVarNames, isCommandConfigValue, isConfigValueConfigured, isLegacyEnvVarNameConfigValue, resolveConfigValueOrThrow, resolveConfigValueUncached, resolveHeadersOrThrow, } from "./resolve-config-value.js";
+import { clearConfigValueCache, getConfigValueEnvVarNames, isCommandConfigValue, isConfigValueConfigured, resolveConfigValueOrThrow, resolveConfigValueUncached, resolveHeadersOrThrow, } from "./resolve-config-value.js";
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({
     p50: Type.Optional(Type.Number()),
@@ -181,57 +180,6 @@ function formatValidationPath(error) {
     }
     const path = error.instancePath.replace(/^\//, "").replace(/\//g, ".");
     return path || "root";
-}
-function migrateLegacyRegisterProviderConfigValue(providerName, field, value) {
-    if (!isLegacyEnvVarNameConfigValue(value))
-        return value;
-    warnDeprecation(`registerProvider("${providerName}") ${field} value "${value}" is treated as a legacy environment variable reference. This will no longer be detected as an environment variable reference in a future release. Pass "$${value}" instead.`);
-    return `$${value}`;
-}
-function migrateLegacyRegisterProviderHeaders(providerName, field, headers) {
-    if (!headers)
-        return undefined;
-    let migratedHeaders;
-    for (const [key, value] of Object.entries(headers)) {
-        const migratedValue = migrateLegacyRegisterProviderConfigValue(providerName, `${field} header "${key}"`, value);
-        if (migratedValue === value)
-            continue;
-        migratedHeaders ??= { ...headers };
-        migratedHeaders[key] = migratedValue;
-    }
-    return migratedHeaders ?? headers;
-}
-function migrateLegacyRegisterProviderConfigValues(providerName, config) {
-    let migratedConfig;
-    const setMigratedConfigValue = (key, value) => {
-        migratedConfig ??= { ...config };
-        migratedConfig[key] = value;
-    };
-    if (config.apiKey) {
-        const apiKey = migrateLegacyRegisterProviderConfigValue(providerName, "apiKey", config.apiKey);
-        if (apiKey !== config.apiKey) {
-            setMigratedConfigValue("apiKey", apiKey);
-        }
-    }
-    const headers = migrateLegacyRegisterProviderHeaders(providerName, "headers", config.headers);
-    if (headers !== config.headers) {
-        setMigratedConfigValue("headers", headers);
-    }
-    if (config.models) {
-        let models;
-        for (let index = 0; index < config.models.length; index++) {
-            const model = config.models[index];
-            const modelHeaders = migrateLegacyRegisterProviderHeaders(providerName, `model "${model.id}" headers`, model.headers);
-            if (modelHeaders === model.headers)
-                continue;
-            models ??= [...config.models];
-            models[index] = { ...model, headers: modelHeaders };
-        }
-        if (models) {
-            setMigratedConfigValue("models", models);
-        }
-    }
-    return migratedConfig ?? config;
 }
 function emptyCustomModelsResult(error) {
     return { models: [], overrides: new Map(), modelOverrides: new Map(), error };
@@ -583,13 +531,14 @@ export class ModelRegistry {
     async getApiKeyAndHeaders(model) {
         try {
             const providerConfig = this.providerRequestConfigs.get(model.provider);
+            const providerEnv = this.authStorage.getProviderEnv(model.provider);
             const apiKeyFromAuthStorage = await this.authStorage.getApiKey(model.provider, { includeFallback: false });
             const apiKey = apiKeyFromAuthStorage ??
                 (providerConfig?.apiKey
-                    ? resolveConfigValueOrThrow(providerConfig.apiKey, `API key for provider "${model.provider}"`)
+                    ? resolveConfigValueOrThrow(providerConfig.apiKey, `API key for provider "${model.provider}"`, providerEnv)
                     : undefined);
-            const providerHeaders = resolveHeadersOrThrow(providerConfig?.headers, `provider "${model.provider}"`);
-            const modelHeaders = resolveHeadersOrThrow(this.modelRequestHeaders.get(this.getModelRequestKey(model.provider, model.id)), `model "${model.provider}/${model.id}"`);
+            const providerHeaders = resolveHeadersOrThrow(providerConfig?.headers, `provider "${model.provider}"`, providerEnv);
+            const modelHeaders = resolveHeadersOrThrow(this.modelRequestHeaders.get(this.getModelRequestKey(model.provider, model.id)), `model "${model.provider}/${model.id}"`, providerEnv);
             let headers = model.headers || providerHeaders || modelHeaders
                 ? { ...model.headers, ...providerHeaders, ...modelHeaders }
                 : undefined;
@@ -603,6 +552,7 @@ export class ModelRegistry {
                 ok: true,
                 apiKey,
                 headers: headers && Object.keys(headers).length > 0 ? headers : undefined,
+                env: providerEnv && Object.keys(providerEnv).length > 0 ? providerEnv : undefined,
             };
         }
         catch (error) {
@@ -657,7 +607,9 @@ export class ModelRegistry {
             return apiKey;
         }
         const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
-        return providerApiKey ? resolveConfigValueUncached(providerApiKey) : undefined;
+        return providerApiKey
+            ? resolveConfigValueUncached(providerApiKey, this.authStorage.getProviderEnv(provider))
+            : undefined;
     }
     /**
      * Check if a model is using OAuth credentials (subscription).
@@ -674,10 +626,9 @@ export class ModelRegistry {
      * If provider has oauth: registers OAuth provider for /login support.
      */
     registerProvider(providerName, config) {
-        const migratedConfig = migrateLegacyRegisterProviderConfigValues(providerName, config);
-        this.validateProviderConfig(providerName, migratedConfig);
-        this.applyProviderConfig(providerName, migratedConfig);
-        this.upsertRegisteredProvider(providerName, migratedConfig);
+        this.validateProviderConfig(providerName, config);
+        this.applyProviderConfig(providerName, config);
+        this.upsertRegisteredProvider(providerName, config);
     }
     /**
      * Unregister a previously registered provider.

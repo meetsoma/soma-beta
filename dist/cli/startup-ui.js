@@ -6,7 +6,7 @@ import { KeybindingsManager } from "../core/keybindings.js";
 import { ExtensionInputComponent } from "../modes/interactive/components/extension-input.js";
 import { ExtensionSelectorComponent } from "../modes/interactive/components/extension-selector.js";
 import { FirstTimeSetupComponent, } from "../modes/interactive/components/first-time-setup.js";
-import { detectTerminalBackground, initTheme, setTheme } from "../modes/interactive/theme/theme.js";
+import { detectTerminalBackgroundTheme, initTheme, setTheme } from "../modes/interactive/theme/theme.js";
 const OFFICIAL_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const OFFICIAL_APP_NAME = "pi";
 const OFFICIAL_CONFIG_DIR_NAME = ".pi";
@@ -88,19 +88,24 @@ export async function showFirstTimeSetup(settingsManager) {
             ui.stop();
             resolve();
         };
-        const component = new FirstTimeSetupComponent({
-            detectedTheme: detectTerminalBackground().theme,
-            onThemePreview: (themeName) => {
-                setTheme(themeName);
-                ui.invalidate();
-                ui.requestRender();
-            },
-            onSubmit: (result) => void finish(result),
-            onCancel: () => void finish(undefined),
-        });
-        ui.addChild(component);
-        ui.setFocus(component);
-        ui.start();
+        const showSetup = async () => {
+            ui.start();
+            const detection = await detectTerminalBackgroundTheme({ ui, timeoutMs: 100 });
+            setTheme(detection.theme);
+            const component = new FirstTimeSetupComponent({
+                detectedTheme: detection.theme,
+                onThemePreview: (themeName) => {
+                    setTheme(themeName);
+                    ui.requestRender();
+                },
+                onSubmit: (result) => void finish(result),
+                onCancel: () => void finish(undefined),
+            });
+            ui.addChild(component);
+            ui.setFocus(component);
+            ui.requestRender();
+        };
+        void showSetup();
     });
 }
 export async function showStartupInput(settingsManager, title, placeholder) {

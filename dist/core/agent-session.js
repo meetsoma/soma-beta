@@ -163,7 +163,7 @@ export class AgentSession {
             throw new Error(result.error);
         }
         if (result.apiKey) {
-            return { apiKey: result.apiKey, headers: result.headers };
+            return { apiKey: result.apiKey, headers: result.headers, env: result.env };
         }
         const isOAuth = this._modelRegistry.isUsingOAuth(model);
         if (isOAuth) {
@@ -178,7 +178,7 @@ export class AgentSession {
             return this._getRequiredRequestAuth(model);
         }
         const result = await this._modelRegistry.getApiKeyAndHeaders(model);
-        return result.ok ? { apiKey: result.apiKey, headers: result.headers } : {};
+        return result.ok ? { apiKey: result.apiKey, headers: result.headers, env: result.env } : {};
     }
     /**
      * Install tool hooks once on the Agent instance.
@@ -1286,7 +1286,7 @@ export class AgentSession {
             if (!this.model) {
                 throw new Error(formatNoModelSelectedMessage());
             }
-            const { apiKey, headers } = await this._getCompactionRequestAuth(this.model);
+            const { apiKey, headers, env } = await this._getCompactionRequestAuth(this.model);
             const pathEntries = this.sessionManager.getBranch();
             const settings = this.settingsManager.getCompactionSettings();
             const preparation = prepareCompaction(pathEntries, settings);
@@ -1329,7 +1329,7 @@ export class AgentSession {
             }
             else {
                 // Generate compaction result
-                const result = await compact(preparation, this.model, apiKey, headers, customInstructions, this._compactionAbortController.signal, this.thinkingLevel, this.agent.streamFn);
+                const result = await compact(preparation, this.model, apiKey, headers, customInstructions, this._compactionAbortController.signal, this.thinkingLevel, this.agent.streamFn, env);
                 summary = result.summary;
                 firstKeptEntryId = result.firstKeptEntryId;
                 tokensBefore = result.tokensBefore;
@@ -1499,6 +1499,7 @@ export class AgentSession {
             }
             let apiKey;
             let headers;
+            let env;
             if (this.agent.streamFn === streamSimple) {
                 const authResult = await this._modelRegistry.getApiKeyAndHeaders(this.model);
                 if (!authResult.ok || !authResult.apiKey) {
@@ -1513,9 +1514,10 @@ export class AgentSession {
                 }
                 apiKey = authResult.apiKey;
                 headers = authResult.headers;
+                env = authResult.env;
             }
             else {
-                ({ apiKey, headers } = await this._getCompactionRequestAuth(this.model));
+                ({ apiKey, headers, env } = await this._getCompactionRequestAuth(this.model));
             }
             const pathEntries = this.sessionManager.getBranch();
             const preparation = prepareCompaction(pathEntries, settings);
@@ -1567,7 +1569,7 @@ export class AgentSession {
             }
             else {
                 // Generate compaction result
-                const compactResult = await compact(preparation, this.model, apiKey, headers, undefined, this._autoCompactionAbortController.signal, this.thinkingLevel, this.agent.streamFn);
+                const compactResult = await compact(preparation, this.model, apiKey, headers, undefined, this._autoCompactionAbortController.signal, this.thinkingLevel, this.agent.streamFn, env);
                 summary = compactResult.summary;
                 firstKeptEntryId = compactResult.firstKeptEntryId;
                 tokensBefore = compactResult.tokensBefore;
@@ -2234,12 +2236,13 @@ export class AgentSession {
             let summaryDetails;
             if (options.summarize && entriesToSummarize.length > 0 && !extensionSummary) {
                 const model = this.model;
-                const { apiKey, headers } = await this._getRequiredRequestAuth(model);
+                const { apiKey, headers, env } = await this._getRequiredRequestAuth(model);
                 const branchSummarySettings = this.settingsManager.getBranchSummarySettings();
                 const result = await generateBranchSummary(entriesToSummarize, {
                     model,
                     apiKey,
                     headers,
+                    env,
                     signal: this._branchSummaryAbortController.signal,
                     customInstructions,
                     replaceInstructions,

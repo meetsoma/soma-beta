@@ -101,7 +101,6 @@ export class LoginDialogComponent extends Container {
         this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
         this.contentContainer.addChild(new Spacer(1));
         this.contentContainer.addChild(new Text(theme.fg("warning", `Enter code: ${info.userCode}`), 1, 0));
-        openBrowser(info.verificationUri);
         this.tui.requestRender();
     }
     /**

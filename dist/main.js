@@ -20,7 +20,7 @@ import { createAgentSessionFromServices, createAgentSessionServices, } from "./c
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import { configureHttpDispatcher } from "./core/http-dispatcher.js";
+import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.js";
 import { resolveCliModel, resolveModelScope } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import { resolveProjectTrusted } from "./core/project-trust.js";
@@ -360,7 +360,21 @@ export async function main(args, options) {
     if (process.platform === "win32") {
         cleanupWindowsSelfUpdateQuarantine(getPackageDir());
     }
+    const cwd = process.cwd();
+    const agentDir = getAgentDir();
+    const bootstrapSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+    applyHttpProxySettings(bootstrapSettingsManager.getGlobalSettings().httpProxy);
+    configureHttpDispatcher();
     if (await handlePackageCommand(args, { extensionFactories: options?.extensionFactories })) {
+        const exitCode = process.exitCode ?? 0;
+        if (process.platform === "win32" && exitCode === 0 && args[0] === "update") {
+            // We normally prefer process.exit(0) for package commands so bad extensions cannot keep
+            // one-shot commands alive. On Windows, Node can assert after fetch() if process.exit(0)
+            // runs during teardown; let successful `pi update` drain naturally instead.
+            // https://github.com/nodejs/node/issues/56645
+            return;
+        }
+        process.exit(exitCode);
         return;
     }
     if (await handleConfigCommand(args, { extensionFactories: options?.extensionFactories })) {
@@ -407,10 +421,8 @@ export async function main(args, options) {
     validateForkFlags(parsed);
     validateSessionIdFlags(parsed);
     // Run migrations (pass cwd for project-local migrations)
-    const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
+    const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(cwd);
     time("runMigrations");
-    const cwd = process.cwd();
-    const agentDir = getAgentDir();
     const startupSettingsManager = SettingsManager.create(cwd, agentDir);
     reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
     // Experimental first-time setup: theme choice and analytics opt-in.
@@ -576,6 +588,7 @@ export async function main(args, options) {
     time("createAgentSessionRuntime");
     const { services, session, modelFallbackMessage } = runtime;
     const { settingsManager, modelRegistry, resourceLoader } = services;
+    applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
     configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
     if (parsed.help) {
         const extensionFlags = resourceLoader

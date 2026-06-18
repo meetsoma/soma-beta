@@ -587,7 +587,6 @@ export class SessionSelectorComponent extends Container {
     allSessions = null;
     currentSessionsLoader;
     allSessionsLoader;
-    onCancel;
     requestRender;
     renameSession;
     currentLoading = false;
@@ -627,7 +626,6 @@ export class SessionSelectorComponent extends Container {
         this.keybindings = options?.keybindings ?? KeybindingsManager.create();
         this.currentSessionsLoader = currentSessionsLoader;
         this.allSessionsLoader = allSessionsLoader;
-        this.onCancel = onCancel;
         this.requestRender = requestRender;
         this.header = new SessionSelectorHeader(this.scope, this.sortMode, this.nameFilter, this.requestRender);
         const renameSession = options?.renameSession;
@@ -793,9 +791,6 @@ export class SessionSelectorComponent extends Container {
             this.header.setLoading(false);
             this.sessionList.setSessions(sessions, showCwd);
             this.requestRender();
-            if (scope === "all" && sessions.length === 0 && (this.currentSessions?.length ?? 0) === 0) {
-                this.onCancel();
-            }
         }
         catch (err) {
             if (scope === "current") {

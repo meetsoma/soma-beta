@@ -20,6 +20,8 @@ export const HTTP_IDLE_TIMEOUT_CHOICES = [
     { label: "5 min", timeoutMs: 300_000 },
     { label: "disabled", timeoutMs: 0 },
 ];
+const originalGlobalFetch = globalThis.fetch;
+let installedGlobalFetch;
 export function parseHttpIdleTimeoutMs(value) {
     if (typeof value === "string") {
         const trimmed = value.trim();
@@ -43,6 +45,13 @@ export function formatHttpIdleTimeoutMs(timeoutMs) {
     }
     return `${timeoutMs / 1000} sec`;
 }
+export function applyHttpProxySettings(httpProxy) {
+    const proxy = httpProxy?.trim();
+    if (!proxy)
+        return;
+    process.env.HTTP_PROXY ??= proxy;
+    process.env.HTTPS_PROXY ??= proxy;
+}
 export function configureHttpDispatcher(timeoutMs = DEFAULT_HTTP_IDLE_TIMEOUT_MS) {
     const normalizedTimeoutMs = parseHttpIdleTimeoutMs(timeoutMs);
     if (normalizedTimeoutMs === undefined) {
@@ -56,6 +65,13 @@ export function configureHttpDispatcher(timeoutMs = DEFAULT_HTTP_IDLE_TIMEOUT_MS
     // Keep fetch and the dispatcher on the same undici implementation. Node 26.0's
     // bundled fetch can otherwise consume compressed responses through npm undici's
     // dispatcher without decompressing them, causing response.json() failures.
-    undici.install?.();
+    // If a caller replaced fetch after module load, preserve that deliberate override.
+    const shouldInstallGlobals = installedGlobalFetch === undefined
+        ? globalThis.fetch === originalGlobalFetch
+        : globalThis.fetch === installedGlobalFetch;
+    if (shouldInstallGlobals) {
+        undici.install?.();
+        installedGlobalFetch = globalThis.fetch;
+    }
 }
 //# sourceMappingURL=http-dispatcher.js.map

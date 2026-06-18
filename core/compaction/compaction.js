@@ -419,8 +419,8 @@ Use this EXACT format:
 - [Preserve important context, add new if needed]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
-function createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel) {
-    const options = { maxTokens, signal, apiKey, headers };
+function createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel) {
+    const options = { maxTokens, signal, apiKey, headers, env };
     if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
         options.reasoning = thinkingLevel;
     }
@@ -437,7 +437,7 @@ async function completeSummarization(model, context, options, streamFn) {
  * Generate a summary of the conversation using the LLM.
  * If previousSummary is provided, uses the update prompt to merge.
  */
-export async function generateSummary(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn) {
+export async function generateSummary(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env) {
     const maxTokens = Math.min(Math.floor(0.8 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
     // Use update prompt if we have a previous summary, otherwise initial prompt
     let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
@@ -461,7 +461,7 @@ export async function generateSummary(currentMessages, model, reserveTokens, api
             timestamp: Date.now(),
         },
     ];
-    const completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel);
+    const completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel);
     const response = await completeSummarization(model, { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }, completionOptions, streamFn);
     if (response.stopReason === "error") {
         throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
@@ -560,7 +560,7 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
  * @param preparation - Pre-calculated preparation from prepareCompaction()
  * @param customInstructions - Optional custom focus for the summary
  */
-export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn) {
+export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn, env) {
     const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;
     // Generate summaries (can be parallel if both needed) and merge into one
     let summary;
@@ -568,16 +568,16 @@ export async function compact(preparation, model, apiKey, headers, customInstruc
         // Generate both summaries in parallel
         const [historyResult, turnPrefixResult] = await Promise.all([
             messagesToSummarize.length > 0
-                ? generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn)
+                ? generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env)
                 : Promise.resolve("No prior history."),
-            generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, signal, thinkingLevel, streamFn),
+            generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn),
         ]);
         // Merge into single summary
         summary = `${historyResult}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult}`;
     }
     else {
         // Just generate history summary
-        summary = await generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn);
+        summary = await generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env);
     }
     // Compute file lists and append to summary
     const { readFiles, modifiedFiles } = computeFileLists(fileOps);
@@ -595,7 +595,7 @@ export async function compact(preparation, model, apiKey, headers, customInstruc
 /**
  * Generate a summary for a turn prefix (when splitting a turn).
  */
-async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey, headers, signal, thinkingLevel, streamFn) {
+async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn) {
     const maxTokens = Math.min(Math.floor(0.5 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY); // Smaller budget for turn prefix
     const llmMessages = convertToLlm(messages);
     const conversationText = serializeConversation(llmMessages);
@@ -607,7 +607,7 @@ async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey,
             timestamp: Date.now(),
         },
     ];
-    const response = await completeSummarization(model, { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }, createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel), streamFn);
+    const response = await completeSummarization(model, { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }, createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel), streamFn);
     if (response.stopReason === "error") {
         throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
     }

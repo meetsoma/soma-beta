@@ -193,6 +193,7 @@ export function createBashToolDefinition(cwd, options) {
             const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
             const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
             const output = new OutputAccumulator({ tempFilePrefix: "pi-bash" });
+            let acceptingOutput = true;
             let updateTimer;
             let updateDirty = false;
             let lastUpdateAt = 0;
@@ -235,10 +236,13 @@ export function createBashToolDefinition(cwd, options) {
                 onUpdate({ content: [], details: undefined });
             }
             const handleData = (data) => {
+                if (!acceptingOutput)
+                    return;
                 output.append(data);
                 scheduleOutputUpdate();
             };
             const finishOutput = async () => {
+                acceptingOutput = false;
                 output.finish();
                 clearUpdateTimer();
                 emitOutputUpdate();

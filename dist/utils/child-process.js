@@ -12,10 +12,13 @@ export function spawnProcessSync(command, args, options) {
 /**
  * Wait for a child process to terminate without hanging on inherited stdio handles.
  *
- * On Windows, daemonized descendants can inherit the child's stdout/stderr pipe
- * handles. In that case the child emits `exit`, but `close` can hang forever even
- * though the original process is already gone. We wait briefly for stdio to end,
- * then forcibly stop tracking the inherited handles.
+ * A short-lived child can `exit` while a detached descendant keeps its stdout/stderr
+ * pipe open. We must not resolve and destroy the streams on a fixed deadline measured
+ * from `exit`, or output still being written past that deadline is silently lost
+ * (earendil-works/pi#5303). Instead, after `exit` we wait for the pipes to fall idle:
+ * the grace timer is re-armed on every chunk, so an actively writing descendant keeps
+ * us reading, while a quiet inherited handle (e.g. a Windows daemonized descendant
+ * that never lets `close` fire) still releases us after the grace elapses.
  */
 export function waitForChildProcess(child) {
     return new Promise((resolve, reject) => {
@@ -35,6 +38,8 @@ export function waitForChildProcess(child) {
             child.removeListener("close", onClose);
             child.stdout?.removeListener("end", onStdoutEnd);
             child.stderr?.removeListener("end", onStderrEnd);
+            child.stdout?.removeListener("data", onData);
+            child.stderr?.removeListener("data", onData);
         };
         const finalize = (code) => {
             if (settled)
@@ -51,6 +56,17 @@ export function waitForChildProcess(child) {
             if (stdoutEnded && stderrEnded) {
                 finalize(exitCode);
             }
+        };
+        const armIdleTimer = () => {
+            if (postExitTimer)
+                clearTimeout(postExitTimer);
+            postExitTimer = setTimeout(() => finalize(exitCode), EXIT_STDIO_GRACE_MS);
+        };
+        const onData = () => {
+            // Output is still arriving after exit; defer finalizing so we don't
+            // destroy the stream mid-write and truncate the tail.
+            if (exited && !settled)
+                armIdleTimer();
         };
         const onStdoutEnd = () => {
             stdoutEnded = true;
@@ -72,7 +88,7 @@ export function waitForChildProcess(child) {
             exitCode = code;
             maybeFinalizeAfterExit();
             if (!settled) {
-                postExitTimer = setTimeout(() => finalize(code), EXIT_STDIO_GRACE_MS);
+                armIdleTimer();
             }
         };
         const onClose = (code) => {
@@ -80,6 +96,8 @@ export function waitForChildProcess(child) {
         };
         child.stdout?.once("end", onStdoutEnd);
         child.stderr?.once("end", onStderrEnd);
+        child.stdout?.on("data", onData);
+        child.stderr?.on("data", onData);
         child.once("error", onError);
         child.once("exit", onExit);
         child.once("close", onClose);
