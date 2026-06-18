@@ -10,6 +10,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.34.0] — 2026-06-18
+
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+### Added
+- **`soma:inbox.*` caps — mark inbox letters read/actioned/archived.** The markdown inbox (`.soma/inbox/*.md`) surfaces unread letters at boot, but the only way to clear one was hand-editing its `status:` frontmatter — high friction, so letters were read and never marked, and the boot summary piled up indefinitely. Four new caps mechanize it: `soma:inbox.list` (letters by status), `soma:inbox.read`, `soma:inbox.actioned`, `soma:inbox.archive` (move to `inbox/_archive/`). Each accepts a filename, slug, or unique partial; ambiguous refs list their candidates. Resolves the `.soma/` chain from cwd, so a letter in a parent inbox can be cleared from a child project. Free tier, no bridge. (SX-791)
+
+### Fixed
+- **Exhale crashed in an uninitialized directory.** `saveProtocolState` wrote `state.json` without ensuring `.soma/` existed, so running an exhale where the local `.soma/` was missing (e.g. a project that resolves state to a parent/grandparent soma) threw `ENOENT` and aborted the whole exhale. It now creates the directory first. Regression-tested.
+
+
 ## [0.33.1] — 2026-06-18
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
