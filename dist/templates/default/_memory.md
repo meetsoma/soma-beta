@@ -3,8 +3,8 @@ type: template
 name: memory
 description: Preload format — the agent briefs its next self at exhale
 created: 2026-03-23
-updated: 2026-06-02
-soma_template_version: 0.32.0
+updated: 2026-06-20
+soma_template_version: 0.35.0
 ---
 
 ## Exhale note
@@ -30,6 +30,7 @@ If a `⚠️  USER NOTE` block appears at the top of this EXHALE message, the us
 - Laundry lists? (11 items nobody will read → group into 3-5.)
 - Generic lead-ins? ("Check the git log" before the actual task → lead with the task.)
 - Unverifiable claims? ("Pattern from s01-abcdef" → the loader can't verify that; say what the pattern IS.)
+- Inherited-as-fact? Every load-bearing state or cause claim is either VERIFIED this session (say how — you ran it / checked the commit) or flagged INHERITED-unverified (with the one-command recheck). An unmarked inherited claim reads as settled fact and sends the next self to the wrong place.
 Fix what you'd stumble over. Then write it.
 
 **Session log first, preload last.** The preload write triggers rotation.
@@ -76,7 +77,10 @@ tags: []
 <!-- THE AMNESIA-PROOF SECTION. Prioritized sequence, not a menu. Present imperative.
      "Your first move: check X. Then read Y. Then ship Z."
      Concrete probe commands: `curl X`, `git log --oneline`, `ls .soma/amps/`.
-     Don't say "check if X works." Say the exact command. -->
+     Don't say "check if X works." Say the exact command.
+     ORIENT BY THE LIVE ARTIFACT, NOT THE SOURCE: for any "is X true / did X happen" question,
+     open the running thing (url / log / file / command output) FIRST — filenames and inherited
+     notes lie; the running system is truth. The plausible story is the trap. -->
 
 ## Warnings
 <!-- Traps the loader will hit. Tie to tasks:

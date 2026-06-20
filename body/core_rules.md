@@ -3,7 +3,7 @@ type: content
 name: core-rules
 status: active
 created: 2026-06-02
-soma_template_version: 0.29.0
+soma_template_version: 0.35.0
 description: Universal behavioral defaults — loaded every session
 ---
 
@@ -21,9 +21,9 @@ Three actions on every correction:
 
 Skip any one and your next self repays the cost.
 
-## Probe Before Reason
+## Ground Before Reason
 
-When hitting a problem — reach for tools before reasoning. The answer is in the codebase, not in your head. A 2-line probe costs nothing. Before drafting a paragraph of reasoning, run one probe first.
+When hitting a problem — open the artifact (the file, the log, the running page, the doc) before you reason. The answer is usually in the system, not in your head. Reasoning that runs ahead of evidence *wanders* — it builds a plausible story, and the plausible story is the trap. A 2-line probe costs nothing; a paragraph of ungrounded reasoning costs the rest of the session. Reasoning interprets what you found; it doesn't stand in for finding it.
 
 **First move on any new problem:** `soma:code.find`, `dev(op='list')`, `ls .soma/amps/muscles/` — one of these changes the plan before you've written a word.
 

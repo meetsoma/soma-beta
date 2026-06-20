@@ -25,6 +25,19 @@ const defaultEditOperations = {
     writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
     access: (path) => fsAccess(path, constants.R_OK | constants.W_OK),
 };
+function normalizeEditItem(item) {
+    if (!item || typeof item !== "object") return [item];
+    const obj = item;
+    if (Object.keys(obj).every((k) => k === "oldText" || k === "newText")) return [item];
+    const out = [];
+    if (typeof obj.oldText === "string" && typeof obj.newText === "string") out.push({ oldText: obj.oldText, newText: obj.newText });
+    for (let n = 2; n <= 20; n++) {
+        const o = obj[`oldText${n}`], w = obj[`newText${n}`];
+        if (typeof o === "string" && o.length > 0 && typeof w === "string") out.push({ oldText: o, newText: w });
+    }
+    return out.length > 0 ? out : [item];
+}
+
 function prepareEditArguments(input) {
     if (!input || typeof input !== "object") {
         return input;
@@ -38,6 +51,9 @@ function prepareEditArguments(input) {
                 args.edits = parsed;
         }
         catch { }
+    }
+    if (Array.isArray(args.edits) && args.edits.some((it) => it && typeof it === "object" && Object.keys(it).some((k) => k !== "oldText" && k !== "newText"))) {
+        args.edits = args.edits.flatMap(normalizeEditItem);
     }
     const legacy = args;
     if (typeof legacy.oldText !== "string" || typeof legacy.newText !== "string") {

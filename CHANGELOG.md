@@ -10,6 +10,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.35.0] — 2026-06-20
+
+### Added
+- **coerce Opus oldText2/newText2 Edit mis-shape (SX-795)** — the Edit tool now folds a crammed second pair / strips empty leftovers in `prepareEditArguments` before validation, instead of rejecting the whole call. Clean input untouched.
+
+### Changed
+- **Body templates carry the "ground before think" discipline** — `soul.md` and `core_rules.md` lead with "Ground before think" / "Ground Before Reason" (reasoning interprets evidence, it doesn't stand in for it); `_memory.md` preload format adds the verified-vs-inherited check + orient-by-live-artifact guidance. Pristine `_memory.md` auto-updates on first boot; user-owned `soul.md`/`core_rules.md` ship to new installs only (never clobbered).
+- **Delegation docs surface `headless` as the reliable mode (SX-794)** — `background-delegation.md` now documents all three modes (sync / headless / background) + a "which one?" guide.
+
+### Fixed
+- **error-sanitizer import injection prepends + fails loud (SX-793)** — fixes the `/inhale` TUI crash (`sanitizeApiError is not defined`) that shipped half-applied in v0.34.0.
+- **build halts on a failed patch (SX-798)** — `build-dist.mjs` previously *swallowed* an `apply-patches.sh` failure (logged a ⚠, kept building) and could ship a half-patched dist. That is precisely how v0.34.0 shipped the crash. The build now refuses to continue when patching fails.
+
+
 ## [0.34.0] — 2026-06-18
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
