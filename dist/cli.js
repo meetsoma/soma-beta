@@ -125,8 +125,9 @@ const USER_ARGV_END = process.argv.length;
 		const discoverExtensionFiles = (dir) => {
 			if (!existsSync(dir)) return [];
 			try {
+				// _-prefixed files are templates/partials, not loadable extensions.
 				return readdirSync(dir, { withFileTypes: true })
-					.filter(e => (e.isFile() || e.isSymbolicLink()) && (e.name.endsWith(".ts") || e.name.endsWith(".js")))
+					.filter(e => (e.isFile() || e.isSymbolicLink()) && (e.name.endsWith(".ts") || e.name.endsWith(".js")) && !e.name.startsWith("_"))
 					.map(e => join(dir, e.name));
 			} catch {
 				return [];
