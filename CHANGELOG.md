@@ -10,6 +10,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.37.1] — 2026-06-23
+
+### Fixed
+- **Exiting a session no longer garbles your shell (SX-808).** Two soma-driven exits — the keepalive idle
+  shutdown ("shutting down to prevent zombie session") and the `/exit` command — called `process.exit(0)`
+  directly, bypassing the TUI teardown that restores the terminal. Your shell was left in the Kitty keyboard
+  protocol, so the next thing you typed (`soma -c`, `soma inhale`, …) rendered as garbage like
+  `so15;1:3um11;1:3u`. Both now route through a shared graceful shutdown (`core/shutdown.ts`) that triggers
+  the runtime's own teardown via SIGTERM — restoring cooked mode, the cursor, and disabling the
+  Kitty/bracketed-paste/modifyOtherKeys sequences before exiting. Two regression guards ship with the fix: a
+  Pi-upstream contract check (fails loudly if the runtime ever stops handling SIGTERM gracefully) and a
+  static scan that flags ANY naked timer-driven `process.exit()` in an extension — the bug shape — going
+  forward. (The scan caught the `/exit` instance the moment it was added.)
+
+
 ## [0.37.0] — 2026-06-23
 
 ### Changed
