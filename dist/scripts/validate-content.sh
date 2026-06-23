@@ -149,7 +149,7 @@ for file in "${EXPANDED[@]}"; do
                     pass "breadcrumb present (${bc_len} chars)"
                 fi
             else
-                fail "missing: breadcrumb (required for protocols — this is ALL the agent sees when warm)"
+                fail "missing: breadcrumb (required for protocols — the warm fallback when there's no ## TL;DR)"
             fi
 
             # applies-to required

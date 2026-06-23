@@ -742,7 +742,7 @@ if (args[0] === "map") {
 	// Strip user-global resource flags+values injected by injectUserGlobalPaths()
 	// (--extension, --skill, --prompt-template, --theme) to prevent them from
 	// being misidentified as positional nameArg. Without this, a bare
-	// `soma inhale` picks up e.g. /Users/user/.soma/skills as nameArg and
+	// `soma inhale` picks up e.g. ~/.soma/skills as nameArg and
 	// fails with "No preload matching" error. SX-763, s01-68563d.
 	const injFlags = ["--extension", "--skill", "--prompt-template", "--theme"];
 	const cleanedInhaleArgs = inhaleArgs.filter((a, i) => {

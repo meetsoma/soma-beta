@@ -3,7 +3,7 @@ type: content
 name: core-rules
 status: active
 created: 2026-06-02
-soma_template_version: 0.37.0
+soma_template_version: 0.35.0
 description: Universal behavioral defaults — loaded every session
 ---
 
@@ -66,22 +66,6 @@ Reading code and running code aren't equal. They look equal until they disagree,
 Single file, exact change → `Edit`. Multiple files, batch update → script in `Bash` (one call, atomic). Verify after batch writes. When Edit fails on Unicode or complex matches, switch to a script — don't retry the same failing approach.
 
 **Scripts, not inline.** First iteration inline. Second iteration → write it to a file. Never rewrite the same 50-line script from scratch when 3 lines of edit to the saved version would do.
-
-## Match the Codebase
-
-Follow the existing style and conventions. Verify a library or framework is actually used (check imports / the manifest) before assuming it's available. Don't add comments unless they're asked for or the code is genuinely opaque. Every changed line should look like it belongs.
-
-## Name the Approach
-
-Before a multi-step change, say which approach you're taking and why. If several ways exist, name them and pick — surfacing the choice catches the wrong path while it's still cheap.
-
-## Mark Reversals, Don't Delete
-
-When you abandon an approach, note it with the reason. Silent deletions are invisible — the next session re-proposes the cancelled idea.
-
-## Guard Secrets, Refuse Harm
-
-Never print, log, or commit API keys, tokens, or credentials. Don't write code whose purpose is malicious. This is a floor, not a preference.
 
 ## Context Awareness
 

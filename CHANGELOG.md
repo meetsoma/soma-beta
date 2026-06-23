@@ -10,6 +10,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.37.0] — 2026-06-23
+
+### Changed
+- **The system prompt was split along a scaffold-vs-behavior line.** `prompts/system-core.md` (the always-
+  loaded framework harness, identical on every install) is now **pure scaffold** — session mechanics, the
+  memory tree, tool-discovery, docs, commands, rhythm, and *pointers* to the behavioral layer. **All
+  behavioral rules now live in `core_rules.md`** — a body file you own and tune (ours-vs-theirs like
+  `soul.md` / `voice.md`). Four behaviors moved from system-core into the `core_rules` seed: **Match the
+  Codebase · Name the Approach · Mark Reversals, Don't Delete · Guard Secrets, Refuse Harm.** Why: the
+  always-loaded scaffold stays lean and universal, while the behavioral layer becomes yours to shape — the
+  same separation `soul`/`voice` already have. Existing installs keep their `core_rules` untouched; an
+  **agent-run migration** (`migrations/phases/v0.36.0-to-v0.37.0.md`, `fix-mode: agent`) diffs the new seed
+  against yours and merges the missing behaviors, preserving every customization (never a mechanical clobber).
+- **SX-805 — v0.37.0 template-migration plumbing.** The `core_rules.md` and `_protocol-template.md` seeds
+  bumped to 0.37.0 (core_rules gained the 4 behavior sections; the protocol template moved `## Summary` →
+  `## TL;DR` so warm-loading reads the right block). A `template-auto-update-v0.37.0` boot step auto-updates a
+  **pristine** `_protocol-template.md` to the new content and **keeps a customized one** (byte-exact pristine
+  check against the archived v0.36.0 seed — the anti-clobber guard). `core_rules.md` is user-owned and never
+  auto-written; new installs get the full v0.37.0 set, existing installs migrate via the agent-run map above.
+
+### Added
+- **`soma:browser.render` — render a JS-heavy / SPA page in an ephemeral tab and return its text (SX-807).**
+  Static `fetch()` returns only a ~400-char shell on JS-rendered sites; this drives a real browser via raw
+  CDP over WebSocket: create a throwaway tab → wait for hydration → read `innerText` (or `outerHTML`, or a
+  CSS selector's content) → close the tab. **No bridge required**, and the ephemeral tab sidesteps the
+  tab-UUID-registry churn. args: `{url, selector?, format?:'text'|'html', waitMs?(5000), keepOpen?}`. (Inherits
+  bot-detection — CAPTCHA / Cloudflare can still block.)
+
+### Fixed
+- **`soma:browser.evaluate` + `.navigate` now fall back to raw CDP-WS when the bridge is down (SX-807).** The
+  bridge proxies CDP control-plane ops, but it dies mid-session — and these caps used to hard-fail with
+  "requires bridge" even though CDP itself (:9333) was still alive. Now they detect an unreachable bridge and
+  talk CDP directly (resolving the target tab by id / url / title, else the first page). The bridge-up path is
+  unchanged. The direct-CDP WebSocket helper rewrites the target host to the resolved config (127.0.0.1),
+  avoiding the `localhost`→IPv6 (`::1`) footgun where a browser listening on IPv4 only is unreachable.
+- **SX-794 — `soma:agent.delegate({ model:'claude-cli/*', background:true })` now actually runs.** Background
+  delegation booted `soma --model claude-cli/sonnet` in the terminal pane, but `claude-cli/*` is a delegate
+  *backend*, not a base-resolver model — the child died with "Model not found" and the task text leaked into
+  the shell. The synchronous path already intercepted `claude-cli/*` (→ `claude -p`); the background path
+  never reached that branch. Now `spawnBackground` detects a claude-cli backend and boots a real **`claude -p`
+  one-shot** in the pane instead: the role's declared `default-tools` drive the allowlist (SX-801; read-only
+  fallback when a role declares nothing), the role's compiled prompt rides as `--append-system-prompt`,
+  `ANTHROPIC_API_KEY` is blanked so it draws from the subscription (never silent extra-usage), and
+  `--permission-mode acceptEdits` keeps a detached, non-interactive pane from hanging on a tool prompt. Task +
+  prompt are passed via temp files referenced as `"$(cat …)"` so no user content is inlined into the
+  send-keys command. Drivers gained a generic `SpawnOpts.bootCommand` (run verbatim instead of the default
+  soma boot). Verified end-to-end: a background `builder` child wrote a file (Write) and ran a command (Bash)
+  via `claude -p` in tmux. (root-cause handoff from a peer soma instance.)
+- **scrub names from shipping .ts + close leak-scan .js gap**
+- **block peer/client soma-instance names from soma-beta**
+
+
 ## [0.36.0] — 2026-06-21
 
 ### Added
@@ -437,7 +489,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 - **Cycle 14 — Regression tests for runtime patches** (s01-a6b91e). 27 new gates across 3 test scripts (`test-tool-result-content-guard.sh`, `test-pi-ai-anthropic-content-guard.sh`, `test-pi-tui-exit-cleanup.sh`) lock Sites A-G against regression. Plus `test-preload-notify-state-machine.sh` (15 gates) for cycle 12. Total: 42 new test gates, 100% passing.
 
-- **Cycle 03-meta — META_CYCLE.md adoption** (s01-a6b91e). New `releases/META_CYCLE.md` umbrella dashboard (live state + cycles index + routing + cross-cycle artifact pointers + pattern + changelog). Pattern adopted from arzadon-fitness s01-ddcd84 v0.1.0; meetsoma is domain #2 of the validation arc her muscle's "Strengthen" phase needs.
+- **Cycle 03-meta — META_CYCLE.md adoption** (s01-a6b91e). New `releases/META_CYCLE.md` umbrella dashboard (live state + cycles index + routing + cross-cycle artifact pointers + pattern + changelog). Pattern adopted from a peer soma instance (s01-ddcd84) v0.1.0; meetsoma is domain #2 of the validation arc that muscle's "Strengthen" phase needs.
 
 - **Three new disciplines locked as muscles** (s01-a6b91e):
   - `amps/muscles/meta-cycle-pattern.md` — single SoT per cycle; umbrella META_CYCLE.md dashboard; persistent service artifacts at `<umbrella>/<service>/`.
@@ -554,7 +606,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 - **somadian drift discipline — verify + lift + pre-commit gate (SOMADIAN-002, s01-ef2bdc)** — three scripts that enforce byte-identical shared code across the 4 somadian bins (cloud / enterprise / local / sidecar): `somadian-verify` detects drift, `somadian-mirror` lifts a canonical bin to the others, and `install-hooks.sh` wires a pre-commit gate that blocks divergent commits. Closes the silent-drift hole.
 - **namespace-rooted workspace target path (s01-ef2bdc)** — `soma-workspace-migrate-legacy.sh` now writes to `~/.soma/<namespace>/workspaces/__legacy__/...` (was `~/.soma/workspaces/...`). Aligns with first-name-wins namespace shape (SOMAVERSE-019).
 - **soma-workspace-migrate-legacy.sh — lazy migration W2 of plan 02 (s01-680a9c, preload #3)** — walks `~/.soma/plugins/<type>/state.json` and copies each into `~/.soma/workspaces/__legacy__/<type>/<type>-1.json` + registers in `~/.soma/workspaces/__legacy__/panes.json`. Idempotent (re-run skips already-registered instances). Skips leading-underscore types (`_test`, `_regression_test`) by default. Preserves old paths for one release cycle as fallback. Per `02-workspace-pane-config.md § Migration W2 (lazy)` and `~/.soma/workspaces/README.md`. Smoke-verified end-to-end against a tmp clone of `~/.soma/plugins/`: 8 panes migrated, registry built with types/paths/timestamps/provenance markers, re-run skipped all 8.
-- **soma-somaverse-deploy.sh — closes the build-vs-stamp race for somaverse (s01-680a9c, SOMAVERSE-009)** — mirrors `soma-somadian-deploy.sh` for the somaverse side. Enforces commit → build → deploy → verify ordering. The somaverse build embeds `git rev-parse HEAD` as the cache-buster (`main.js?v=<sha>`); building with uncommitted changes makes the deployed bundle report an older sha than its actual contents. Caught s01-680a9c cycle 10 mid-deploy. Builds: `local` (build-only), `enterprise` (→ arzadon.somaverse.ai), `vps` (→ somaverse.ai). End-to-end smoke verified live on enterprise build.
+- **soma-somaverse-deploy.sh — closes the build-vs-stamp race for somaverse (s01-680a9c, SOMAVERSE-009)** — mirrors `soma-somadian-deploy.sh` for the somaverse side. Enforces commit → build → deploy → verify ordering. The somaverse build embeds `git rev-parse HEAD` as the cache-buster (`main.js?v=<sha>`); building with uncommitted changes makes the deployed bundle report an older sha than its actual contents. Caught s01-680a9c cycle 10 mid-deploy. Builds: `local` (build-only), `enterprise` (→ a client enterprise host), `vps` (→ somaverse.ai). End-to-end smoke verified live on enterprise build.
 - **soma-somadian-deploy.sh — closes the build-vs-rsync race (s01-1bf0bb Cycle 15)** — enforces commit→rsync→build→deploy→verify order. Includes `rollback` command. Future deploys won't have stamp-vs-source mismatch. The Cycle 13 build had this race (binary had Cycle 13.5 fix but git_sha stamp was Cycle 13 commit).
 - **soma-voice-switch.sh — voice backend mutex orchestrator (s01-1bf0bb W-3c)** — top-level orchestrator wraps the 3 individual lifecycle scripts and applies the mutex matrix (`use voxtral` kills openvoice + tts-server, starts voxtral; etc.). Used by `somaverse/.../server/bridge.ts` `POST /voice/use-backend` (pane wiring) AND `somaverse-addons/voice.ts` cap (agent surface) — single source of truth. `status` returns JSON for machine consumption.
 - **voice-backend lifecycle scripts (s01-1bf0bb)** — 3 dev:* scripts in `scripts/_dev/`:

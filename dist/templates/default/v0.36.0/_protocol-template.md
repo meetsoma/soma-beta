@@ -7,7 +7,7 @@ heat-default: cold
 applies-to: [any]
 created: {{date}}
 updated: {{date}}
-soma_template_version: 0.37.0
+soma_template_version: 0.29.0
 related: []
 origin: {{session}}
 version: 1.0.0
@@ -18,14 +18,10 @@ tier: workspace
 
 # {{title}}
 
-## TL;DR
+## Summary
 
-<!-- The warm-tier digest — what the agent sees when this protocol is warm
-     (3-7 dense bullets: what this protocol is, when it fires, the minimum it
-     demands). Shared `## TL;DR` format across all AMPS. If absent, warm falls
-     back to the `description:` frontmatter. -->
-
-- …
+<!-- 2-3 sentences. What is this protocol? When does it apply? What is
+     the minimum it demands of me? -->
 
 ## Trigger
 

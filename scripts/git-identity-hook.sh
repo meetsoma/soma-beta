@@ -47,7 +47,7 @@ if [ -n "$SOMA_DIR" ] && [ -f "$SOMA_DIR/settings.json" ]; then
     # NOTE: `|| true` is REQUIRED — under `set -euo pipefail`, a `grep` that finds
     # no match exits 1, which aborts the whole hook and SILENTLY blocks every commit
     # in any repo whose settings.json has no guard.gitIdentity.email (s01-198f85,
-    # reported by gravicity-studio). Keep the grep from failing the pipeline.
+    # reported by a peer soma instance). Keep the grep from failing the pipeline.
     EXPECTED_EMAIL=$( { grep -o '"email"[[:space:]]*:[[:space:]]*"[^"]*"' "$SOMA_DIR/settings.json" 2>/dev/null || true; } | head -1 | sed 's/.*: *"\(.*\)"/\1/')
 
     if [ -n "$EXPECTED_EMAIL" ] && [ "$CURRENT_EMAIL" != "$EXPECTED_EMAIL" ]; then
