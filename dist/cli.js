@@ -868,7 +868,7 @@ if (args[0] === "map") {
 	// Before starting a session, check if the first arg matches a script.
 	// Chain: bundled (agent/scripts/) → project (.soma/) → global (~/.soma/)
 	// CWD-safe: only uses universal paths, no dev-specific assumptions.
-	const subcmd = args[0];
+	const subcmd = userArgs[0]; // SX-811: use CLEAN user args (injected --extension/--skill pairs must not reach script subcommands)
 	if (subcmd && !subcmd.startsWith("-") && !subcmd.startsWith("@")) {
 		const { homedir } = await import("os");
 		const scriptName = `soma-${subcmd}.sh`;
@@ -886,7 +886,7 @@ if (args[0] === "map") {
 			const devIndex = join(scriptsDir, "_dev", "soma-dev", "index.sh");
 			if (existsSync(devIndex)) {
 				try {
-					execFileSync("bash", [devIndex, ...args.slice(1)], { stdio: "inherit" });
+					execFileSync("bash", [devIndex, ...userArgs.slice(1)], { stdio: "inherit" });
 				} catch (err) { if (err.status) process.exit(err.status); }
 				process.exit(0);
 			}
@@ -926,11 +926,11 @@ if (args[0] === "map") {
 				if (script.endsWith(".js")) {
 					// Pro script: run with node (compiled .js module)
 					execFileSync(process.execPath, ["--input-type=module", "-e",
-						`import{run}from"${script}";const o=run(${JSON.stringify(args.slice(1))});if(o)process.stdout.write(o);`
+						`import{run}from"${script}";const o=run(${JSON.stringify(userArgs.slice(1))});if(o)process.stdout.write(o);`
 					], { stdio: "inherit", env: scriptEnv });
 				} else {
 					// Free script: run with bash
-					execFileSync("bash", [script, ...args.slice(1)], { stdio: "inherit", env: scriptEnv });
+					execFileSync("bash", [script, ...userArgs.slice(1)], { stdio: "inherit", env: scriptEnv });
 				}
 			} catch (err) { if (err.status) process.exit(err.status); }
 			process.exit(0);

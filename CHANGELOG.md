@@ -10,6 +10,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.38.0] — 2026-06-26
+
+### Fixed
+- **script subcommands must use clean userArgs, not injected argv (SX-811)**
+- **serialize browser-driving caps — concurrency race**
+
+### Added
+- **soma:caselaw.* — Caselaw Researcher cap family**
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+### Changed
+- **Internal: removed the dead `systemPromptBlock` protocol renderer (SX-806).** `buildProtocolInjection`
+  (`core/protocols.ts`) assembled a `## Active Protocols` / `## Protocol Awareness` / `## Available
+  Protocols` / `## Core Protocols` string block on every boot that had **no production consumer** — the
+  live system prompt renders protocols via two other paths: `prompt.ts compileFrontalCortex` → `## Active
+  Behavioral Rules` (TL;DR summaries, hot+warm) and `soma-boot.ts` → `## Hot Protocols (full reference)`
+  (from `injection.hot`). Removed the `systemPromptBlock` field, its ~40-line assembly, and the test
+  assertions that exercised it (`test-protocols.sh` §9 systemPromptBlock checks + the §9b breadcrumb-
+  fallback test). No user-facing behavior change — the compiled boot prompt is byte-identical.
+
+
 ## [0.37.1] — 2026-06-23
 
 ### Fixed
