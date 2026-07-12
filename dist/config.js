@@ -16,6 +16,12 @@ const __dirname = dirname(__filename);
 export const isBunBinary = import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
 /** Detect if Bun is the runtime (compiled binary or bun run) */
 export const isBunRuntime = !!process.versions.bun;
+function normalizeSelfUpdatePackageTarget(target) {
+    if (typeof target === "string") {
+        return { packageName: target, installSpec: target };
+    }
+    return { packageName: target.packageName, installSpec: target.installSpec ?? target.packageName };
+}
 function makeSelfUpdateCommand(installStep, uninstallStep) {
     if (!uninstallStep)
         return installStep;
@@ -72,7 +78,8 @@ function getInferredNpmInstall() {
     // infer unsupported Windows custom prefixes without `npm root -g` evidence.
     return undefined;
 }
-function getSelfUpdateCommandForMethod(method, installedPackageName, updatePackageName = installedPackageName, npmCommand) {
+function getSelfUpdateCommandForMethod(method, installedPackageName, updatePackageTarget = installedPackageName, npmCommand) {
+    const target = normalizeSelfUpdatePackageTarget(updatePackageTarget);
     switch (method) {
         case "bun-binary":
             return undefined;
@@ -89,13 +96,13 @@ function getSelfUpdateCommandForMethod(method, installedPackageName, updatePacka
                 "--ignore-scripts",
                 "--config.minimumReleaseAge=0",
                 ...binDirArgs,
-                updatePackageName,
-            ]), updatePackageName === installedPackageName
+                target.installSpec,
+            ]), target.packageName === installedPackageName
                 ? undefined
                 : makeSelfUpdateCommandStep("pnpm", ["remove", "-g", ...binDirArgs, installedPackageName]));
         }
         case "yarn":
-            return makeSelfUpdateCommand(makeSelfUpdateCommandStep("yarn", ["global", "add", "--ignore-scripts", updatePackageName]), updatePackageName === installedPackageName
+            return makeSelfUpdateCommand(makeSelfUpdateCommandStep("yarn", ["global", "add", "--ignore-scripts", target.installSpec]), target.packageName === installedPackageName
                 ? undefined
                 : makeSelfUpdateCommandStep("yarn", ["global", "remove", installedPackageName]));
         case "bun":
@@ -104,8 +111,8 @@ function getSelfUpdateCommandForMethod(method, installedPackageName, updatePacka
                 "-g",
                 "--ignore-scripts",
                 "--minimum-release-age=0",
-                updatePackageName,
-            ]), updatePackageName === installedPackageName
+                target.installSpec,
+            ]), target.packageName === installedPackageName
                 ? undefined
                 : makeSelfUpdateCommandStep("bun", ["uninstall", "-g", installedPackageName]));
         case "npm": {
@@ -118,9 +125,9 @@ function getSelfUpdateCommandForMethod(method, installedPackageName, updatePacka
                 "-g",
                 "--ignore-scripts",
                 "--min-release-age=0",
-                updatePackageName,
+                target.installSpec,
             ]);
-            const uninstallStep = updatePackageName === installedPackageName
+            const uninstallStep = target.packageName === installedPackageName
                 ? undefined
                 : makeSelfUpdateCommandStep(command, [...prefixArgs, "uninstall", "-g", installedPackageName]);
             return makeSelfUpdateCommand(installStep, uninstallStep);
@@ -243,27 +250,28 @@ function isManagedByGlobalPackageManager(method, packageName, npmCommand) {
         });
     });
 }
-export function getSelfUpdateCommand(packageName, npmCommand, updatePackageName = packageName) {
+export function getSelfUpdateCommand(packageName, npmCommand, updatePackageTarget = packageName) {
     const method = detectInstallMethod();
-    const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
+    const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageTarget, npmCommand);
     if (!command || !isManagedByGlobalPackageManager(method, packageName, npmCommand) || !isSelfUpdatePathWritable()) {
         return undefined;
     }
     return command;
 }
-export function getSelfUpdateUnavailableInstruction(packageName, npmCommand, updatePackageName = packageName) {
+export function getSelfUpdateUnavailableInstruction(packageName, npmCommand, updatePackageTarget = packageName) {
     const method = detectInstallMethod();
+    const target = normalizeSelfUpdatePackageTarget(updatePackageTarget);
     if (method === "bun-binary") {
         return `Download from: https://github.com/earendil-works/pi-mono/releases/latest`;
     }
-    const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
+    const command = getSelfUpdateCommandForMethod(method, packageName, target, npmCommand);
     if (command) {
         if (isManagedByGlobalPackageManager(method, packageName, npmCommand) && !isSelfUpdatePathWritable()) {
             return `This installation is managed by a global ${method} install, but the install path is not writable. Update it yourself with: ${command.display}`;
         }
         return `This installation is not managed by a global ${method} install. Update it with the package manager, wrapper, or source checkout that provides it.`;
     }
-    return `Update ${updatePackageName} using the package manager, wrapper, or source checkout that provides this installation.`;
+    return `Update ${target.installSpec} using the package manager, wrapper, or source checkout that provides this installation.`;
 }
 export function getUpdateInstruction(packageName) {
     const method = detectInstallMethod();

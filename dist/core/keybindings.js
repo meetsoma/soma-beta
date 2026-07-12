@@ -216,15 +216,10 @@ const KEYBINDING_NAME_MIGRATIONS = {
     deleteSession: "app.session.delete",
     deleteSessionNoninvasive: "app.session.deleteNoninvasive",
 };
-function isRecord(value) {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 function isLegacyKeybindingName(key) {
     return key in KEYBINDING_NAME_MIGRATIONS;
 }
 function toKeybindingsConfig(value) {
-    if (!isRecord(value))
-        return {};
     const config = {};
     for (const [key, binding] of Object.entries(value)) {
         if (typeof binding === "string") {
@@ -273,7 +268,9 @@ function loadRawConfig(path) {
         return undefined;
     try {
         const parsed = JSON.parse(readFileSync(path, "utf-8"));
-        return isRecord(parsed) ? parsed : undefined;
+        if (typeof parsed !== "object" || parsed === null)
+            return undefined;
+        return parsed;
     }
     catch {
         return undefined;

@@ -24,7 +24,7 @@ export const defaultModelPerProvider = {
     "amazon-bedrock": "us.anthropic.claude-opus-4-6-v1",
     "ant-ling": "Ring-2.6-1T",
     anthropic: "claude-opus-4-8",
-    openai: "gpt-5.4",
+    openai: "gpt-5.5",
     "azure-openai-responses": "gpt-5.4",
     "openai-codex": "gpt-5.5",
     nvidia: "nvidia/nemotron-3-super-120b-a12b",
@@ -208,20 +208,10 @@ export function parseModelPattern(pattern, availableModels, options) {
         return result;
     }
 }
-/**
- * Resolve model patterns to actual Model objects with optional thinking levels
- * Format: "pattern:level" where :level is optional
- * For each pattern, finds all matching models and picks the best version:
- * 1. Prefer alias (e.g., claude-sonnet-4-5) over dated versions (claude-sonnet-4-5-20250929)
- * 2. If no alias, pick the latest dated version
- *
- * Supports models with colons in their IDs (e.g., OpenRouter's model:exacto).
- * The algorithm tries to match the full pattern first, then progressively
- * strips colon-suffixes to find a match.
- */
-export async function resolveModelScope(patterns, modelRegistry) {
+export async function resolveModelScopeWithDiagnostics(patterns, modelRegistry) {
     const availableModels = await modelRegistry.getAvailable();
     const scopedModels = [];
+    const diagnostics = [];
     for (const pattern of patterns) {
         // Check if pattern contains glob characters
         if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
@@ -243,7 +233,7 @@ export async function resolveModelScope(patterns, modelRegistry) {
                 return minimatch(fullId, globPattern, { nocase: true }) || minimatch(m.id, globPattern, { nocase: true });
             });
             if (matchingModels.length === 0) {
-                console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
+                diagnostics.push({ type: "warning", message: `No models match pattern "${pattern}"`, pattern });
                 continue;
             }
             for (const model of matchingModels) {
@@ -255,16 +245,23 @@ export async function resolveModelScope(patterns, modelRegistry) {
         }
         const { model, thinkingLevel, warning } = parseModelPattern(pattern, availableModels);
         if (warning) {
-            console.warn(chalk.yellow(`Warning: ${warning}`));
+            diagnostics.push({ type: "warning", message: warning, pattern });
         }
         if (!model) {
-            console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
+            diagnostics.push({ type: "warning", message: `No models match pattern "${pattern}"`, pattern });
             continue;
         }
         // Avoid duplicates
         if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
             scopedModels.push({ model, thinkingLevel });
         }
+    }
+    return { scopedModels, diagnostics };
+}
+export async function resolveModelScope(patterns, modelRegistry) {
+    const { scopedModels, diagnostics } = await resolveModelScopeWithDiagnostics(patterns, modelRegistry);
+    for (const diagnostic of diagnostics) {
+        console.warn(chalk.yellow(`Warning: ${diagnostic.message}`));
     }
     return scopedModels;
 }
@@ -460,10 +457,10 @@ export async function findInitialModel(options) {
             fallbackMessage: undefined,
         };
     }
-    // 3. Try saved default from settings
+    // 3. Try saved default from settings if auth is configured.
     if (defaultProvider && defaultModelId) {
         const found = modelRegistry.find(defaultProvider, defaultModelId);
-        if (found) {
+        if (found && modelRegistry.hasConfiguredAuth(found)) {
             model = found;
             if (defaultThinkingLevel) {
                 thinkingLevel = defaultThinkingLevel;

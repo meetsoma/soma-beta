@@ -14,7 +14,7 @@
 /**
  * Model registry - manages built-in and custom models, provides API key resolution.
  */
-import { getModels, getProviders, registerApiProvider, resetApiProviders, } from "@earendil-works/pi-ai";
+import { getModels, getProviders, registerApiProvider, resetApiProviders, } from "@earendil-works/pi-ai/compat";
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
@@ -73,7 +73,14 @@ const ThinkingLevelMapSchema = Type.Object({
     medium: Type.Optional(ThinkingLevelMapValueSchema),
     high: Type.Optional(ThinkingLevelMapValueSchema),
     xhigh: Type.Optional(ThinkingLevelMapValueSchema),
+    max: Type.Optional(ThinkingLevelMapValueSchema),
 });
+const ChatTemplateKwargScalarSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]);
+const ChatTemplateKwargVariableSchema = Type.Object({
+    $var: Type.Union([Type.Literal("thinking.enabled"), Type.Literal("thinking.effort")]),
+    omitWhenOff: Type.Optional(Type.Boolean()),
+});
+const ChatTemplateKwargSchema = Type.Union([ChatTemplateKwargScalarSchema, ChatTemplateKwargVariableSchema]);
 const OpenAICompletionsCompatSchema = Type.Object({
     supportsStore: Type.Optional(Type.Boolean()),
     supportsDeveloperRole: Type.Optional(Type.Boolean()),
@@ -91,8 +98,12 @@ const OpenAICompletionsCompatSchema = Type.Object({
         Type.Literal("deepseek"),
         Type.Literal("zai"),
         Type.Literal("qwen"),
+        Type.Literal("chat-template"),
         Type.Literal("qwen-chat-template"),
+        Type.Literal("string-thinking"),
+        Type.Literal("ant-ling"),
     ])),
+    chatTemplateKwargs: Type.Optional(Type.Record(Type.String(), ChatTemplateKwargSchema)),
     cacheControlFormat: Type.Optional(Type.Literal("anthropic")),
     openRouterRouting: Type.Optional(OpenRouterRoutingSchema),
     vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
@@ -116,6 +127,20 @@ const ProviderCompatSchema = Type.Union([
     OpenAIResponsesCompatSchema,
     AnthropicMessagesCompatSchema,
 ]);
+const ModelCostRatesSchema = {
+    input: Type.Number(),
+    output: Type.Number(),
+    cacheRead: Type.Number(),
+    cacheWrite: Type.Number(),
+};
+const ModelCostTierSchema = Type.Object({
+    inputTokensAbove: Type.Number(),
+    ...ModelCostRatesSchema,
+});
+const ModelCostSchema = Type.Object({
+    ...ModelCostRatesSchema,
+    tiers: Type.Optional(Type.Array(ModelCostTierSchema)),
+});
 // Schema for custom model definition
 // Most fields are optional with sensible defaults for local models (Ollama, LM Studio, etc.)
 const ModelDefinitionSchema = Type.Object({
@@ -126,12 +151,7 @@ const ModelDefinitionSchema = Type.Object({
     reasoning: Type.Optional(Type.Boolean()),
     thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
     input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
-    cost: Type.Optional(Type.Object({
-        input: Type.Number(),
-        output: Type.Number(),
-        cacheRead: Type.Number(),
-        cacheWrite: Type.Number(),
-    })),
+    cost: Type.Optional(ModelCostSchema),
     contextWindow: Type.Optional(Type.Number()),
     maxTokens: Type.Optional(Type.Number()),
     headers: Type.Optional(Type.Record(Type.String(), Type.String())),
@@ -148,6 +168,7 @@ const ModelOverrideSchema = Type.Object({
         output: Type.Optional(Type.Number()),
         cacheRead: Type.Optional(Type.Number()),
         cacheWrite: Type.Optional(Type.Number()),
+        tiers: Type.Optional(Type.Array(ModelCostTierSchema)),
     })),
     contextWindow: Type.Optional(Type.Number()),
     maxTokens: Type.Optional(Type.Number()),
@@ -205,6 +226,12 @@ function mergeCompat(baseCompat, overrideCompat) {
             ...overrideCompletions.vercelGatewayRouting,
         };
     }
+    if (baseCompletions?.chatTemplateKwargs || overrideCompletions.chatTemplateKwargs) {
+        mergedCompletions.chatTemplateKwargs = {
+            ...baseCompletions?.chatTemplateKwargs,
+            ...overrideCompletions.chatTemplateKwargs,
+        };
+    }
     return merged;
 }
 /**
@@ -234,6 +261,7 @@ function applyModelOverride(model, override) {
             output: override.cost.output ?? model.cost.output,
             cacheRead: override.cost.cacheRead ?? model.cost.cacheRead,
             cacheWrite: override.cost.cacheWrite ?? model.cost.cacheWrite,
+            tiers: override.cost.tiers ?? model.cost.tiers,
         };
     }
     // Deep merge compat
@@ -249,6 +277,7 @@ export class ModelRegistry {
     models = [];
     providerRequestConfigs = new Map();
     modelRequestHeaders = new Map();
+    configModelOverrides = new Map();
     registeredProviders = new Map();
     loadError = undefined;
     authStorage;
@@ -288,6 +317,7 @@ export class ModelRegistry {
     loadModels() {
         // Load custom models and overrides from models.json
         const { models: customModels, overrides, modelOverrides, error, } = this.modelsJsonPath ? this.loadCustomModels(this.modelsJsonPath) : emptyCustomModelsResult();
+        this.configModelOverrides = modelOverrides;
         if (error) {
             this.loadError = error;
             // Keep built-in models even if custom models failed to load
@@ -327,6 +357,13 @@ export class ModelRegistry {
                 return model;
             });
         });
+    }
+    getConfiguredModelOverride(providerName, modelId) {
+        return this.configModelOverrides.get(providerName)?.get(modelId);
+    }
+    applyConfiguredModelOverride(providerName, model) {
+        const modelOverride = this.getConfiguredModelOverride(providerName, model.id);
+        return modelOverride ? applyModelOverride(model, modelOverride) : model;
     }
     /** Merge custom models into built-in list by provider+id (custom wins on conflicts). */
     mergeCustomModels(builtInModels, customModels) {
@@ -399,12 +436,10 @@ export class ModelRegistry {
                 }
             }
             else if (!isBuiltIn) {
-                // Non-built-in providers with custom models require endpoint + auth.
+                // Non-built-in providers with custom models require an endpoint.
+                // Auth can come from auth.json, --api-key, or provider request config.
                 if (!providerConfig.baseUrl) {
                     throw new Error(`Provider ${providerName}: "baseUrl" is required when defining custom models.`);
-                }
-                if (!providerConfig.apiKey) {
-                    throw new Error(`Provider ${providerName}: "apiKey" is required when defining custom models.`);
                 }
             }
             // Built-in providers with custom models: baseUrl/apiKey/api are optional,
@@ -602,7 +637,7 @@ export class ModelRegistry {
      * Get API key for a provider.
      */
     async getApiKeyForProvider(provider) {
-        const apiKey = await this.authStorage.getApiKey(provider, { includeFallback: false });
+        const apiKey = await this.authStorage.getApiKey(provider);
         if (apiKey !== undefined) {
             return apiKey;
         }
@@ -708,8 +743,12 @@ export class ModelRegistry {
             // Parse and add new models
             for (const modelDef of config.models) {
                 const api = modelDef.api || config.api;
-                this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
-                this.models.push({
+                const modelOverride = this.getConfiguredModelOverride(providerName, modelDef.id);
+                const headers = modelDef.headers || modelOverride?.headers
+                    ? { ...modelDef.headers, ...modelOverride?.headers }
+                    : undefined;
+                this.storeModelHeaders(providerName, modelDef.id, headers);
+                const model = this.applyConfiguredModelOverride(providerName, {
                     id: modelDef.id,
                     name: modelDef.name,
                     api: api,
@@ -724,6 +763,7 @@ export class ModelRegistry {
                     headers: undefined,
                     compat: modelDef.compat,
                 });
+                this.models.push(model);
             }
             // Apply OAuth modifyModels if credentials exist (e.g., to update baseUrl)
             if (config.oauth?.modifyModels) {

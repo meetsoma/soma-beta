@@ -1,13 +1,14 @@
 /**
  * TUI session selector for --resume flag
  */
-import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/pi-tui";
+import { setKeybindings } from "@earendil-works/pi-tui";
 import { KeybindingsManager } from "../core/keybindings.js";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
+import { createStartupTui, startStartupTui } from "./startup-ui.js";
 /** Show TUI session selector and return selected session path or null if cancelled */
-export async function selectSession(currentSessionsLoader, allSessionsLoader) {
+export async function selectSession(currentSessionsLoader, allSessionsLoader, settingsManager) {
+    const ui = await createStartupTui(settingsManager);
     return new Promise((resolve) => {
-        const ui = new TUI(new ProcessTerminal());
         const keybindings = KeybindingsManager.create();
         setKeybindings(keybindings);
         let resolved = false;
@@ -29,7 +30,7 @@ export async function selectSession(currentSessionsLoader, allSessionsLoader) {
         }, () => ui.requestRender(), { showRenameHint: false, keybindings });
         ui.addChild(selector);
         ui.setFocus(selector.getSessionList());
-        ui.start();
+        startStartupTui(ui, settingsManager);
     });
 }
 //# sourceMappingURL=session-picker.js.map

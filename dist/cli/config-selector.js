@@ -22,7 +22,7 @@ export async function selectConfig(options) {
             ui.stop();
             stopThemeWatcher();
             process.exit(0);
-        }, () => ui.requestRender(), ui.terminal.rows);
+        }, () => ui.requestRender(), ui.terminal.rows, options.writeScope, options.projectModeAvailable);
         ui.addChild(selector);
         ui.setFocus(selector.getResourceList());
         ui.start();

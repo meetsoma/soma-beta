@@ -16,7 +16,7 @@ function sanitizeStatusText(text) {
 /**
  * Format token counts for compact footer display.
  */
-function formatTokens(count) {
+export function formatTokens(count) {
     if (count < 1000)
         return count.toString();
     if (count < 10000)

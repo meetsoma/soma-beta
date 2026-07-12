@@ -299,6 +299,20 @@ export class RpcClient {
         return this.getData(response).messages;
     }
     /**
+     * Get session entries in append order, optionally only those after the `since` entry id.
+     */
+    async getEntries(since) {
+        const response = await this.send({ type: "get_entries", since });
+        return this.getData(response);
+    }
+    /**
+     * Get the session entry tree.
+     */
+    async getTree() {
+        const response = await this.send({ type: "get_tree" });
+        return this.getData(response);
+    }
+    /**
      * Get text of last assistant message.
      */
     async getLastAssistantText() {
@@ -330,7 +344,7 @@ export class RpcClient {
     // =========================================================================
     /**
      * Wait for agent to become idle (no streaming).
-     * Resolves when agent_end event is received.
+     * Resolves when agent_settled event is received.
      */
     waitForIdle(timeout = 60000) {
         return new Promise((resolve, reject) => {
@@ -339,7 +353,7 @@ export class RpcClient {
                 reject(new Error(`Timeout waiting for agent to become idle. Stderr: ${this.stderr}`));
             }, timeout);
             const unsubscribe = this.onEvent((event) => {
-                if (event.type === "agent_end") {
+                if (event.type === "agent_settled") {
                     clearTimeout(timer);
                     unsubscribe();
                     resolve();
@@ -359,7 +373,7 @@ export class RpcClient {
             }, timeout);
             const unsubscribe = this.onEvent((event) => {
                 events.push(event);
-                if (event.type === "agent_end") {
+                if (event.type === "agent_settled") {
                     clearTimeout(timer);
                     unsubscribe();
                     resolve(events);

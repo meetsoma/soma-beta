@@ -4,9 +4,9 @@
  * Pure functions for compaction logic. The session manager handles I/O,
  * and after compaction the session is reloaded.
  */
-import { completeSimple } from "@earendil-works/pi-ai";
-import { convertToLlm, createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage, } from "../messages.js";
-import { buildSessionContext } from "../session-manager.js";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
+import { convertToLlm } from "../messages.js";
+import { buildSessionContext, sessionEntryToContextMessages, } from "../session-manager.js";
 import { computeFileLists, createFileOps, extractFileOpsFromMessage, formatFileOperations, SUMMARIZATION_SYSTEM_PROMPT, serializeConversation, } from "./utils.js";
 /**
  * Extract file operations from messages and previous compaction entries.
@@ -42,26 +42,11 @@ function extractFileOperations(messages, entries, prevCompactionIndex) {
  * Extract AgentMessage from an entry if it produces one.
  * Returns undefined for entries that don't contribute to LLM context.
  */
-function getMessageFromEntry(entry) {
-    if (entry.type === "message") {
-        return entry.message;
-    }
-    if (entry.type === "custom_message") {
-        return createCustomMessage(entry.customType, entry.content, entry.display, entry.details, entry.timestamp);
-    }
-    if (entry.type === "branch_summary") {
-        return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
-    }
-    if (entry.type === "compaction") {
-        return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
-    }
-    return undefined;
-}
 function getMessageFromEntryForCompaction(entry) {
     if (entry.type === "compaction") {
         return undefined;
     }
-    return getMessageFromEntry(entry);
+    return sessionEntryToContextMessages(entry)[0];
 }
 export const DEFAULT_COMPACTION_SETTINGS = {
     enabled: true,
@@ -80,19 +65,22 @@ export function calculateContextTokens(usage) {
 }
 /**
  * Get usage from an assistant message if available.
- * Skips aborted and error messages as they don't have valid usage data.
+ * Skips aborted, error, and all-zero usage messages as they don't have valid usage data.
  */
 function getAssistantUsage(msg) {
     if (msg.role === "assistant" && "usage" in msg) {
         const assistantMsg = msg;
-        if (assistantMsg.stopReason !== "aborted" && assistantMsg.stopReason !== "error" && assistantMsg.usage) {
+        if (assistantMsg.stopReason !== "aborted" &&
+            assistantMsg.stopReason !== "error" &&
+            assistantMsg.usage &&
+            calculateContextTokens(assistantMsg.usage) > 0) {
             return assistantMsg.usage;
         }
     }
     return undefined;
 }
 /**
- * Find the last non-aborted assistant message usage from session entries.
+ * Find the last valid assistant message usage from session entries.
  */
 export function getLastAssistantUsage(entries) {
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -213,68 +201,67 @@ export function estimateTokens(message) {
     }
     return 0;
 }
+function isCutPointMessage(message) {
+    switch (message.role) {
+        case "user":
+        case "assistant":
+        case "bashExecution":
+        case "custom":
+        case "branchSummary":
+        case "compactionSummary":
+            return true;
+        case "toolResult":
+            return false;
+    }
+    return false;
+}
+function isTurnStartMessage(message) {
+    switch (message.role) {
+        case "user":
+        case "bashExecution":
+        case "custom":
+        case "branchSummary":
+        case "compactionSummary":
+            return true;
+        case "assistant":
+        case "toolResult":
+            return false;
+    }
+    return false;
+}
+function isTurnStartEntry(entry) {
+    if (entry.type === "compaction") {
+        return false;
+    }
+    return sessionEntryToContextMessages(entry).some(isTurnStartMessage);
+}
 /**
- * Find valid cut points: indices of user, assistant, custom, or bashExecution messages.
+ * Find valid cut points: indices of context-visible user-like or assistant messages.
  * Never cut at tool results (they must follow their tool call).
  * When we cut at an assistant message with tool calls, its tool results follow it
  * and will be kept.
- * BashExecutionMessage is treated like a user message (user-initiated context).
  */
 function findValidCutPoints(entries, startIndex, endIndex) {
     const cutPoints = [];
     for (let i = startIndex; i < endIndex; i++) {
         const entry = entries[i];
-        switch (entry.type) {
-            case "message": {
-                const role = entry.message.role;
-                switch (role) {
-                    case "bashExecution":
-                    case "custom":
-                    case "branchSummary":
-                    case "compactionSummary":
-                    case "user":
-                    case "assistant":
-                        cutPoints.push(i);
-                        break;
-                    case "toolResult":
-                        break;
-                }
-                break;
-            }
-            case "thinking_level_change":
-            case "model_change":
-            case "compaction":
-            case "branch_summary":
-            case "custom":
-            case "custom_message":
-            case "label":
-            case "session_info":
-                break;
+        if (entry.type === "compaction") {
+            continue;
         }
-        // branch_summary and custom_message are user-role messages, valid cut points
-        if (entry.type === "branch_summary" || entry.type === "custom_message") {
+        if (sessionEntryToContextMessages(entry).some(isCutPointMessage)) {
             cutPoints.push(i);
         }
     }
     return cutPoints;
 }
 /**
- * Find the user message (or bashExecution) that starts the turn containing the given entry index.
+ * Find the context-visible user-role message that starts the turn containing the given entry index.
  * Returns -1 if no turn start found before the index.
- * BashExecutionMessage is treated like a user message for turn boundaries.
  */
 export function findTurnStartIndex(entries, entryIndex, startIndex) {
     for (let i = entryIndex; i >= startIndex; i--) {
-        const entry = entries[i];
-        // branch_summary and custom_message are user-role messages, can start a turn
-        if (entry.type === "branch_summary" || entry.type === "custom_message") {
+        if (isTurnStartEntry(entries[i])) {
             return i;
-        }
-        if (entry.type === "message") {
-            const role = entry.message.role;
-            if (role === "user" || role === "bashExecution") {
-                return i;
-            }
         }
     }
     return -1;
@@ -305,10 +292,9 @@ export function findCutPoint(entries, startIndex, endIndex, keepRecentTokens) {
     let cutIndex = cutPoints[0]; // Default: keep from first message (not header)
     for (let i = endIndex - 1; i >= startIndex; i--) {
         const entry = entries[i];
-        if (entry.type !== "message")
+        const messageTokens = sessionEntryToContextMessages(entry).reduce((sum, message) => sum + estimateTokens(message), 0);
+        if (messageTokens === 0)
             continue;
-        // Estimate this message's size
-        const messageTokens = estimateTokens(entry.message);
         accumulatedTokens += messageTokens;
         // Check if we've exceeded the budget
         if (accumulatedTokens >= keepRecentTokens) {
@@ -322,28 +308,23 @@ export function findCutPoint(entries, startIndex, endIndex, keepRecentTokens) {
             break;
         }
     }
-    // Scan backwards from cutIndex to include any non-message entries (bash, settings, etc.)
+    // Scan backwards from cutIndex to include adjacent metadata entries that do not affect context.
     while (cutIndex > startIndex) {
         const prevEntry = entries[cutIndex - 1];
-        // Stop at session header or compaction boundaries
-        if (prevEntry.type === "compaction") {
+        // Stop at compaction boundaries or context-visible entries.
+        if (prevEntry.type === "compaction" || sessionEntryToContextMessages(prevEntry).length > 0) {
             break;
         }
-        if (prevEntry.type === "message") {
-            // Stop if we hit any message
-            break;
-        }
-        // Include this non-message entry (bash, settings change, etc.)
         cutIndex--;
     }
     // Determine if this is a split turn
     const cutEntry = entries[cutIndex];
-    const isUserMessage = cutEntry.type === "message" && cutEntry.message.role === "user";
-    const turnStartIndex = isUserMessage ? -1 : findTurnStartIndex(entries, cutIndex, startIndex);
+    const startsTurn = isTurnStartEntry(cutEntry);
+    const turnStartIndex = startsTurn ? -1 : findTurnStartIndex(entries, cutIndex, startIndex);
     return {
         firstKeptEntryIndex: cutIndex,
         turnStartIndex,
-        isSplitTurn: !isUserMessage && turnStartIndex !== -1,
+        isSplitTurn: !startsTurn && turnStartIndex !== -1,
     };
 }
 // ============================================================================
@@ -517,6 +498,9 @@ export function prepareCompaction(pathEntries, settings) {
                 turnPrefixMessages.push(msg);
         }
     }
+    if (messagesToSummarize.length === 0 && turnPrefixMessages.length === 0) {
+        return undefined;
+    }
     // Extract file operations from messages and previous compaction
     const fileOps = extractFileOperations(messagesToSummarize, pathEntries, prevCompactionIndex);
     // Also extract file ops from turn prefix if splitting
@@ -562,16 +546,13 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
  */
 export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn, env) {
     const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;
-    // Generate summaries (can be parallel if both needed) and merge into one
+    // Generate summaries and merge into one
     let summary;
     if (isSplitTurn && turnPrefixMessages.length > 0) {
-        // Generate both summaries in parallel
-        const [historyResult, turnPrefixResult] = await Promise.all([
-            messagesToSummarize.length > 0
-                ? generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env)
-                : Promise.resolve("No prior history."),
-            generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn),
-        ]);
+        const historyResult = messagesToSummarize.length > 0
+            ? await generateSummary(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env)
+            : "No prior history.";
+        const turnPrefixResult = await generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn);
         // Merge into single summary
         summary = `${historyResult}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult}`;
     }

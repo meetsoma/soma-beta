@@ -16,6 +16,7 @@ export class ExtensionEditorComponent extends Container {
     onCancelCallback;
     tui;
     keybindings;
+    externalEditorCommand;
     _focused = false;
     get focused() {
         return this._focused;
@@ -24,10 +25,11 @@ export class ExtensionEditorComponent extends Container {
         this._focused = value;
         this.editor.focused = value;
     }
-    constructor(tui, keybindings, title, prefill, onSubmit, onCancel, options) {
+    constructor(tui, keybindings, title, prefill, onSubmit, onCancel, options, externalEditorCommand) {
         super();
         this.tui = tui;
         this.keybindings = keybindings;
+        this.externalEditorCommand = externalEditorCommand;
         this.onSubmitCallback = onSubmit;
         this.onCancelCallback = onCancel;
         // Add top border
@@ -48,7 +50,7 @@ export class ExtensionEditorComponent extends Container {
         this.addChild(this.editor);
         this.addChild(new Spacer(1));
         // Add hint
-        const hasExternalEditor = !!(process.env.VISUAL || process.env.EDITOR);
+        const hasExternalEditor = !!this.getExternalEditorCommand();
         const hint = keyHint("tui.select.confirm", "submit") +
             "  " +
             keyHint("tui.input.newLine", "newline") +
@@ -75,8 +77,15 @@ export class ExtensionEditorComponent extends Container {
         // Forward to editor
         this.editor.handleInput(keyData);
     }
+    getExternalEditorCommand() {
+        const editorCmd = this.externalEditorCommand || process.env.VISUAL || process.env.EDITOR;
+        if (editorCmd) {
+            return editorCmd;
+        }
+        return process.platform === "win32" ? "notepad" : "nano";
+    }
     async openExternalEditor() {
-        const editorCmd = process.env.VISUAL || process.env.EDITOR;
+        const editorCmd = this.getExternalEditorCommand();
         if (!editorCmd) {
             return;
         }

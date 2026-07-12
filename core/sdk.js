@@ -13,7 +13,7 @@
 
 import { join } from "node:path";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../config.js";
 import { resolvePath } from "../utils/paths.js";
 import { AgentSession } from "./agent-session.js";
@@ -199,6 +199,13 @@ export async function createAgentSession(options = {}) {
             const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
             const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;
             const websocketConnectTimeoutMs = options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
+            let headers = mergeProviderAttributionHeaders(model, settingsManager, options?.sessionId, auth.headers, options?.headers);
+            // Let extensions inject/adjust per-request headers (e.g. tracing, session correlation)
+            // after static assembly, before the provider HTTP call.
+            const headerRunner = extensionRunnerRef.current;
+            if (headerRunner?.hasHandlers("before_provider_headers")) {
+                headers = await headerRunner.emitBeforeProviderHeaders(headers ?? {});
+            }
             return streamSimple(model, context, {
                 ...options,
                 apiKey: auth.apiKey,
@@ -207,7 +214,7 @@ export async function createAgentSession(options = {}) {
                 websocketConnectTimeoutMs,
                 maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-                headers: mergeProviderAttributionHeaders(model, settingsManager, options?.sessionId, auth.headers, options?.headers),
+                headers,
             });
         },
         onPayload: async (payload, _model) => {

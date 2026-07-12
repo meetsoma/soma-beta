@@ -2,7 +2,7 @@ import { Markdown } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { selectConfig } from "./cli/config-selector.js";
 import { createProjectTrustContext } from "./cli/project-trust.js";
-import { APP_NAME, detectInstallMethod, getAgentDir, getPackageDir, getSelfUpdateCommand, getSelfUpdateUnavailableInstruction, PACKAGE_NAME, VERSION, } from "./config.js";
+import { APP_NAME, CONFIG_DIR_NAME, detectInstallMethod, getAgentDir, getPackageDir, getSelfUpdateCommand, getSelfUpdateUnavailableInstruction, PACKAGE_NAME, VERSION, } from "./config.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
 import { resolveProjectTrusted } from "./core/project-trust.js";
 import { DefaultResourceLoader } from "./core/resource-loader.js";
@@ -43,10 +43,25 @@ function getPackageCommandUsage(command) {
         case "remove":
             return `${APP_NAME} remove <source> [-l] [--approve|--no-approve]`;
         case "update":
-            return `${APP_NAME} update [source|self|pi] [--self] [--extensions] [--extension <source>] [--approve|--no-approve] [--force]`;
+            return `${APP_NAME} update [source|self|pi] [--self|--extensions|--all] [--extension <source>] [--approve|--no-approve] [--force]`;
         case "list":
             return `${APP_NAME} list [--approve|--no-approve]`;
     }
+}
+const CONFIG_COMMAND_USAGE = `${APP_NAME} config [-l] [--approve|--no-approve]`;
+function printConfigCommandHelp() {
+    console.log(`${chalk.bold("Usage:")}
+  ${CONFIG_COMMAND_USAGE}
+
+Open the resource configuration TUI to enable or disable package resources.
+Without -l, starts in global settings (~/${CONFIG_DIR_NAME}/agent/settings.json).
+Press Tab in the TUI to switch between global and project-local modes.
+
+Options:
+  -l, --local       Edit project overrides (${CONFIG_DIR_NAME}/settings.json)
+  -a, --approve     Trust project-local files for this command with -l
+  -na, --no-approve Ignore project-local files for this command with -l
+`);
 }
 function printPackageCommandHelp(command) {
     switch (command) {
@@ -57,7 +72,7 @@ function printPackageCommandHelp(command) {
 Install a package and add it to settings.
 
 Options:
-  -l, --local       Install project-locally (.pi/settings.json)
+  -l, --local       Install project-locally (${CONFIG_DIR_NAME}/settings.json)
   -a, --approve     Trust project-local files for this command
   -na, --no-approve Ignore project-local files for this command
 
@@ -78,7 +93,7 @@ Remove a package and its source from settings.
 Alias: ${APP_NAME} uninstall <source> [-l]
 
 Options:
-  -l, --local       Remove from project settings (.pi/settings.json)
+  -l, --local       Remove from project settings (${CONFIG_DIR_NAME}/settings.json)
   -a, --approve     Trust project-local files for this command
   -na, --no-approve Ignore project-local files for this command
 
@@ -94,15 +109,17 @@ Examples:
 Update pi and installed packages.
 
 Options:
-  --self                  Update pi only
+  --self                  Update pi only (default when no target is given)
   --extensions            Update installed packages only
+  --all                   Update pi and installed packages
   --extension <source>    Update one package only
   -a, --approve           Trust project-local files for this command
   -na, --no-approve       Ignore project-local files for this command
   --force                 Reinstall pi even if the current version is latest
 
 Short forms:
-  ${APP_NAME} update                Update pi and all extensions
+  ${APP_NAME} update                Update pi only
+  ${APP_NAME} update --all          Update pi and all extensions
   ${APP_NAME} update <source>       Update one package
   ${APP_NAME} update pi             Update pi only (self works as alias to pi)
 `);
@@ -143,6 +160,7 @@ function parsePackageCommand(args) {
     let source;
     let selfFlag = false;
     let extensionsFlag = false;
+    let allFlag = false;
     let extensionFlagSource;
     for (let index = 0; index < rest.length; index++) {
         const arg = rest[index];
@@ -171,6 +189,15 @@ function parsePackageCommand(args) {
         if (arg === "--extensions") {
             if (command === "update") {
                 extensionsFlag = true;
+            }
+            else {
+                invalidOption = invalidOption ?? arg;
+            }
+            continue;
+        }
+        if (arg === "--all") {
+            if (command === "update") {
+                allFlag = true;
             }
             else {
                 invalidOption = invalidOption ?? arg;
@@ -225,10 +252,19 @@ function parsePackageCommand(args) {
         }
     }
     let updateTarget;
+    let showExtensionsSkippedNote = false;
     if (command === "update") {
+        if (allFlag && (selfFlag || extensionsFlag || extensionFlagSource)) {
+            conflictingOptions =
+                conflictingOptions ?? "--all cannot be combined with --self, --extensions, or --extension";
+        }
+        if (allFlag && source) {
+            conflictingOptions = conflictingOptions ?? "--all cannot be combined with a positional source";
+        }
         if (extensionFlagSource) {
-            if (selfFlag || extensionsFlag) {
-                conflictingOptions = conflictingOptions ?? "--extension cannot be combined with --self or --extensions";
+            if (selfFlag || extensionsFlag || allFlag) {
+                conflictingOptions =
+                    conflictingOptions ?? "--extension cannot be combined with --self, --extensions, or --all";
             }
             if (source) {
                 conflictingOptions = conflictingOptions ?? "--extension cannot be combined with a positional source";
@@ -241,12 +277,16 @@ function parsePackageCommand(args) {
                 updateTarget = extensionsFlag ? { type: "all" } : { type: "self" };
             }
             else {
-                if (extensionsFlag || selfFlag) {
+                if (extensionsFlag || selfFlag || allFlag) {
                     conflictingOptions =
-                        conflictingOptions ?? "positional update targets cannot be combined with --self or --extensions";
+                        conflictingOptions ??
+                            "positional update targets cannot be combined with --self, --extensions, or --all";
                 }
                 updateTarget = { type: "extensions", source };
             }
+        }
+        else if (allFlag) {
+            updateTarget = { type: "all" };
         }
         else if (selfFlag && extensionsFlag) {
             updateTarget = { type: "all" };
@@ -258,13 +298,15 @@ function parsePackageCommand(args) {
             updateTarget = { type: "extensions" };
         }
         else {
-            updateTarget = { type: "all" };
+            updateTarget = { type: "self" };
+            showExtensionsSkippedNote = true;
         }
     }
     return {
         command,
         source,
         updateTarget,
+        showExtensionsSkippedNote,
         local,
         force,
         projectTrustOverride,
@@ -281,9 +323,9 @@ function updateTargetIncludesSelf(target) {
 function updateTargetIncludesExtensions(target) {
     return target.type === "all" || target.type === "extensions";
 }
-function printSelfUpdateUnavailable(npmCommand, updatePackageName = PACKAGE_NAME) {
+function printSelfUpdateUnavailable(npmCommand, updatePackageTarget = PACKAGE_NAME) {
     console.error(`error: ${APP_NAME} cannot self-update this installation.`);
-    console.error(getSelfUpdateUnavailableInstruction(PACKAGE_NAME, npmCommand, updatePackageName));
+    console.error(getSelfUpdateUnavailableInstruction(PACKAGE_NAME, npmCommand, updatePackageTarget));
     const entrypoint = process.argv[1];
     if (entrypoint) {
         console.error("");
@@ -292,6 +334,10 @@ function printSelfUpdateUnavailable(npmCommand, updatePackageName = PACKAGE_NAME
 }
 function printSelfUpdateFallback(command) {
     console.error(chalk.dim(`If this keeps failing, run this command yourself: ${command.display}`));
+}
+function printPnpmSelfUpdateMetadataHint() {
+    console.error(chalk.yellow("If pnpm reports missing package versions, its cached registry metadata may be stale."));
+    console.error(chalk.yellow(`Run \`pnpm store prune\` and retry \`${APP_NAME} update --self\`.`));
 }
 function printSelfUpdateNote(note) {
     const trimmedNote = note.trim();
@@ -313,21 +359,30 @@ function printSelfUpdateNote(note) {
     console.log();
 }
 async function getSelfUpdatePlan(force) {
-    if (force) {
-        return { packageName: PACKAGE_NAME, shouldRun: true };
-    }
+    let latestRelease;
     try {
-        const latestRelease = await getLatestPiRelease(VERSION);
-        const packageName = latestRelease?.packageName ?? PACKAGE_NAME;
-        if (!latestRelease || packageName !== PACKAGE_NAME || isNewerPackageVersion(latestRelease.version, VERSION)) {
-            return { packageName, shouldRun: true, ...(latestRelease?.note ? { note: latestRelease.note } : {}) };
-        }
+        latestRelease = await getLatestPiRelease(VERSION);
     }
-    catch {
-        return { packageName: PACKAGE_NAME, shouldRun: true };
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Could not determine latest ${APP_NAME} version: ${message}`);
+    }
+    if (!latestRelease) {
+        throw new Error(`Could not determine latest ${APP_NAME} version.`);
+    }
+    const packageName = latestRelease.packageName ?? PACKAGE_NAME;
+    const installSpec = `${packageName}@${latestRelease.version}`;
+    if (force || packageName !== PACKAGE_NAME || isNewerPackageVersion(latestRelease.version, VERSION)) {
+        return {
+            packageName,
+            installSpec,
+            version: latestRelease.version,
+            ...(latestRelease.note ? { note: latestRelease.note } : {}),
+            shouldRun: true,
+        };
     }
     console.log(chalk.green(`${APP_NAME} is already up to date (v${VERSION})`));
-    return { packageName: PACKAGE_NAME, shouldRun: false };
+    return { packageName, installSpec, version: latestRelease.version, shouldRun: false };
 }
 async function runSelfUpdate(command) {
     console.log(chalk.dim(`Updating ${APP_NAME} with ${command.display}...`));
@@ -360,18 +415,6 @@ function prepareWindowsNpmSelfUpdate() {
     const packageDir = getPackageDir();
     cleanupWindowsSelfUpdateQuarantine(packageDir);
     quarantineWindowsNativeDependencies(packageDir);
-}
-function parseProjectTrustOverride(args) {
-    let trustOverride;
-    for (const arg of args) {
-        if (arg === "--approve" || arg === "-a") {
-            trustOverride = true;
-        }
-        else if (arg === "--no-approve" || arg === "-na") {
-            trustOverride = false;
-        }
-    }
-    return trustOverride;
 }
 function getCommandAppMode() {
     return process.stdin.isTTY && process.stdout.isTTY ? "interactive" : "print";
@@ -420,26 +463,70 @@ async function createCommandSettingsManager(options) {
     return { settingsManager, projectTrustWarnings };
 }
 export async function handleConfigCommand(args, runtimeOptions = {}) {
-    if (args[0] !== "config") {
+    const [command, ...rest] = args;
+    if (command !== "config") {
         return false;
+    }
+    if (rest.includes("-h") || rest.includes("--help")) {
+        printConfigCommandHelp();
+        return true;
+    }
+    let local = false;
+    let projectTrustOverride;
+    for (const arg of rest) {
+        if (arg === "-l" || arg === "--local") {
+            local = true;
+        }
+        else if (arg === "-a" || arg === "--approve") {
+            projectTrustOverride = true;
+        }
+        else if (arg === "-na" || arg === "--no-approve") {
+            projectTrustOverride = false;
+        }
+        else if (arg.startsWith("-")) {
+            console.error(chalk.red(`Unknown option ${arg} for "config".`));
+            console.error(chalk.dim(`Use "${APP_NAME} --help" or "${CONFIG_COMMAND_USAGE}".`));
+            process.exitCode = 1;
+            return true;
+        }
+        else {
+            console.error(chalk.red(`Unexpected argument ${arg}.`));
+            console.error(chalk.dim(`Usage: ${CONFIG_COMMAND_USAGE}`));
+            process.exitCode = 1;
+            return true;
+        }
     }
     const cwd = process.cwd();
     const agentDir = getAgentDir();
     const { settingsManager, projectTrustWarnings } = await createCommandSettingsManager({
         cwd,
         agentDir,
-        projectTrustOverride: parseProjectTrustOverride(args),
+        projectTrustOverride,
         extensionFactories: runtimeOptions.extensionFactories,
     });
     reportProjectTrustWarnings(projectTrustWarnings);
+    if (local && !settingsManager.isProjectTrusted()) {
+        console.error(chalk.red("Project is not trusted. Use --approve to modify local resource config."));
+        process.exitCode = 1;
+        return true;
+    }
     reportSettingsErrors(settingsManager, "config command");
-    const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
-    const resolvedPaths = await packageManager.resolve();
+    const globalSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+    const globalResolvedPaths = await new DefaultPackageManager({
+        cwd,
+        agentDir,
+        settingsManager: globalSettingsManager,
+    }).resolve();
+    const projectResolvedPaths = settingsManager.isProjectTrusted()
+        ? await new DefaultPackageManager({ cwd, agentDir, settingsManager }).resolve()
+        : globalResolvedPaths;
     await selectConfig({
-        resolvedPaths,
+        resolvedPaths: { global: globalResolvedPaths, project: projectResolvedPaths },
         settingsManager,
         cwd,
         agentDir,
+        writeScope: local ? "project" : "global",
+        projectModeAvailable: settingsManager.isProjectTrusted(),
     });
     process.exit(0);
 }
@@ -555,7 +642,10 @@ export async function handlePackageCommand(args, runtimeOptions = {}) {
                 return true;
             }
             case "update": {
-                const target = options.updateTarget ?? { type: "all" };
+                const target = options.updateTarget ?? { type: "self" };
+                if (options.showExtensionsSkippedNote) {
+                    console.log(chalk.dim(`Extensions are skipped. Run ${APP_NAME} update --extensions to update extensions.`));
+                }
                 if (updateTargetIncludesExtensions(target)) {
                     const updateSource = target.type === "extensions" ? target.source : undefined;
                     await packageManager.update(updateSource);
@@ -578,9 +668,13 @@ export async function handlePackageCommand(args, runtimeOptions = {}) {
                         process.exitCode = 1;
                         return true;
                     }
-                    const selfUpdateCommand = getSelfUpdateCommand(PACKAGE_NAME, selfUpdateNpmCommand, selfUpdatePlan.packageName);
+                    const selfUpdateTarget = {
+                        packageName: selfUpdatePlan.packageName,
+                        installSpec: selfUpdatePlan.installSpec,
+                    };
+                    const selfUpdateCommand = getSelfUpdateCommand(PACKAGE_NAME, selfUpdateNpmCommand, selfUpdateTarget);
                     if (!selfUpdateCommand) {
-                        printSelfUpdateUnavailable(selfUpdateNpmCommand, selfUpdatePlan.packageName);
+                        printSelfUpdateUnavailable(selfUpdateNpmCommand, selfUpdateTarget);
                         process.exitCode = 1;
                         return true;
                     }
@@ -596,11 +690,14 @@ export async function handlePackageCommand(args, runtimeOptions = {}) {
                     catch (error) {
                         const message = error instanceof Error ? error.message : "Unknown package command error";
                         console.error(chalk.red(`Error: ${message}`));
+                        if (installMethod === "pnpm") {
+                            printPnpmSelfUpdateMetadataHint();
+                        }
                         printSelfUpdateFallback(selfUpdateCommand);
                         process.exitCode = 1;
                         return true;
                     }
-                    console.log(chalk.green(`Updated ${APP_NAME}`));
+                    console.log(chalk.green(`Updated ${APP_NAME} from ${VERSION} to ${selfUpdatePlan.version}`));
                 }
                 return true;
             }

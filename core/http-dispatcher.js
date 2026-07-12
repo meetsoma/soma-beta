@@ -11,6 +11,7 @@
  * Contact for commercial licensing: meetsoma@gravicity.ai
  */
 
+import { EventEmitter } from "node:events";
 import * as undici from "undici";
 export const DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300_000;
 export const HTTP_IDLE_TIMEOUT_CHOICES = [
@@ -52,16 +53,42 @@ export function applyHttpProxySettings(httpProxy) {
     process.env.HTTP_PROXY ??= proxy;
     process.env.HTTPS_PROXY ??= proxy;
 }
+const ignoreUndiciDispatcherError = (_error) => { };
+// Undici can emit an internal Client "error" while terminating a mid-stream
+// fetch body. The body stream still rejects through reader.read(); this listener
+// only prevents EventEmitter's unhandled "error" special case from crashing pi.
+function withUndiciErrorListener(dispatcher) {
+    if (dispatcher instanceof EventEmitter) {
+        EventEmitter.prototype.on.call(dispatcher, "error", ignoreUndiciDispatcherError);
+    }
+    return dispatcher;
+}
+function createUndiciClient(origin, options) {
+    return withUndiciErrorListener(new undici.Client(origin, options));
+}
+function createUndiciOriginDispatcher(origin, options) {
+    const dispatcherOptions = options;
+    if (dispatcherOptions.connections === 1) {
+        return createUndiciClient(origin, dispatcherOptions);
+    }
+    return withUndiciErrorListener(new undici.Pool(origin, {
+        ...dispatcherOptions,
+        factory: createUndiciClient,
+    }));
+}
 export function configureHttpDispatcher(timeoutMs = DEFAULT_HTTP_IDLE_TIMEOUT_MS) {
     const normalizedTimeoutMs = parseHttpIdleTimeoutMs(timeoutMs);
     if (normalizedTimeoutMs === undefined) {
         throw new Error(`Invalid HTTP idle timeout: ${String(timeoutMs)}`);
     }
-    undici.setGlobalDispatcher(new undici.EnvHttpProxyAgent({
+    const dispatcher = withUndiciErrorListener(new undici.EnvHttpProxyAgent({
         allowH2: false,
         bodyTimeout: normalizedTimeoutMs,
         headersTimeout: normalizedTimeoutMs,
+        clientFactory: createUndiciClient,
+        factory: createUndiciOriginDispatcher,
     }));
+    undici.setGlobalDispatcher(dispatcher);
     // Keep fetch and the dispatcher on the same undici implementation. Node 26.0's
     // bundled fetch can otherwise consume compressed responses through npm undici's
     // dispatcher without decompressing them, causing response.json() failures.

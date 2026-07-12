@@ -1,7 +1,7 @@
 // Core session management
 export { parseArgs } from "./cli/args.js";
 // Config paths
-export { getAgentDir, getDocsPath, getExamplesPath, getPackageDir, getReadmePath, VERSION } from "./config.js";
+export { CONFIG_DIR_NAME, getAgentDir, getDocsPath, getExamplesPath, getPackageDir, getReadmePath, VERSION, } from "./config.js";
 export { AgentSession, parseSkillBlock, } from "./core/agent-session.js";
 // Auth and model registry
 export { AuthStorage, FileAuthStorageBackend, InMemoryAuthStorageBackend, } from "./core/auth-storage.js";
@@ -11,6 +11,7 @@ export { createEventBus } from "./core/event-bus.js";
 export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
+export { resolveCliModel, resolveModelScopeWithDiagnostics, } from "./core/model-resolver.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
 // SDK for programmatic usage
@@ -19,11 +20,12 @@ export { AgentSessionRuntime,
 createAgentSession, createAgentSessionFromServices, createAgentSessionRuntime, createAgentSessionServices, createBashTool, 
 // Tool factories (for custom cwd)
 createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, } from "./core/sdk.js";
-export { buildSessionContext, CURRENT_SESSION_VERSION, getLatestCompactionEntry, migrateSessionEntries, parseSessionEntries, SessionManager, } from "./core/session-manager.js";
+export { buildContextEntries, buildSessionContext, CURRENT_SESSION_VERSION, getLatestCompactionEntry, migrateSessionEntries, parseSessionEntries, SessionManager, sessionEntryToContextMessages, } from "./core/session-manager.js";
 export { SettingsManager, } from "./core/settings-manager.js";
 // Skills
 export { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, } from "./core/skills.js";
 export { createSyntheticSourceInfo } from "./core/source-info.js";
+export { generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.js";
 // Tools
 export { createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLocalBashOperations, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, truncateLine, truncateTail, withFileMutationQueue, } from "./core/tools/index.js";
 export { hasTrustRequiringProjectResources, ProjectTrustStore, } from "./core/trust-manager.js";

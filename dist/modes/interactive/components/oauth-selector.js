@@ -1,6 +1,9 @@
 import { Container, fuzzyFilter, getKeybindings, Input, Spacer, TruncatedText, } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+export function formatAuthSelectorProviderType(authType) {
+    return authType === "oauth" ? "subscription" : "API key";
+}
 /**
  * Component that renders an auth provider selector
  */
@@ -24,13 +27,15 @@ export class OAuthSelectorComponent extends Container {
     getAuthStatus;
     onSelectCallback;
     onCancelCallback;
-    constructor(mode, authStorage, providers, onSelect, onCancel, getAuthStatus) {
+    showAuthTypeLabels;
+    constructor(mode, authStorage, providers, onSelect, onCancel, getAuthStatus, initialSearchInput) {
         super();
         this.mode = mode;
         this.authStorage = authStorage;
         this.getAuthStatus = getAuthStatus ?? ((providerId) => this.authStorage.getAuthStatus(providerId));
         this.allProviders = providers;
         this.filteredProviders = providers;
+        this.showAuthTypeLabels = new Set(providers.map((provider) => provider.authType)).size > 1;
         this.onSelectCallback = onSelect;
         this.onCancelCallback = onCancel;
         // Add top border
@@ -41,10 +46,13 @@ export class OAuthSelectorComponent extends Container {
         this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
         this.addChild(new Spacer(1));
         this.searchInput = new Input();
+        if (initialSearchInput) {
+            this.searchInput.setValue(initialSearchInput);
+        }
         this.searchInput.onSubmit = () => {
             const selectedProvider = this.filteredProviders[this.selectedIndex];
             if (selectedProvider) {
-                this.onSelectCallback(selectedProvider.id);
+                this.onSelectCallback(selectedProvider.id, selectedProvider.authType);
             }
         };
         this.addChild(this.searchInput);
@@ -56,7 +64,7 @@ export class OAuthSelectorComponent extends Container {
         // Add bottom border
         this.addChild(new DynamicBorder());
         // Initial render
-        this.filterProviders("");
+        this.filterProviders(initialSearchInput ?? "");
     }
     filterProviders(query) {
         this.filteredProviders = query
@@ -76,15 +84,18 @@ export class OAuthSelectorComponent extends Container {
                 continue;
             const isSelected = i === this.selectedIndex;
             const statusIndicator = this.formatStatusIndicator(provider);
+            const authTypeLabel = this.showAuthTypeLabels
+                ? theme.fg("muted", ` [${formatAuthSelectorProviderType(provider.authType)}]`)
+                : "";
             let line = "";
             if (isSelected) {
                 const prefix = theme.fg("accent", "→ ");
                 const text = theme.fg("accent", provider.name);
-                line = prefix + text + statusIndicator;
+                line = prefix + text + authTypeLabel + statusIndicator;
             }
             else {
                 const text = `  ${theme.fg("text", provider.name)}`;
-                line = text + statusIndicator;
+                line = text + authTypeLabel + statusIndicator;
             }
             this.listContainer.addChild(new TruncatedText(line, 1, 0));
         }
@@ -148,7 +159,7 @@ export class OAuthSelectorComponent extends Container {
         else if (kb.matches(keyData, "tui.select.confirm")) {
             const selectedProvider = this.filteredProviders[this.selectedIndex];
             if (selectedProvider) {
-                this.onSelectCallback(selectedProvider.id);
+                this.onSelectCallback(selectedProvider.id, selectedProvider.authType);
             }
         }
         // Escape or Ctrl+C

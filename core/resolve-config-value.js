@@ -142,11 +142,13 @@ export function resolveConfigValue(config, env) {
 }
 function executeWithConfiguredShell(command) {
     try {
-        const { shell, args } = getShellConfig();
-        const result = spawnSync(shell, [...args, command], {
+        const { shell, args, commandTransport } = getShellConfig();
+        const commandFromStdin = commandTransport === "stdin";
+        const result = spawnSync(shell, commandFromStdin ? args : [...args, command], {
             encoding: "utf-8",
+            input: commandFromStdin ? command : undefined,
             timeout: 10000,
-            stdio: ["ignore", "pipe", "ignore"],
+            stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "ignore"],
             shell: false,
             windowsHide: true,
         });

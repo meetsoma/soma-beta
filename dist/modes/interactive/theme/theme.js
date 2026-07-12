@@ -75,6 +75,7 @@ const ThemeJsonSchema = Type.Object({
         thinkingMedium: ColorValueSchema,
         thinkingHigh: ColorValueSchema,
         thinkingXhigh: ColorValueSchema,
+        thinkingMax: Type.Optional(ColorValueSchema),
         // Bash Mode (1 color)
         bashMode: ColorValueSchema,
     }),
@@ -222,6 +223,9 @@ function resolveThemeColors(colors, vars = {}) {
     }
     return resolved;
 }
+function withThemeColorFallbacks(colors) {
+    return { ...colors, thinkingMax: colors.thinkingMax ?? colors.thinkingXhigh };
+}
 // ============================================================================
 // Theme Class
 // ============================================================================
@@ -238,7 +242,8 @@ export class Theme {
         this.sourceInfo = options.sourceInfo;
         this.mode = mode;
         this.fgColors = new Map();
-        for (const [key, value] of Object.entries(fgColors)) {
+        const colors = { ...fgColors, thinkingMax: fgColors.thinkingMax ?? fgColors.thinkingXhigh };
+        for (const [key, value] of Object.entries(colors)) {
             this.fgColors.set(key, fgAnsi(value, mode));
         }
         this.bgColors = new Map();
@@ -303,6 +308,8 @@ export class Theme {
                 return (str) => this.fg("thinkingHigh", str);
             case "xhigh":
                 return (str) => this.fg("thinkingXhigh", str);
+            case "max":
+                return (str) => this.fg("thinkingMax", str);
             default:
                 return (str) => this.fg("thinkingOff", str);
         }
@@ -378,6 +385,11 @@ function getCustomThemeInfos() {
     }
     return result;
 }
+function assertThemeNameIsValid(name) {
+    if (name.includes("/")) {
+        throw new Error(`Invalid theme name "${name}": theme names cannot contain "/" because it is reserved for automatic light/dark theme settings.`);
+    }
+}
 function parseThemeJson(label, json) {
     if (!validateThemeJson.Check(json)) {
         const errors = Array.from(validateThemeJson.Errors(json));
@@ -409,7 +421,9 @@ function parseThemeJson(label, json) {
         }
         throw new Error(errorMessage);
     }
-    return json;
+    const themeJson = json;
+    assertThemeNameIsValid(themeJson.name);
+    return themeJson;
 }
 function parseThemeJsonContent(label, content) {
     let json;
@@ -444,7 +458,7 @@ function loadThemeJson(name) {
 }
 function createTheme(themeJson, mode, sourcePath) {
     const colorMode = mode ?? (getCapabilities().trueColor ? "truecolor" : "256color");
-    const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
+    const resolvedColors = resolveThemeColors(withThemeColorFallbacks(themeJson.colors), themeJson.vars);
     const fgColors = {};
     const bgColors = {};
     const bgColorKeys = new Set([
@@ -488,6 +502,31 @@ export function getThemeByName(name) {
     catch {
         return undefined;
     }
+}
+export function parseAutoThemeSetting(themeSetting) {
+    if (!themeSetting)
+        return undefined;
+    const slashIndex = themeSetting.indexOf("/");
+    if (slashIndex === -1 || themeSetting.indexOf("/", slashIndex + 1) !== -1) {
+        return undefined;
+    }
+    const lightTheme = themeSetting.slice(0, slashIndex).trim();
+    const darkTheme = themeSetting.slice(slashIndex + 1).trim();
+    if (!lightTheme || !darkTheme) {
+        return undefined;
+    }
+    return { lightTheme, darkTheme };
+}
+export function resolveThemeSetting(themeSetting, terminalTheme) {
+    const autoTheme = parseAutoThemeSetting(themeSetting);
+    if (autoTheme) {
+        return terminalTheme === "light" ? autoTheme.lightTheme : autoTheme.darkTheme;
+    }
+    if (themeSetting?.includes("/"))
+        return undefined;
+    if (typeof themeSetting === "string")
+        return themeSetting;
+    return undefined;
 }
 function getColorFgBgBackgroundIndex(colorfgbg) {
     const parts = colorfgbg.split(";");
@@ -548,6 +587,17 @@ export async function detectTerminalBackgroundTheme({ ui, timeoutMs, env, }) {
     }
     return detectTerminalBackgroundFromEnv({ env });
 }
+export async function detectTerminalThemeForAuto({ ui, timeoutMs, env, }) {
+    try {
+        const colorScheme = await ui.queryTerminalColorScheme?.({ timeoutMs });
+        if (colorScheme)
+            return colorScheme;
+    }
+    catch {
+        // Fall back to OSC 11 / COLORFGBG detection when color-scheme DSR is unsupported.
+    }
+    return (await detectTerminalBackgroundTheme({ ui, timeoutMs, env })).theme;
+}
 export function getDefaultTheme() {
     return detectTerminalBackgroundFromEnv().theme;
 }
@@ -580,6 +630,7 @@ export function setRegisteredThemes(themes) {
     registeredThemes.clear();
     for (const theme of themes) {
         if (theme.name) {
+            assertThemeNameIsValid(theme.name);
             registeredThemes.set(theme.name, theme);
         }
     }
@@ -757,7 +808,7 @@ export function getResolvedThemeColors(themeName) {
     const name = themeName ?? currentThemeName ?? getDefaultTheme();
     const isLight = name === "light";
     const themeJson = loadThemeJson(name);
-    const resolved = resolveThemeColors(themeJson.colors, themeJson.vars);
+    const resolved = resolveThemeColors(withThemeColorFallbacks(themeJson.colors), themeJson.vars);
     // Default text color for empty values (terminal uses default fg color)
     const defaultText = isLight ? "#000000" : "#e5e5e7";
     const cssColors = {};

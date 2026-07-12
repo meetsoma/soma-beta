@@ -12,7 +12,7 @@ process.title = "soma";
 // Soma has its own versioning — skip Pi's upstream version check
 // which compares Soma 0.1.0 against pi-coding-agent 0.57.1 on npm
 process.env.PI_SKIP_VERSION_CHECK = "1";
-import { setBedrockProviderModule } from "@earendil-works/pi-ai";
+import { setBedrockProviderModule } from "@earendil-works/pi-ai/api/bedrock-converse-stream.lazy";
 import { bedrockProviderModule } from "@earendil-works/pi-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { main } from "./main.js";

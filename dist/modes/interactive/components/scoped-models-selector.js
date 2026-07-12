@@ -1,4 +1,5 @@
 import { Container, fuzzyFilter, getKeybindings, Input, Key, matchesKey, Spacer, Text, } from "@earendil-works/pi-tui";
+import { getModelSearchText } from "../model-search.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyText } from "./keybinding-hints.js";
@@ -136,7 +137,9 @@ export class ScopedModelsSelectorComponent extends Container {
     refresh() {
         const query = this.searchInput.getValue();
         const items = this.buildItems();
-        this.filteredItems = query ? fuzzyFilter(items, query, (i) => `${i.model.id} ${i.model.provider}`) : items;
+        this.filteredItems = query
+            ? fuzzyFilter(items, query, (i) => getModelSearchText({ id: i.model.id, provider: i.model.provider, name: i.model.name }))
+            : items;
         this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredItems.length - 1));
         this.updateList();
         this.footerText.setText(this.getFooterText());

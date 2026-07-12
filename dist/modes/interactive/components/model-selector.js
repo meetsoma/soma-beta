@@ -1,5 +1,6 @@
 import { modelsAreEqual } from "@earendil-works/pi-ai";
 import { Container, fuzzyFilter, getKeybindings, Input, Spacer, Text, } from "@earendil-works/pi-tui";
+import { getModelSelectorSearchText } from "../model-search.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
@@ -168,7 +169,7 @@ export class ModelSelectorComponent extends Container {
     }
     filterModels(query) {
         this.filteredModels = query
-            ? fuzzyFilter(this.activeModels, query, ({ id, provider }) => `${id} ${provider} ${provider}/${id} ${provider} ${id}`)
+            ? fuzzyFilter(this.activeModels, query, ({ id, provider, model }) => getModelSelectorSearchText({ id, provider, name: model.name }))
             : this.activeModels;
         this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
         this.updateList();

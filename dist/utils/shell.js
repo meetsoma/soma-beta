@@ -5,6 +5,13 @@ import { getBinDir } from "../config.js";
 /**
  * Find bash executable on PATH (cross-platform)
  */
+function isLegacyWslBashPath(path) {
+    const normalized = path.replace(/\//g, "\\").toLowerCase();
+    return /^[a-z]:\\windows\\(?:system32|sysnative)\\bash\.exe$/.test(normalized);
+}
+function getBashShellConfig(shell) {
+    return isLegacyWslBashPath(shell) ? { shell, args: ["-s"], commandTransport: "stdin" } : { shell, args: ["-c"] };
+}
 function findBashOnPath() {
     if (process.platform === "win32") {
         // Windows: Use 'where' and verify file exists (where can return non-existent paths)
@@ -52,7 +59,7 @@ export function getShellConfig(customShellPath) {
     // 1. Check user-specified shell path
     if (customShellPath) {
         if (existsSync(customShellPath)) {
-            return { shell: customShellPath, args: ["-c"] };
+            return getBashShellConfig(customShellPath);
         }
         throw new Error(`Custom shell path not found: ${customShellPath}`);
     }
@@ -69,13 +76,13 @@ export function getShellConfig(customShellPath) {
         }
         for (const path of paths) {
             if (existsSync(path)) {
-                return { shell: path, args: ["-c"] };
+                return getBashShellConfig(path);
             }
         }
         // 3. Fallback: search bash.exe on PATH (Cygwin, MSYS2, WSL, etc.)
         const bashOnPath = findBashOnPath();
         if (bashOnPath) {
-            return { shell: bashOnPath, args: ["-c"] };
+            return getBashShellConfig(bashOnPath);
         }
         throw new Error(`No bash shell found. Options:\n` +
             `  1. Install Git for Windows: https://git-scm.com/download/win\n` +
@@ -85,11 +92,11 @@ export function getShellConfig(customShellPath) {
     }
     // Unix: try /bin/bash, then bash on PATH, then fallback to sh
     if (existsSync("/bin/bash")) {
-        return { shell: "/bin/bash", args: ["-c"] };
+        return getBashShellConfig("/bin/bash");
     }
     const bashOnPath = findBashOnPath();
     if (bashOnPath) {
-        return { shell: bashOnPath, args: ["-c"] };
+        return getBashShellConfig(bashOnPath);
     }
     return { shell: "sh", args: ["-c"] };
 }

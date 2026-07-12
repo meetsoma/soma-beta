@@ -13,13 +13,13 @@ const replaceEditSchema = Type.Object({
         description: "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call.",
     }),
     newText: Type.String({ description: "Replacement text for this targeted edit." }),
-}, { additionalProperties: false });
+}, {});
 const editSchema = Type.Object({
     path: Type.String({ description: "Path to the file to edit (relative or absolute)" }),
     edits: Type.Array(replaceEditSchema, {
         description: "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead.",
     }),
-}, { additionalProperties: false });
+}, {});
 const defaultEditOperations = {
     readFile: (path) => fsReadFile(path),
     writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),

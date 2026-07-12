@@ -7,14 +7,27 @@ const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
  * Component that renders a user message
  */
 export class UserMessageComponent extends Container {
-    contentBox;
-    constructor(text, markdownTheme = getMarkdownTheme()) {
+    text;
+    markdownTheme;
+    outputPad;
+    constructor(text, markdownTheme = getMarkdownTheme(), outputPad = 1) {
         super();
-        this.contentBox = new Box(1, 1, (content) => theme.bg("userMessageBg", content));
-        this.contentBox.addChild(new Markdown(text, 0, 0, markdownTheme, {
+        this.text = text;
+        this.markdownTheme = markdownTheme;
+        this.outputPad = outputPad;
+        this.rebuild();
+    }
+    setOutputPad(padding) {
+        this.outputPad = padding;
+        this.rebuild();
+    }
+    rebuild() {
+        this.clear();
+        const contentBox = new Box(this.outputPad, 1, (content) => theme.bg("userMessageBg", content));
+        contentBox.addChild(new Markdown(this.text, 0, 0, this.markdownTheme, {
             color: (content) => theme.fg("userMessageText", content),
-        }, { preserveOrderedListMarkers: true }));
-        this.addChild(this.contentBox);
+        }, { preserveOrderedListMarkers: true, preserveBackslashEscapes: true }));
+        this.addChild(contentBox);
     }
     render(width) {
         const lines = super.render(width);

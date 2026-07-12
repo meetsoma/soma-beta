@@ -35,6 +35,7 @@ import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js"
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.js";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.js";
+const EXTENSION_LOAD_FAILURE_HINT = 'Hint: Start without extensions using "pi -ne".';
 /**
  * Read all content from piped stdin.
  * Returns undefined if stdin is a TTY (interactive terminal).
@@ -167,7 +168,6 @@ function validateSessionIdFlags(parsed) {
         parsed.session ? "--session" : undefined,
         parsed.continue ? "--continue" : undefined,
         parsed.resume ? "--resume" : undefined,
-        parsed.noSession ? "--no-session" : undefined,
     ].filter((flag) => flag !== undefined);
     if (conflictingFlags.length > 0) {
         console.error(chalk.red(`Error: --session-id cannot be combined with ${conflictingFlags.join(", ")}`));
@@ -175,6 +175,16 @@ function validateSessionIdFlags(parsed) {
     }
     try {
         assertValidSessionId(parsed.sessionId);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red(`Error: ${message}`));
+        process.exit(1);
+    }
+}
+function openSessionOrExit(path, sessionDir) {
+    try {
+        return SessionManager.open(path, sessionDir);
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -194,7 +204,7 @@ function forkSessionOrExit(sourcePath, cwd, sessionDir, sessionId) {
 }
 async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
     if (parsed.noSession || parsed.help || parsed.listModels !== undefined) {
-        return SessionManager.inMemory(cwd);
+        return SessionManager.inMemory(cwd, parsed.sessionId !== undefined ? { id: parsed.sessionId } : undefined);
     }
     if (parsed.fork) {
         if (parsed.sessionId) {
@@ -220,7 +230,7 @@ async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
         switch (resolved.type) {
             case "path":
             case "local":
-                return SessionManager.open(resolved.path, sessionDir);
+                return openSessionOrExit(resolved.path, sessionDir);
             case "global": {
                 console.log(chalk.yellow(`Session found in different project: ${resolved.cwd}`));
                 const shouldFork = await promptConfirm("Fork this session into current directory?");
@@ -236,9 +246,8 @@ async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
         }
     }
     if (parsed.resume) {
-        initTheme(settingsManager.getTheme(), true);
         try {
-            const selectedPath = await selectSession((onProgress) => SessionManager.list(cwd, sessionDir, onProgress), (onProgress) => SessionManager.listAll(sessionDir, onProgress));
+            const selectedPath = await selectSession((onProgress) => SessionManager.list(cwd, sessionDir, onProgress), (onProgress) => SessionManager.listAll(sessionDir, onProgress), settingsManager);
             if (!selectedPath) {
                 console.log(chalk.dim("No session selected"));
                 process.exit(0);
@@ -257,6 +266,7 @@ async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
         if (existingSession) {
             return SessionManager.open(existingSession.path, sessionDir);
         }
+        console.error(chalk.yellow(`Warning: No project session found with id '${parsed.sessionId}'; creating a new session with that id.`));
     }
     return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
 }
@@ -622,6 +632,9 @@ export async function main(args, options) {
     time("resolveModelScope");
     reportDiagnostics(runtime.diagnostics);
     if (runtime.diagnostics.some((diagnostic) => diagnostic.type === "error")) {
+        if (runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("Failed to load extension"))) {
+            console.error(chalk.yellow(EXTENSION_LOAD_FAILURE_HINT));
+        }
         process.exit(1);
     }
     time("createAgentSession");
@@ -651,9 +664,12 @@ export async function main(args, options) {
         if (startupBenchmark) {
             await interactiveMode.init();
             time("interactiveMode.init");
-            printTimings();
+            // Give the TUI's stdin handler a brief chance to consume terminal query replies
+            // (Kitty keyboard protocol, device attributes, cell size) before restoring the terminal.
+            await new Promise((resolve) => setTimeout(resolve, 150));
             interactiveMode.stop();
             stopThemeWatcher();
+            printTimings();
             if (process.stdout.writableLength > 0) {
                 await new Promise((resolve) => process.stdout.once("drain", resolve));
             }

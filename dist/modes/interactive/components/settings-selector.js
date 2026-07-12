@@ -1,6 +1,6 @@
 import { Container, getCapabilities, SelectList, SettingsList, Spacer, Text, } from "@earendil-works/pi-tui";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../../core/http-dispatcher.js";
-import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
+import { getSelectListTheme, getSettingsListTheme, parseAutoThemeSetting, theme, } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyDisplayText } from "./keybinding-hints.js";
 const SETTINGS_SUBMENU_SELECT_LIST_LAYOUT = {
@@ -13,7 +13,8 @@ const THINKING_DESCRIPTIONS = {
     low: "Light reasoning (~2k tokens)",
     medium: "Moderate reasoning (~8k tokens)",
     high: "Deep reasoning (~16k tokens)",
-    xhigh: "Maximum reasoning (~32k tokens)",
+    xhigh: "Extra-high reasoning (~32k tokens)",
+    max: "Maximum reasoning",
 };
 const DEFAULT_PROJECT_TRUST_LABELS = {
     ask: "Ask",
@@ -91,6 +92,176 @@ class SelectSubmenu extends Container {
         this.selectList.handleInput(data);
     }
 }
+function themeItems(availableThemes) {
+    return availableThemes.map((name) => ({ value: name, label: name }));
+}
+const AUTOMATIC_THEME_VALUE = "/";
+function singleModeThemeItems(availableThemes) {
+    return [
+        {
+            value: AUTOMATIC_THEME_VALUE,
+            label: "Automatic",
+            description: "Use separate themes for light and dark terminal appearance",
+        },
+        ...themeItems(availableThemes),
+    ];
+}
+function preferredTheme(availableThemes, preferred, fallback) {
+    if (preferred && availableThemes.includes(preferred))
+        return preferred;
+    if (availableThemes.includes(fallback))
+        return fallback;
+    return availableThemes[0] ?? fallback;
+}
+function defaultAutomaticThemes(currentThemeSetting, availableThemes) {
+    const autoTheme = parseAutoThemeSetting(currentThemeSetting);
+    if (autoTheme)
+        return autoTheme;
+    const currentFixedTheme = currentThemeSetting.includes("/") ? undefined : currentThemeSetting;
+    const themeName = preferredTheme(availableThemes, currentFixedTheme, "dark");
+    return { lightTheme: themeName, darkTheme: themeName };
+}
+class ThemeSubmenu extends Container {
+    inputComponent;
+    callbacks;
+    availableThemes;
+    terminalTheme;
+    onDone;
+    originalThemeSetting;
+    mode;
+    singleTheme;
+    lightTheme;
+    darkTheme;
+    constructor(currentThemeSetting, terminalTheme, availableThemes, callbacks, onDone) {
+        super();
+        this.callbacks = callbacks;
+        this.availableThemes = availableThemes;
+        this.terminalTheme = terminalTheme;
+        this.onDone = onDone;
+        this.originalThemeSetting = currentThemeSetting;
+        const autoTheme = parseAutoThemeSetting(currentThemeSetting);
+        const automaticThemes = defaultAutomaticThemes(currentThemeSetting, availableThemes);
+        const fixedTheme = autoTheme || currentThemeSetting.includes("/") ? undefined : currentThemeSetting;
+        this.mode = autoTheme ? "automatic" : "single";
+        this.lightTheme = automaticThemes.lightTheme;
+        this.darkTheme = automaticThemes.darkTheme;
+        this.singleTheme = preferredTheme(availableThemes, fixedTheme ?? (autoTheme ? this.getActiveAutomaticTheme() : undefined), "dark");
+        if (this.mode === "automatic") {
+            this.showAutomaticMenu();
+        }
+        else {
+            this.showSingleMenu();
+        }
+    }
+    handleInput(data) {
+        this.inputComponent?.handleInput?.(data);
+    }
+    setContent(renderComponent, inputComponent = renderComponent) {
+        this.clear();
+        this.addChild(renderComponent);
+        this.inputComponent = inputComponent;
+    }
+    showSingleMenu() {
+        this.mode = "single";
+        const menu = new SelectSubmenu("Theme", "Select a theme, or choose Automatic to follow terminal appearance.", singleModeThemeItems(this.availableThemes), this.singleTheme, (value) => {
+            if (value === AUTOMATIC_THEME_VALUE) {
+                this.mode = "automatic";
+                this.callbacks.onThemePreview?.(this.getThemeSetting());
+                this.showAutomaticMenu();
+                return;
+            }
+            this.singleTheme = value;
+            this.apply(value);
+        }, () => this.cancel(), (value) => {
+            this.callbacks.onThemePreview?.(value === AUTOMATIC_THEME_VALUE ? this.getAutomaticThemeSetting() : value);
+        });
+        this.setContent(menu);
+    }
+    showAutomaticMenu() {
+        this.mode = "automatic";
+        const content = new Container();
+        content.addChild(new Text(theme.bold(theme.fg("accent", "Automatic Theme")), 0, 0));
+        content.addChild(new Spacer(1));
+        content.addChild(new Text(theme.fg("muted", "Choose themes for terminal light and dark appearance."), 0, 0));
+        content.addChild(new Text(theme.fg("muted", "Light/dark detection requires terminal support."), 0, 0));
+        content.addChild(new Spacer(1));
+        const items = [
+            {
+                id: "light-theme",
+                label: "Light theme",
+                description: "Theme to use in automatic mode when the terminal is light",
+                currentValue: this.lightTheme,
+                submenu: (currentValue, done) => this.createThemeSelect("Light Theme", "Select the theme to use for light terminal appearance", currentValue, done, (value) => {
+                    this.lightTheme = value;
+                    this.callbacks.onThemePreview?.(this.getThemeSetting());
+                    done(value);
+                }),
+            },
+            {
+                id: "dark-theme",
+                label: "Dark theme",
+                description: "Theme to use in automatic mode when the terminal is dark",
+                currentValue: this.darkTheme,
+                submenu: (currentValue, done) => this.createThemeSelect("Dark Theme", "Select the theme to use for dark terminal appearance", currentValue, done, (value) => {
+                    this.darkTheme = value;
+                    this.callbacks.onThemePreview?.(this.getThemeSetting());
+                    done(value);
+                }),
+            },
+            {
+                id: "apply",
+                label: "Apply",
+                description: "Save and go back",
+                currentValue: "save and go back",
+                values: ["save and go back"],
+            },
+            {
+                id: "single-mode",
+                label: "Change mode",
+                description: "Switch to one theme for light and dark",
+                currentValue: "switch to single theme",
+                values: ["switch to single theme"],
+            },
+        ];
+        const settingsList = new SettingsList(items, Math.min(items.length, 10), getSettingsListTheme(), (id) => {
+            switch (id) {
+                case "single-mode":
+                    this.mode = "single";
+                    this.singleTheme = this.getActiveAutomaticTheme();
+                    this.callbacks.onThemePreview?.(this.singleTheme);
+                    this.showSingleMenu();
+                    break;
+                case "apply":
+                    this.apply(this.getAutomaticThemeSetting());
+                    break;
+            }
+        }, () => this.cancel());
+        content.addChild(settingsList);
+        this.setContent(content, settingsList);
+    }
+    createThemeSelect(title, description, currentValue, done, onSelect) {
+        return new SelectSubmenu(title, description, themeItems(this.availableThemes), currentValue, onSelect, () => {
+            this.callbacks.onThemePreview?.(this.getThemeSetting());
+            done();
+        }, (value) => this.callbacks.onThemePreview?.(value));
+    }
+    getThemeSetting() {
+        return this.mode === "automatic" ? this.getAutomaticThemeSetting() : this.singleTheme;
+    }
+    getActiveAutomaticTheme() {
+        return this.terminalTheme === "light" ? this.lightTheme : this.darkTheme;
+    }
+    getAutomaticThemeSetting() {
+        return `${this.lightTheme}/${this.darkTheme}`;
+    }
+    apply(themeSetting) {
+        this.onDone(themeSetting);
+    }
+    cancel() {
+        this.callbacks.onThemePreview?.(this.originalThemeSetting);
+        this.onDone();
+    }
+}
 /**
  * Main settings selector component.
  */
@@ -142,6 +313,13 @@ export class SettingsSelectorComponent extends Container {
                 label: "Hide thinking",
                 description: "Hide thinking blocks in assistant responses",
                 currentValue: config.hideThinkingBlock ? "true" : "false",
+                values: ["true", "false"],
+            },
+            {
+                id: "cache-miss-notices",
+                label: "Cache miss notices",
+                description: "Show transcript notices for significant prompt-cache misses",
+                currentValue: config.showCacheMissNotices ? "true" : "false",
                 values: ["true", "false"],
             },
             {
@@ -215,20 +393,7 @@ export class SettingsSelectorComponent extends Container {
                 label: "Theme",
                 description: "Color theme for the interface",
                 currentValue: config.currentTheme,
-                submenu: (currentValue, done) => new SelectSubmenu("Theme", "Select color theme", config.availableThemes.map((t) => ({
-                    value: t,
-                    label: t,
-                })), currentValue, (value) => {
-                    callbacks.onThemeChange(value);
-                    done(value);
-                }, () => {
-                    // Restore original theme on cancel
-                    callbacks.onThemePreview?.(currentValue);
-                    done();
-                }, (value) => {
-                    // Preview theme on selection change
-                    callbacks.onThemePreview?.(value);
-                }),
+                submenu: (currentValue, done) => new ThemeSubmenu(currentValue, config.terminalTheme, config.availableThemes, callbacks, done),
             },
         ];
         // Only show image toggle if terminal supports it
@@ -293,9 +458,18 @@ export class SettingsSelectorComponent extends Container {
             currentValue: String(config.editorPaddingX),
             values: ["0", "1", "2", "3"],
         });
-        // Autocomplete max visible toggle (insert after editor-padding)
+        // Output padding toggle (insert after editor-padding)
         const editorPaddingIndex = items.findIndex((item) => item.id === "editor-padding");
         items.splice(editorPaddingIndex + 1, 0, {
+            id: "output-padding",
+            label: "Output padding",
+            description: "Horizontal padding for user messages, assistant messages, and thinking",
+            currentValue: String(config.outputPad),
+            values: ["0", "1"],
+        });
+        // Autocomplete max visible toggle (insert after output-padding)
+        const outputPaddingIndex = items.findIndex((item) => item.id === "output-padding");
+        items.splice(outputPaddingIndex + 1, 0, {
             id: "autocomplete-max-visible",
             label: "Autocomplete max items",
             description: "Max visible items in autocomplete dropdown (3-20)",
@@ -361,6 +535,9 @@ export class SettingsSelectorComponent extends Container {
                 case "hide-thinking":
                     callbacks.onHideThinkingBlockChange(newValue === "true");
                     break;
+                case "cache-miss-notices":
+                    callbacks.onShowCacheMissNoticesChange(newValue === "true");
+                    break;
                 case "collapse-changelog":
                     callbacks.onCollapseChangelogChange(newValue === "true");
                     break;
@@ -389,6 +566,9 @@ export class SettingsSelectorComponent extends Container {
                 case "editor-padding":
                     callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
                     break;
+                case "output-padding":
+                    callbacks.onOutputPadChange(newValue === "0" ? 0 : 1);
+                    break;
                 case "autocomplete-max-visible":
                     callbacks.onAutocompleteMaxVisibleChange(parseInt(newValue, 10));
                     break;
@@ -397,6 +577,9 @@ export class SettingsSelectorComponent extends Container {
                     break;
                 case "terminal-progress":
                     callbacks.onShowTerminalProgressChange(newValue === "true");
+                    break;
+                case "theme":
+                    callbacks.onThemeChange(newValue);
                     break;
             }
         }, callbacks.onCancel, { enableSearch: true });

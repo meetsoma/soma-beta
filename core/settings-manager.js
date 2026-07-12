@@ -176,11 +176,11 @@ export class SettingsManager {
         return new SettingsManager(storage, globalLoad.settings, projectLoad.settings, globalLoad.error, projectLoad.error, initialErrors, projectTrusted);
     }
     /** Create an in-memory SettingsManager (no file I/O) */
-    static inMemory(settings = {}) {
+    static inMemory(settings = {}, options = {}) {
         const storage = new InMemorySettingsStorage();
         const initialSettings = SettingsManager.migrateSettings(structuredClone(settings));
         storage.withLock("global", () => JSON.stringify(initialSettings, null, 2));
-        return SettingsManager.fromStorage(storage);
+        return SettingsManager.fromStorage(storage, options);
     }
     static loadFromStorage(storage, scope, projectTrusted = true) {
         if (scope === "project" && !projectTrusted) {
@@ -488,8 +488,15 @@ export class SettingsManager {
         this.markModified("followUpMode");
         this.save();
     }
+    getThemeSetting() {
+        const value = this.settings.theme;
+        if (typeof value === "string")
+            return value;
+        return undefined;
+    }
     getTheme() {
-        return this.settings.theme;
+        const theme = this.getThemeSetting();
+        return theme?.includes("/") ? undefined : theme;
     }
     setTheme(theme) {
         this.globalSettings.theme = theme;
@@ -587,13 +594,33 @@ export class SettingsManager {
     getHideThinkingBlock() {
         return this.settings.hideThinkingBlock ?? false;
     }
+    getShowCacheMissNotices() {
+        return this.settings.showCacheMissNotices ?? false;
+    }
+    getExternalEditorCommand() {
+        const configuredEditor = this.settings.externalEditor;
+        if (typeof configuredEditor === "string" && configuredEditor.trim() !== "") {
+            return configuredEditor;
+        }
+        const environmentEditor = process.env.VISUAL || process.env.EDITOR;
+        if (environmentEditor) {
+            return environmentEditor;
+        }
+        return process.platform === "win32" ? "notepad" : "nano";
+    }
     setHideThinkingBlock(hide) {
         this.globalSettings.hideThinkingBlock = hide;
         this.markModified("hideThinkingBlock");
         this.save();
     }
+    setShowCacheMissNotices(show) {
+        this.globalSettings.showCacheMissNotices = show;
+        this.markModified("showCacheMissNotices");
+        this.save();
+    }
     getShellPath() {
-        return this.settings.shellPath;
+        const shellPath = this.settings.shellPath;
+        return shellPath ? normalizePath(shellPath) : shellPath;
     }
     setShellPath(path) {
         this.globalSettings.shellPath = path;
@@ -855,6 +882,14 @@ export class SettingsManager {
     setEditorPaddingX(padding) {
         this.globalSettings.editorPaddingX = Math.max(0, Math.min(3, Math.floor(padding)));
         this.markModified("editorPaddingX");
+        this.save();
+    }
+    getOutputPad() {
+        return this.settings.outputPad === 0 ? 0 : 1;
+    }
+    setOutputPad(padding) {
+        this.globalSettings.outputPad = padding;
+        this.markModified("outputPad");
         this.save();
     }
     getAutocompleteMaxVisible() {

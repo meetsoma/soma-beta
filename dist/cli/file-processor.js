@@ -5,7 +5,7 @@ import { access, readFile, stat } from "node:fs/promises";
 import chalk from "chalk";
 import { resolve } from "path";
 import { resolveReadPath } from "../core/tools/path-utils.js";
-import { formatDimensionNote, resizeImage } from "../utils/image-resize.js";
+import { processImage } from "../utils/image-process.js";
 import { detectSupportedImageMimeTypeFromFile } from "../utils/mime.js";
 /** Process @file arguments into text content and image attachments */
 export async function processFileArguments(fileArgs, options) {
@@ -33,32 +33,20 @@ export async function processFileArguments(fileArgs, options) {
         if (mimeType) {
             // Handle image file
             const content = await readFile(absolutePath);
-            let attachment;
-            let dimensionNote;
-            if (autoResizeImages) {
-                const resized = await resizeImage(content, mimeType);
-                if (!resized) {
-                    text += `<file name="${absolutePath}">[Image omitted: could not be resized below the inline image size limit.]</file>\n`;
-                    continue;
-                }
-                dimensionNote = formatDimensionNote(resized);
-                attachment = {
-                    type: "image",
-                    mimeType: resized.mimeType,
-                    data: resized.data,
-                };
+            const processed = await processImage(content, mimeType, { autoResizeImages });
+            if (!processed.ok) {
+                text += `<file name="${absolutePath}">${processed.message}</file>\n`;
+                continue;
             }
-            else {
-                attachment = {
-                    type: "image",
-                    mimeType,
-                    data: content.toString("base64"),
-                };
-            }
+            const attachment = {
+                type: "image",
+                mimeType: processed.mimeType,
+                data: processed.data,
+            };
             images.push(attachment);
-            // Add text reference to image with optional dimension note
-            if (dimensionNote) {
-                text += `<file name="${absolutePath}">${dimensionNote}</file>\n`;
+            // Add text reference to image with optional processing hints
+            if (processed.hints.length > 0) {
+                text += `<file name="${absolutePath}">${processed.hints.join("\n")}</file>\n`;
             }
             else {
                 text += `<file name="${absolutePath}"></file>\n`;

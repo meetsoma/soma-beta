@@ -11,10 +11,11 @@
  * Contact for commercial licensing: meetsoma@gravicity.ai
  */
 
+import { CONFIG_DIR_NAME } from "../config.js";
 import { emitProjectTrustEvent } from "./extensions/runner.js";
 import { getProjectTrustOptions, hasTrustRequiringProjectResources, } from "./trust-manager.js";
 function formatProjectTrustPrompt(cwd) {
-    return `Trust project folder?\n${cwd}\n\nThis allows pi to load .pi settings and resources, install missing project packages, and execute project extensions.`;
+    return `Trust project folder?\n${cwd}\n\nThis allows pi to load ${CONFIG_DIR_NAME} settings and resources, install missing project packages, and execute project extensions.`;
 }
 async function selectProjectTrustOption(cwd, ctx) {
     const options = getProjectTrustOptions(cwd, { includeSessionOnly: true });

@@ -1,12 +1,14 @@
 import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/pi-tui";
 import { existsSync } from "fs";
-import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getSettingsPath, PACKAGE_NAME } from "../config.js";
+import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getAgentDir, getSettingsPath, PACKAGE_NAME } from "../config.js";
 import { areExperimentalFeaturesEnabled } from "../core/experimental.js";
 import { KeybindingsManager } from "../core/keybindings.js";
+import { DefaultPackageManager } from "../core/package-manager.js";
+import { SettingsManager } from "../core/settings-manager.js";
 import { ExtensionInputComponent } from "../modes/interactive/components/extension-input.js";
 import { ExtensionSelectorComponent } from "../modes/interactive/components/extension-selector.js";
 import { FirstTimeSetupComponent, } from "../modes/interactive/components/first-time-setup.js";
-import { detectTerminalBackgroundTheme, initTheme, setTheme } from "../modes/interactive/theme/theme.js";
+import { detectTerminalBackgroundFromEnv, detectTerminalThemeForAuto, initTheme, loadThemeFromPath, parseAutoThemeSetting, resolveThemeSetting, setRegisteredThemes, setTheme, } from "../modes/interactive/theme/theme.js";
 const OFFICIAL_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const OFFICIAL_APP_NAME = "pi";
 const OFFICIAL_CONFIG_DIR_NAME = ".pi";
@@ -15,12 +17,61 @@ function isOfficialDistribution({ packageName, appName, configDirName }) {
         appName === OFFICIAL_APP_NAME &&
         configDirName === OFFICIAL_CONFIG_DIR_NAME);
 }
-function createStartupTui(settingsManager) {
-    initTheme(settingsManager.getTheme());
+function loadThemes(resources) {
+    const themes = [];
+    const seen = new Set();
+    for (const resource of resources) {
+        if (!resource.enabled)
+            continue;
+        try {
+            const loadedTheme = loadThemeFromPath(resource.path);
+            if (loadedTheme.name) {
+                if (seen.has(loadedTheme.name))
+                    continue;
+                seen.add(loadedTheme.name);
+            }
+            themes.push(loadedTheme);
+        }
+        catch {
+            // Startup prompts should not fail because a theme is broken. The normal
+            // resource loader reports theme diagnostics later in startup.
+        }
+    }
+    return themes;
+}
+async function loadStartupThemes(settingsManager) {
+    const globalSettingsManager = SettingsManager.inMemory(settingsManager.getGlobalSettings(), {
+        projectTrusted: false,
+    });
+    const packageManager = new DefaultPackageManager({
+        cwd: process.cwd(),
+        agentDir: getAgentDir(),
+        settingsManager: globalSettingsManager,
+    });
+    const resolvedPaths = await packageManager.resolve(async () => "skip");
+    return loadThemes(resolvedPaths.themes);
+}
+export async function createStartupTui(settingsManager) {
+    setRegisteredThemes(await loadStartupThemes(settingsManager));
+    const terminalTheme = detectTerminalBackgroundFromEnv().theme;
+    initTheme(resolveThemeSetting(settingsManager.getThemeSetting(), terminalTheme) ?? terminalTheme);
     setKeybindings(KeybindingsManager.create());
     const ui = new TUI(new ProcessTerminal(), settingsManager.getShowHardwareCursor());
     ui.setClearOnShrink(settingsManager.getClearOnShrink());
     return ui;
+}
+export function startStartupTui(ui, settingsManager) {
+    ui.start();
+    void applyDetectedStartupTheme(ui, settingsManager);
+}
+async function applyDetectedStartupTheme(ui, settingsManager) {
+    const themeSetting = settingsManager.getThemeSetting();
+    if (themeSetting && !parseAutoThemeSetting(themeSetting))
+        return;
+    const terminalTheme = await detectTerminalThemeForAuto({ ui, timeoutMs: 100 });
+    setTheme(resolveThemeSetting(themeSetting, terminalTheme) ?? terminalTheme);
+    ui.invalidate();
+    ui.requestRender();
 }
 async function clearStartupTui(ui) {
     ui.clear();
@@ -51,8 +102,8 @@ export function shouldRunFirstTimeSetup(settingsPath = getSettingsPath()) {
     return !existsSync(settingsPath);
 }
 export async function showStartupSelector(settingsManager, title, options) {
+    const ui = await createStartupTui(settingsManager);
     return new Promise((resolve) => {
-        const ui = createStartupTui(settingsManager);
         let settled = false;
         const finish = async (result) => {
             if (settled) {
@@ -66,13 +117,13 @@ export async function showStartupSelector(settingsManager, title, options) {
         const selector = new ExtensionSelectorComponent(title, options.map((option) => option.label), (option) => void finish(options.find((entry) => entry.label === option)?.value), () => void finish(undefined), { tui: ui });
         ui.addChild(selector);
         ui.setFocus(selector);
-        ui.start();
+        startStartupTui(ui, settingsManager);
     });
 }
 /** Show the first-time setup dialog and persist the result */
 export async function showFirstTimeSetup(settingsManager) {
+    const ui = await createStartupTui(settingsManager);
     return new Promise((resolve) => {
-        const ui = createStartupTui(settingsManager);
         let settled = false;
         const finish = async (result) => {
             if (settled) {
@@ -90,10 +141,10 @@ export async function showFirstTimeSetup(settingsManager) {
         };
         const showSetup = async () => {
             ui.start();
-            const detection = await detectTerminalBackgroundTheme({ ui, timeoutMs: 100 });
-            setTheme(detection.theme);
+            const detectedTheme = await detectTerminalThemeForAuto({ ui, timeoutMs: 100 });
+            setTheme(detectedTheme);
             const component = new FirstTimeSetupComponent({
-                detectedTheme: detection.theme,
+                detectedTheme,
                 onThemePreview: (themeName) => {
                     setTheme(themeName);
                     ui.requestRender();
@@ -109,8 +160,8 @@ export async function showFirstTimeSetup(settingsManager) {
     });
 }
 export async function showStartupInput(settingsManager, title, placeholder) {
+    const ui = await createStartupTui(settingsManager);
     return new Promise((resolve) => {
-        const ui = createStartupTui(settingsManager);
         let settled = false;
         const finish = async (result) => {
             if (settled) {
@@ -127,7 +178,7 @@ export async function showStartupInput(settingsManager, title, placeholder) {
         });
         ui.addChild(input);
         ui.setFocus(input);
-        ui.start();
+        startStartupTui(ui, settingsManager);
     });
 }
 //# sourceMappingURL=startup-ui.js.map

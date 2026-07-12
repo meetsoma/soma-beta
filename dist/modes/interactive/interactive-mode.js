@@ -7,13 +7,14 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getProviders, } from "@earendil-works/pi-ai";
-import { CombinedAutocompleteProvider, Container, fuzzyFilter, getCapabilities, hyperlink, Loader, Markdown, matchesKey, ProcessTerminal, Spacer, setKeybindings, Text, TruncatedText, TUI, visibleWidth, } from "@earendil-works/pi-tui";
+import { getProviders, } from "@earendil-works/pi-ai/compat";
+import { CombinedAutocompleteProvider, Container, fuzzyFilter, getCapabilities, hyperlink, Markdown, matchesKey, ProcessTerminal, Spacer, setKeybindings, Text, TruncatedText, TUI, visibleWidth, } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { spawn, spawnSync } from "child_process";
-import { APP_NAME, APP_TITLE, getAgentDir, getAuthPath, getDebugLogPath, getDocsPath, getShareViewerUrl, VERSION, } from "../../config.js";
+import { APP_NAME, APP_TITLE, CONFIG_DIR_NAME, getAgentDir, getAuthPath, getDebugLogPath, getDocsPath, getShareViewerUrl, VERSION, } from "../../config.js";
 import { parseSkillBlock } from "../../core/agent-session.js";
 import { SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
+import { CACHE_TTL_MS, collectCacheMisses, computeCacheWaste, detectCacheMiss, } from "../../core/cache-stats.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
@@ -22,7 +23,7 @@ import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScop
 import { DefaultPackageManager } from "../../core/package-manager.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
-import { SessionManager } from "../../core/session-manager.js";
+import { SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.js";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.js";
@@ -41,8 +42,8 @@ import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
-import { CountdownTimer } from "./components/countdown-timer.js";
 import { CustomEditor } from "./components/custom-editor.js";
+import { CustomEntryComponent } from "./components/custom-entry.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { DaxnutsComponent } from "./components/daxnuts.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
@@ -50,21 +51,24 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
-import { FooterComponent } from "./components/footer.js";
+import { FooterComponent, formatTokens } from "./components/footer.js";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
-import { OAuthSelectorComponent } from "./components/oauth-selector.js";
+import { formatAuthSelectorProviderType, OAuthSelectorComponent, } from "./components/oauth-selector.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
+import { BranchSummaryStatusIndicator, CompactionStatusIndicator, IdleStatus, RetryStatusIndicator, WorkingStatusIndicator, } from "./components/status-indicator.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { TrustSelectorComponent } from "./components/trust-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { detectTerminalBackgroundTheme, getAvailableThemes, getAvailableThemesWithPaths, getEditorTheme, getMarkdownTheme, getThemeByName, initTheme, onThemeChange, setRegisteredThemes, setTheme, setThemeInstance, stopThemeWatcher, Theme, theme, } from "./theme/theme.js";
+import { getModelSearchText } from "./model-search.js";
+import { getAvailableThemes, getAvailableThemesWithPaths, getEditorTheme, getMarkdownTheme, getThemeByName, onThemeChange, setRegisteredThemes, stopThemeWatcher, Theme, theme, } from "./theme/theme.js";
+import { InteractiveThemeController } from "./theme/theme-controller.js";
 function isExpandable(obj) {
     return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
 }
@@ -79,6 +83,9 @@ class ExpandableText extends Text {
     setExpanded(expanded) {
         this.setText(expanded ? this.getExpandedText() : this.getCollapsedText());
     }
+}
+function isCustomSessionEntry(item) {
+    return "type" in item && item.type === "custom";
 }
 const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
 function isDeadTerminalError(error) {
@@ -130,9 +137,46 @@ export function isApiKeyLoginProvider(providerId, oauthProviderIds, builtInProvi
     }
     return !oauthProviderIds.has(providerId);
 }
+const AUTH_TYPE_ORDER = { oauth: 0, api_key: 1 };
+function createFuzzyAutocompleteItems(items, prefix, getSearchText, toAutocompleteItem) {
+    const filtered = fuzzyFilter(items, prefix, getSearchText);
+    if (filtered.length === 0)
+        return null;
+    return filtered.map(toAutocompleteItem);
+}
+function getLoginProviderCompletionOptions(providerOptions) {
+    const byId = new Map();
+    for (const provider of providerOptions) {
+        const existing = byId.get(provider.id);
+        if (existing) {
+            if (!existing.authTypes.includes(provider.authType)) {
+                existing.authTypes.push(provider.authType);
+                existing.authTypes.sort((a, b) => AUTH_TYPE_ORDER[a] - AUTH_TYPE_ORDER[b]);
+            }
+            continue;
+        }
+        byId.set(provider.id, {
+            id: provider.id,
+            name: provider.name,
+            authTypes: [provider.authType],
+        });
+    }
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+function getLoginProviderSearchText(provider) {
+    const authTypes = provider.authTypes
+        .map((authType) => `${authType} ${formatAuthSelectorProviderType(authType)}`)
+        .join(" ");
+    return `${provider.id} ${provider.name} ${authTypes}`;
+}
+function formatLoginProviderCompletionDescription(provider) {
+    const authTypes = provider.authTypes.map(formatAuthSelectorProviderType).join("/");
+    return provider.name === provider.id ? authTypes : `${provider.name} · ${authTypes}`;
+}
 export class InteractiveMode {
     runtimeHost;
     ui;
+    loadedResourcesContainer;
     chatContainer;
     pendingMessagesContainer;
     statusContainer;
@@ -151,7 +195,8 @@ export class InteractiveMode {
     isInitialized = false;
     onInputCallback;
     pendingUserInputs = [];
-    loadingAnimation = undefined;
+    activeStatusIndicator = undefined;
+    idleStatus = new IdleStatus();
     workingMessage = undefined;
     workingVisible = true;
     workingIndicatorOptions = undefined;
@@ -175,6 +220,7 @@ export class InteractiveMode {
     toolOutputExpanded = false;
     // Thinking block visibility state
     hideThinkingBlock = false;
+    outputPad = 1;
     // Skill commands: command name -> skill file path
     skillCommands = new Map();
     // Agent subscription unsubscribe function
@@ -187,11 +233,8 @@ export class InteractiveMode {
     // Track pending bash components (shown in pending area, moved to chat on submit)
     pendingBashComponents = [];
     // Auto-compaction state
-    autoCompactionLoader = undefined;
     autoCompactionEscapeHandler;
     // Auto-retry state
-    retryLoader = undefined;
-    retryCountdown = undefined;
     retryEscapeHandler;
     // Messages queued while compaction is running
     compactionQueuedMessages = [];
@@ -217,6 +260,7 @@ export class InteractiveMode {
     customHeader = undefined;
     options;
     autoTrustOnReloadCwd;
+    themeController;
     // Convenience accessors
     get session() {
         return this.runtimeHost.session;
@@ -238,12 +282,13 @@ export class InteractiveMode {
             this.resetExtensionUI();
         });
         this.runtimeHost.setRebindSession(async () => {
-            await this.rebindCurrentSession();
+            await this.rebindCurrentSession({ renderBeforeBind: true });
         });
         this.version = VERSION;
         this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
         this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
         this.headerContainer = new Container();
+        this.loadedResourcesContainer = new Container();
         this.chatContainer = new Container();
         this.pendingMessagesContainer = new Container();
         this.statusContainer = new Container();
@@ -265,25 +310,10 @@ export class InteractiveMode {
         this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
         // Load hide thinking block setting
         this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+        this.outputPad = this.settingsManager.getOutputPad();
         // Register themes from resource loader and initialize
         setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
-        initTheme(this.settingsManager.getTheme(), true);
-    }
-    async detectThemeIfUnset() {
-        if (this.settingsManager.getTheme()) {
-            return;
-        }
-        const detection = await detectTerminalBackgroundTheme({ ui: this.ui, timeoutMs: 100 });
-        const result = setTheme(detection.theme, true);
-        if (!result.success) {
-            return;
-        }
-        if (detection.confidence === "high") {
-            this.settingsManager.setTheme(detection.theme);
-            await this.settingsManager.flush();
-        }
-        this.updateEditorBorderColor();
-        this.ui.requestRender();
+        this.themeController = new InteractiveThemeController(this.ui, this.settingsManager, (message) => this.showError(message), () => this.updateEditorBorderColor());
     }
     getAutocompleteSourceTag(sourceInfo) {
         if (!sourceInfo) {
@@ -329,6 +359,7 @@ export class InteractiveMode {
         const slashCommands = BUILTIN_SLASH_COMMANDS.map((command) => ({
             name: command.name,
             description: command.description,
+            ...(command.argumentHint && { argumentHint: command.argumentHint }),
         }));
         const modelCommand = slashCommands.find((command) => command.name === "model");
         if (modelCommand) {
@@ -343,16 +374,24 @@ export class InteractiveMode {
                 const items = models.map((m) => ({
                     id: m.id,
                     provider: m.provider,
+                    name: m.name,
                     label: `${m.provider}/${m.id}`,
                 }));
-                // Fuzzy filter by model ID + provider (allows "opus anthropic" to match)
-                const filtered = fuzzyFilter(items, prefix, (item) => `${item.id} ${item.provider}`);
-                if (filtered.length === 0)
-                    return null;
-                return filtered.map((item) => ({
+                return createFuzzyAutocompleteItems(items, prefix, getModelSearchText, (item) => ({
                     value: item.label,
                     label: item.id,
                     description: item.provider,
+                }));
+            };
+        }
+        const loginCommand = slashCommands.find((command) => command.name === "login");
+        if (loginCommand) {
+            loginCommand.getArgumentCompletions = (prefix) => {
+                const providers = getLoginProviderCompletionOptions(this.getLoginProviderOptions());
+                return createFuzzyAutocompleteItems(providers, prefix, getLoginProviderSearchText, (provider) => ({
+                    value: provider.id,
+                    label: provider.id,
+                    description: formatLoginProviderCompletionDescription(provider),
                 }));
             };
         }
@@ -452,8 +491,10 @@ export class InteractiveMode {
                 : "";
             console.log(theme.fg("dim", `Model scope: ${modelList}${cycleHint}`));
         }
-        // Add header container as first child. Populate it after detectThemeIfUnset.
+        // Add header container as first child. Populate it after applying theme settings.
+        // Keep loaded resources before chat so restored session messages never precede them.
         this.ui.addChild(this.headerContainer);
+        this.ui.addChild(this.loadedResourcesContainer);
         this.ui.addChild(this.chatContainer);
         this.ui.addChild(this.pendingMessagesContainer);
         this.ui.addChild(this.statusContainer);
@@ -468,7 +509,7 @@ export class InteractiveMode {
         // Start the UI before initializing extensions so session_start handlers can use interactive dialogs
         this.ui.start();
         this.isInitialized = true;
-        await this.detectThemeIfUnset();
+        await this.themeController.applyFromSettings();
         // Add header with keybindings from config (unless silenced)
         if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
             const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
@@ -1003,6 +1044,8 @@ export class InteractiveMode {
         return lines.join("\n");
     }
     showLoadedResources(options) {
+        // Resource rendering is idempotent; chat clears no longer clear this separate container.
+        this.loadedResourcesContainer.clear();
         const showListing = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
         const showDiagnostics = showListing || options?.showDiagnosticsWhenQuiet === true;
         if (!showListing && !showDiagnostics) {
@@ -1018,8 +1061,8 @@ export class InteractiveMode {
         };
         const addLoadedSection = (name, collapsedBody, expandedBody = collapsedBody, color = "mdHeading") => {
             const section = new ExpandableText(() => `${sectionHeader(name, color)}\n${collapsedBody}`, () => `${sectionHeader(name, color)}\n${expandedBody}`, this.getStartupExpansionState(), 0, 0);
-            this.chatContainer.addChild(section);
-            this.chatContainer.addChild(new Spacer(1));
+            this.loadedResourcesContainer.addChild(section);
+            this.loadedResourcesContainer.addChild(new Spacer(1));
         };
         const skillsResult = this.session.resourceLoader.getSkills();
         const promptsResult = this.session.resourceLoader.getPrompts();
@@ -1053,7 +1096,7 @@ export class InteractiveMode {
         if (showListing) {
             const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
             if (contextFiles.length > 0) {
-                this.chatContainer.addChild(new Spacer(1));
+                this.loadedResourcesContainer.addChild(new Spacer(1));
                 const contextList = contextFiles
                     .map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
                     .join("\n");
@@ -1116,14 +1159,14 @@ export class InteractiveMode {
             const skillDiagnostics = skillsResult.diagnostics;
             if (skillDiagnostics.length > 0) {
                 const warningLines = this.formatDiagnostics(skillDiagnostics, sourceInfos);
-                this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                this.loadedResourcesContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
+                this.loadedResourcesContainer.addChild(new Spacer(1));
             }
             const promptDiagnostics = promptsResult.diagnostics;
             if (promptDiagnostics.length > 0) {
                 const warningLines = this.formatDiagnostics(promptDiagnostics, sourceInfos);
-                this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                this.loadedResourcesContainer.addChild(new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0));
+                this.loadedResourcesContainer.addChild(new Spacer(1));
             }
             const extensionDiagnostics = [];
             const extensionErrors = this.session.resourceLoader.getExtensions().errors;
@@ -1139,14 +1182,14 @@ export class InteractiveMode {
             extensionDiagnostics.push(...shortcutDiagnostics);
             if (extensionDiagnostics.length > 0) {
                 const warningLines = this.formatDiagnostics(extensionDiagnostics, sourceInfos);
-                this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                this.loadedResourcesContainer.addChild(new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0));
+                this.loadedResourcesContainer.addChild(new Spacer(1));
             }
             const themeDiagnostics = themesResult.diagnostics;
             if (themeDiagnostics.length > 0) {
                 const warningLines = this.formatDiagnostics(themeDiagnostics, sourceInfos);
-                this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
-                this.chatContainer.addChild(new Spacer(1));
+                this.loadedResourcesContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
+                this.loadedResourcesContainer.addChild(new Spacer(1));
             }
         }
     }
@@ -1162,20 +1205,11 @@ export class InteractiveMode {
                 this.restoreQueuedMessagesToEditor({ abort: true });
             },
             commandContextActions: {
-                waitForIdle: () => this.session.agent.waitForIdle(),
+                waitForIdle: () => this.session.waitForIdle(),
                 newSession: async (options) => {
-                    if (this.loadingAnimation) {
-                        this.loadingAnimation.stop();
-                        this.loadingAnimation = undefined;
-                    }
-                    this.statusContainer.clear();
+                    this.clearStatusIndicator();
                     try {
-                        const result = await this.runtimeHost.newSession(options);
-                        if (!result.cancelled) {
-                            this.renderCurrentSessionState();
-                            this.ui.requestRender();
-                        }
-                        return result;
+                        return await this.runtimeHost.newSession(options);
                     }
                     catch (error) {
                         return this.handleFatalRuntimeError("Failed to create session", error);
@@ -1185,7 +1219,6 @@ export class InteractiveMode {
                     try {
                         const result = await this.runtimeHost.fork(entryId, options);
                         if (!result.cancelled) {
-                            this.renderCurrentSessionState();
                             this.editor.setText(result.selectedText ?? "");
                             this.showStatus("Forked to new session");
                         }
@@ -1223,7 +1256,7 @@ export class InteractiveMode {
             },
             shutdownHandler: () => {
                 this.shutdownRequested = true;
-                if (!this.session.isStreaming) {
+                if (this.session.isIdle) {
                     void this.shutdown();
                 }
             },
@@ -1244,8 +1277,13 @@ export class InteractiveMode {
         this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
         this.footerDataProvider.setCwd(this.sessionManager.getCwd());
         this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+        this.outputPad = this.settingsManager.getOutputPad();
         this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
-        this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
+        const clearOnShrink = this.settingsManager.getClearOnShrink();
+        this.ui.setClearOnShrink(clearOnShrink);
+        if (!clearOnShrink && !this.activeStatusIndicator) {
+            this.statusContainer.clear();
+        }
         const editorPaddingX = this.settingsManager.getEditorPaddingX();
         const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
         this.defaultEditor.setPaddingX(editorPaddingX);
@@ -1255,12 +1293,19 @@ export class InteractiveMode {
             this.editor.setAutocompleteMaxVisible?.(autocompleteMaxVisible);
         }
     }
-    async rebindCurrentSession() {
+    async rebindCurrentSession(options = {}) {
         this.unsubscribe?.();
         this.unsubscribe = undefined;
         this.applyRuntimeSettings();
-        await this.bindCurrentSessionExtensions();
-        this.subscribeToAgent();
+        if (options.renderBeforeBind) {
+            this.renderCurrentSessionState();
+            this.subscribeToAgent();
+            await this.bindCurrentSessionExtensions();
+        }
+        else {
+            await this.bindCurrentSessionExtensions();
+            this.subscribeToAgent();
+        }
         await this.updateAvailableProviderCount();
         this.updateEditorBorderColor();
         this.updateTerminalTitle();
@@ -1273,6 +1318,7 @@ export class InteractiveMode {
         process.exit(1);
     }
     renderCurrentSessionState() {
+        this.loadedResourcesContainer.clear();
         this.chatContainer.clear();
         this.pendingMessagesContainer.clear();
         this.compactionQueuedMessages = [];
@@ -1303,7 +1349,7 @@ export class InteractiveMode {
             sessionManager: this.sessionManager,
             modelRegistry: this.session.modelRegistry,
             model: this.session.model,
-            isIdle: () => !this.session.isStreaming,
+            isIdle: () => this.session.isIdle,
             isProjectTrusted: () => this.settingsManager.isProjectTrusted(),
             signal: this.session.agent.signal,
             abort: () => {
@@ -1350,36 +1396,41 @@ export class InteractiveMode {
         this.footerDataProvider.setExtensionStatus(key, text);
         this.ui.requestRender();
     }
-    getWorkingLoaderMessage() {
-        return this.workingMessage ?? this.defaultWorkingMessage;
-    }
-    createWorkingLoader() {
-        return new Loader(this.ui, (spinner) => theme.fg("accent", spinner), (text) => theme.fg("muted", text), this.getWorkingLoaderMessage(), this.workingIndicatorOptions);
-    }
-    stopWorkingLoader() {
-        if (this.loadingAnimation) {
-            this.loadingAnimation.stop();
-            this.loadingAnimation = undefined;
-        }
+    showStatusIndicator(indicator) {
+        this.activeStatusIndicator?.dispose();
+        this.activeStatusIndicator = indicator;
         this.statusContainer.clear();
+        this.statusContainer.addChild(indicator);
+    }
+    clearStatusIndicator(kind) {
+        if (kind && this.activeStatusIndicator?.kind !== kind) {
+            return;
+        }
+        const hadActiveStatusIndicator = this.activeStatusIndicator !== undefined;
+        this.activeStatusIndicator?.dispose();
+        this.activeStatusIndicator = undefined;
+        this.statusContainer.clear();
+        if (hadActiveStatusIndicator && this.ui.getClearOnShrink()) {
+            this.statusContainer.addChild(this.idleStatus);
+        }
     }
     setWorkingVisible(visible) {
         this.workingVisible = visible;
         if (!visible) {
-            this.stopWorkingLoader();
+            this.clearStatusIndicator("working");
             this.ui.requestRender();
             return;
         }
-        if (this.session.isStreaming && !this.loadingAnimation) {
-            this.statusContainer.clear();
-            this.loadingAnimation = this.createWorkingLoader();
-            this.statusContainer.addChild(this.loadingAnimation);
+        if (this.session.isStreaming && this.activeStatusIndicator?.kind !== "working") {
+            this.showStatusIndicator(new WorkingStatusIndicator(this.ui, this.workingMessage ?? this.defaultWorkingMessage, this.workingIndicatorOptions));
         }
         this.ui.requestRender();
     }
     setWorkingIndicator(options) {
         this.workingIndicatorOptions = options;
-        this.loadingAnimation?.setIndicator(options);
+        if (this.activeStatusIndicator?.kind === "working") {
+            this.activeStatusIndicator.setIndicator(options);
+        }
         this.ui.requestRender();
     }
     setHiddenThinkingLabel(label) {
@@ -1467,8 +1518,8 @@ export class InteractiveMode {
         this.workingMessage = undefined;
         this.workingVisible = true;
         this.setWorkingIndicator();
-        if (this.loadingAnimation) {
-            this.loadingAnimation.setMessage(`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`);
+        if (this.activeStatusIndicator?.kind === "working") {
+            this.activeStatusIndicator.setMessage(`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`);
         }
         this.setHiddenThinkingLabel();
     }
@@ -1608,8 +1659,8 @@ export class InteractiveMode {
             setStatus: (key, text) => this.setExtensionStatus(key, text),
             setWorkingMessage: (message) => {
                 this.workingMessage = message;
-                if (this.loadingAnimation) {
-                    this.loadingAnimation.setMessage(message ?? this.defaultWorkingMessage);
+                if (this.activeStatusIndicator?.kind === "working") {
+                    this.activeStatusIndicator.setMessage(message ?? this.defaultWorkingMessage);
                 }
             },
             setWorkingVisible: (visible) => this.setWorkingVisible(visible),
@@ -1637,16 +1688,13 @@ export class InteractiveMode {
             getTheme: (name) => getThemeByName(name),
             setTheme: (themeOrName) => {
                 if (themeOrName instanceof Theme) {
-                    setThemeInstance(themeOrName);
-                    this.ui.requestRender();
-                    return { success: true };
+                    return this.themeController.setThemeInstance(themeOrName);
                 }
-                const result = setTheme(themeOrName, true);
+                const result = this.themeController.setThemeName(themeOrName);
                 if (result.success) {
                     if (this.settingsManager.getTheme() !== themeOrName) {
                         this.settingsManager.setTheme(themeOrName);
                     }
-                    this.ui.requestRender();
                 }
                 return result;
             },
@@ -1756,7 +1804,7 @@ export class InteractiveMode {
             }, () => {
                 this.hideExtensionEditor();
                 resolve(undefined);
-            });
+            }, undefined, this.settingsManager.getExternalEditorCommand());
             this.editorContainer.clear();
             this.editorContainer.addChild(this.extensionEditor);
             this.ui.setFocus(this.extensionEditor);
@@ -2107,9 +2155,10 @@ export class InteractiveMode {
                 this.editor.setText("");
                 return;
             }
-            if (text === "/login") {
-                this.showOAuthSelector("login");
+            if (text === "/login" || text.startsWith("/login ")) {
+                const providerRef = text.startsWith("/login ") ? text.slice(7).trim() : undefined;
                 this.editor.setText("");
+                await this.handleLoginCommand(providerRef);
                 return;
             }
             if (text === "/logout") {
@@ -2231,24 +2280,23 @@ export class InteractiveMode {
                     this.defaultEditor.onEscape = this.retryEscapeHandler;
                     this.retryEscapeHandler = undefined;
                 }
-                if (this.retryCountdown) {
-                    this.retryCountdown.dispose();
-                    this.retryCountdown = undefined;
-                }
-                if (this.retryLoader) {
-                    this.retryLoader.stop();
-                    this.retryLoader = undefined;
-                }
-                this.stopWorkingLoader();
                 if (this.workingVisible) {
-                    this.loadingAnimation = this.createWorkingLoader();
-                    this.statusContainer.addChild(this.loadingAnimation);
+                    this.showStatusIndicator(new WorkingStatusIndicator(this.ui, this.workingMessage ?? this.defaultWorkingMessage, this.workingIndicatorOptions));
+                }
+                else {
+                    this.clearStatusIndicator();
                 }
                 this.ui.requestRender();
                 break;
             case "queue_update":
                 this.updatePendingMessagesDisplay();
                 this.ui.requestRender();
+                break;
+            case "entry_appended":
+                if (event.entry.type === "custom") {
+                    this.addCustomEntryToChat(event.entry);
+                    this.ui.requestRender();
+                }
                 break;
             case "session_info_changed":
                 this.updateTerminalTitle();
@@ -2270,7 +2318,7 @@ export class InteractiveMode {
                     this.ui.requestRender();
                 }
                 else if (event.message.role === "assistant") {
-                    this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel);
+                    this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad);
                     this.streamingMessage = event.message;
                     this.chatContainer.addChild(this.streamingComponent);
                     this.streamingComponent.updateContent(this.streamingMessage);
@@ -2335,6 +2383,7 @@ export class InteractiveMode {
                         for (const [, component] of this.pendingTools.entries()) {
                             component.setArgsComplete();
                         }
+                        this.maybeShowCacheMissNotice(this.streamingMessage);
                     }
                     this.streamingComponent = undefined;
                     this.streamingMessage = undefined;
@@ -2378,19 +2427,17 @@ export class InteractiveMode {
                 if (this.settingsManager.getShowTerminalProgress()) {
                     this.ui.terminal.setProgress(false);
                 }
-                if (this.loadingAnimation) {
-                    this.loadingAnimation.stop();
-                    this.loadingAnimation = undefined;
-                    this.statusContainer.clear();
-                }
+                this.clearStatusIndicator("working");
                 if (this.streamingComponent) {
                     this.chatContainer.removeChild(this.streamingComponent);
                     this.streamingComponent = undefined;
                     this.streamingMessage = undefined;
                 }
                 this.pendingTools.clear();
-                await this.checkShutdownRequested();
                 this.ui.requestRender();
+                break;
+            case "agent_settled":
+                await this.checkShutdownRequested();
                 break;
             case "compaction_start": {
                 if (this.settingsManager.getShowTerminalProgress()) {
@@ -2401,13 +2448,7 @@ export class InteractiveMode {
                 this.defaultEditor.onEscape = () => {
                     this.session.abortCompaction();
                 };
-                this.statusContainer.clear();
-                const cancelHint = `(${keyText("app.interrupt")} to cancel)`;
-                const label = event.reason === "manual"
-                    ? `Compacting context... ${cancelHint}`
-                    : `${event.reason === "overflow" ? "Context overflow detected, " : ""}Auto-compacting... ${cancelHint}`;
-                this.autoCompactionLoader = new Loader(this.ui, (spinner) => theme.fg("accent", spinner), (text) => theme.fg("muted", text), label);
-                this.statusContainer.addChild(this.autoCompactionLoader);
+                this.showStatusIndicator(new CompactionStatusIndicator(this.ui, event.reason));
                 this.ui.requestRender();
                 break;
             }
@@ -2419,11 +2460,7 @@ export class InteractiveMode {
                     this.defaultEditor.onEscape = this.autoCompactionEscapeHandler;
                     this.autoCompactionEscapeHandler = undefined;
                 }
-                if (this.autoCompactionLoader) {
-                    this.autoCompactionLoader.stop();
-                    this.autoCompactionLoader = undefined;
-                    this.statusContainer.clear();
-                }
+                this.clearStatusIndicator("compaction");
                 if (event.aborted) {
                     if (event.reason === "manual") {
                         this.showError("Compaction cancelled");
@@ -2457,17 +2494,7 @@ export class InteractiveMode {
                 this.defaultEditor.onEscape = () => {
                     this.session.abortRetry();
                 };
-                // Show retry indicator
-                this.statusContainer.clear();
-                this.retryCountdown?.dispose();
-                const retryMessage = (seconds) => `Retrying (${event.attempt}/${event.maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
-                this.retryLoader = new Loader(this.ui, (spinner) => theme.fg("warning", spinner), (text) => theme.fg("muted", text), retryMessage(Math.ceil(event.delayMs / 1000)));
-                this.retryCountdown = new CountdownTimer(event.delayMs, this.ui, (seconds) => {
-                    this.retryLoader?.setMessage(retryMessage(seconds));
-                }, () => {
-                    this.retryCountdown = undefined;
-                });
-                this.statusContainer.addChild(this.retryLoader);
+                this.showStatusIndicator(new RetryStatusIndicator(this.ui, event.attempt, event.maxAttempts, event.delayMs));
                 this.ui.requestRender();
                 break;
             }
@@ -2477,16 +2504,7 @@ export class InteractiveMode {
                     this.defaultEditor.onEscape = this.retryEscapeHandler;
                     this.retryEscapeHandler = undefined;
                 }
-                if (this.retryCountdown) {
-                    this.retryCountdown.dispose();
-                    this.retryCountdown = undefined;
-                }
-                // Stop loader
-                if (this.retryLoader) {
-                    this.retryLoader.stop();
-                    this.retryLoader = undefined;
-                    this.statusContainer.clear();
-                }
+                this.clearStatusIndicator("retry");
                 // Show error only on final failure (success shows normal response)
                 if (!event.success) {
                     this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
@@ -2527,6 +2545,25 @@ export class InteractiveMode {
         this.lastStatusSpacer = spacer;
         this.lastStatusText = text;
         this.ui.requestRender();
+    }
+    addCustomEntryToChat(entry) {
+        const renderer = this.session.extensionRunner.getEntryRenderer(entry.customType);
+        if (!renderer) {
+            return;
+        }
+        const component = new CustomEntryComponent(entry, renderer);
+        component.setExpanded(this.toolOutputExpanded);
+        if (!component.hasContent()) {
+            return;
+        }
+        if (this.streamingComponent) {
+            const streamingIndex = this.chatContainer.children.indexOf(this.streamingComponent);
+            if (streamingIndex >= 0) {
+                this.chatContainer.children.splice(streamingIndex, 0, component);
+                return;
+            }
+        }
+        this.chatContainer.addChild(component);
     }
     addMessageToChat(message, options) {
         switch (message.role) {
@@ -2577,12 +2614,12 @@ export class InteractiveMode {
                         // Render user message separately if present
                         if (skillBlock.userMessage) {
                             this.chatContainer.addChild(new Spacer(1));
-                            const userComponent = new UserMessageComponent(skillBlock.userMessage, this.getMarkdownThemeWithSettings());
+                            const userComponent = new UserMessageComponent(skillBlock.userMessage, this.getMarkdownThemeWithSettings(), this.outputPad);
                             this.chatContainer.addChild(userComponent);
                         }
                     }
                     else {
-                        const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
+                        const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings(), this.outputPad);
                         this.chatContainer.addChild(userComponent);
                     }
                     if (options?.populateHistory) {
@@ -2592,7 +2629,7 @@ export class InteractiveMode {
                 break;
             }
             case "assistant": {
-                const assistantComponent = new AssistantMessageComponent(message, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel);
+                const assistantComponent = new AssistantMessageComponent(message, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel, this.outputPad);
                 this.chatContainer.addChild(assistantComponent);
                 break;
             }
@@ -2605,20 +2642,24 @@ export class InteractiveMode {
             }
         }
     }
-    /**
-     * Render session context to chat. Used for initial load and rebuild after compaction.
-     * @param sessionContext Session context to render
-     * @param options.updateFooter Update footer state
-     * @param options.populateHistory Add user messages to editor history
-     */
-    renderSessionContext(sessionContext, options = {}) {
+    renderSessionItems(items, options = {}) {
         this.pendingTools.clear();
         const renderedPendingTools = new Map();
+        // Cache-miss notices are not persisted; re-derive them from the full entry
+        // list and re-inject them after the assistant messages that paid for them.
+        const cacheMisses = this.settingsManager.getShowCacheMissNotices()
+            ? collectCacheMisses(this.sessionManager.getEntries(), this.session.modelRegistry)
+            : new Map();
         if (options.updateFooter) {
             this.footer.invalidate();
             this.updateEditorBorderColor();
         }
-        for (const message of sessionContext.messages) {
+        for (const item of items) {
+            if (isCustomSessionEntry(item)) {
+                this.addCustomEntryToChat(item);
+                continue;
+            }
+            const message = item;
             // Assistant messages need special handling for tool calls
             if (message.role === "assistant") {
                 this.addMessageToChat(message);
@@ -2650,6 +2691,11 @@ export class InteractiveMode {
                         }
                     }
                 }
+                if (message.stopReason !== "aborted" && message.stopReason !== "error") {
+                    const miss = cacheMisses.get(message);
+                    if (miss)
+                        this.addCacheMissNotice(miss);
+                }
             }
             else if (message.role === "toolResult") {
                 // Match tool results to pending tool components
@@ -2669,10 +2715,53 @@ export class InteractiveMode {
         }
         this.ui.requestRender();
     }
+    /**
+     * Render session entries to chat. Used for initial load and rebuild after compaction.
+     * @param entries Compaction-aware session entries to render
+     * @param options.updateFooter Update footer state
+     * @param options.populateHistory Add user messages to editor history
+     */
+    renderSessionEntries(entries, options = {}) {
+        const items = entries.flatMap((entry) => {
+            if (entry.type === "custom") {
+                return [entry];
+            }
+            return sessionEntryToContextMessages(entry);
+        });
+        this.renderSessionItems(items, options);
+    }
+    /**
+     * Show a transcript notice when a completed assistant message paid for a
+     * significant cache miss. Only states observable facts: the miss itself,
+     * a model switch, or an idle gap past the cache TTL.
+     */
+    maybeShowCacheMissNotice(message) {
+        if (!this.settingsManager.getShowCacheMissNotices())
+            return;
+        // Entries don't contain `message` yet: message_end fires before persistence.
+        const miss = detectCacheMiss(this.sessionManager.getEntries(), message, this.session.modelRegistry);
+        if (miss)
+            this.addCacheMissNotice(miss);
+    }
+    addCacheMissNotice(miss) {
+        if (miss.missedTokens < 20_000 && miss.missedCost < 0.1)
+            return;
+        const cost = miss.missedCost >= 0.01 ? ` (~$${miss.missedCost.toFixed(2)})` : "";
+        const reBilled = `${formatTokens(miss.missedTokens)} tokens re-billed${cost}`;
+        let label = "Cache miss";
+        if (miss.modelChanged) {
+            label = "Cache miss after model switch";
+        }
+        else if (miss.idleMs >= CACHE_TTL_MS) {
+            label = `Cache miss after ${Math.round(miss.idleMs / 60_000)}m idle`;
+        }
+        const text = theme.fg("warning", `${label}: ${reBilled}`);
+        this.chatContainer.addChild(new Spacer(1));
+        this.chatContainer.addChild(new Text(text, 1, 0));
+    }
     renderInitialMessages() {
-        // Get aligned messages and entries from session context
-        const context = this.sessionManager.buildSessionContext();
-        this.renderSessionContext(context, {
+        const entries = this.sessionManager.buildContextEntries();
+        this.renderSessionEntries(entries, {
             updateFooter: true,
             populateHistory: true,
         });
@@ -2692,7 +2781,7 @@ export class InteractiveMode {
         if (this.chatContainer.children.length > 0) {
             this.chatContainer.addChild(new Spacer(1));
         }
-        this.chatContainer.addChild(new Text(theme.fg("warning", "This project is not trusted. Project .pi resources and packages are ignored. Use /trust to save a trust decision, then restart pi."), 1, 0));
+        this.chatContainer.addChild(new Text(theme.fg("warning", `This project is not trusted. Project ${CONFIG_DIR_NAME} resources and packages are ignored. Use /trust to save a trust decision, then restart pi.`), 1, 0));
     }
     async getUserInput() {
         const queuedInput = this.pendingUserInputs.shift();
@@ -2708,8 +2797,7 @@ export class InteractiveMode {
     }
     rebuildChatFromMessages() {
         this.chatContainer.clear();
-        const context = this.sessionManager.buildSessionContext();
-        this.renderSessionContext(context);
+        this.renderSessionEntries(this.sessionManager.buildContextEntries());
     }
     // =========================================================================
     // Key handlers
@@ -2750,6 +2838,7 @@ export class InteractiveMode {
             // which the stdout/stderr error handler turns into emergencyTerminalExit;
             // the render loop is already idle, so this cannot hot-spin (see #4144).
             await this.runtimeHost.dispose();
+            this.themeController.disableAutoSync();
             await this.ui.terminal.drainInput(1000);
             this.stop();
             process.exit(0);
@@ -2759,6 +2848,7 @@ export class InteractiveMode {
         // the final frame while the process is exiting.
         // Drain any in-flight Kitty key release events before stopping.
         // This prevents escape sequences from leaking to the parent shell over slow SSH.
+        this.themeController.disableAutoSync();
         await this.ui.terminal.drainInput(1000);
         this.stop();
         await this.runtimeHost.dispose();
@@ -2978,9 +3068,11 @@ export class InteractiveMode {
         if (isExpandable(activeHeader)) {
             activeHeader.setExpanded(expanded);
         }
-        for (const child of this.chatContainer.children) {
-            if (isExpandable(child)) {
-                child.setExpanded(expanded);
+        for (const container of [this.loadedResourcesContainer, this.chatContainer]) {
+            for (const child of container.children) {
+                if (isExpandable(child)) {
+                    child.setExpanded(expanded);
+                }
             }
         }
         this.ui.requestRender();
@@ -3000,10 +3092,9 @@ export class InteractiveMode {
         this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
     }
     async openExternalEditor() {
-        // Determine editor (respect $VISUAL, then $EDITOR)
-        const editorCmd = process.env.VISUAL || process.env.EDITOR;
+        const editorCmd = this.settingsManager.getExternalEditorCommand();
         if (!editorCmd) {
-            this.showWarning("No editor configured. Set $VISUAL or $EDITOR environment variable.");
+            this.showWarning("No editor configured. Set externalEditor in settings.json or $VISUAL/$EDITOR.");
             return;
         }
         const currentText = this.editor.getExpandedText?.() ?? this.editor.getText();
@@ -3058,7 +3149,6 @@ export class InteractiveMode {
     showError(errorMessage) {
         this.chatContainer.addChild(new Spacer(1));
         this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
-        this.chatContainer.addChild(new Spacer(1));
         this.ui.requestRender();
     }
     showWarning(warningMessage) {
@@ -3071,7 +3161,7 @@ export class InteractiveMode {
         const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
         const changelogUrl = "https://pi.dev/changelog";
         const changelogLink = getCapabilities().hyperlinks
-            ? hyperlink(theme.fg("accent", "open changelog"), changelogUrl)
+            ? hyperlink(theme.fg("accent", changelogUrl), changelogUrl)
             : theme.fg("accent", changelogUrl);
         const changelogLine = theme.fg("muted", "Changelog: ") + changelogLink;
         const note = release.note?.trim();
@@ -3090,7 +3180,7 @@ export class InteractiveMode {
         this.ui.requestRender();
     }
     showPackageUpdateNotification(packages) {
-        const action = theme.fg("accent", `${APP_NAME} update`);
+        const action = theme.fg("accent", `${APP_NAME} update --extensions`);
         const updateInstruction = theme.fg("muted", "Package updates are available. Run ") + action;
         const packageLines = packages.map((pkg) => `- ${pkg}`).join("\n");
         this.chatContainer.addChild(new Spacer(1));
@@ -3297,7 +3387,8 @@ export class InteractiveMode {
                 httpIdleTimeoutMs: this.settingsManager.getHttpIdleTimeoutMs(),
                 thinkingLevel: this.session.thinkingLevel,
                 availableThinkingLevels: this.session.getAvailableThinkingLevels(),
-                currentTheme: this.settingsManager.getTheme() || "dark",
+                currentTheme: this.settingsManager.getThemeSetting() || "dark",
+                terminalTheme: this.themeController.getTerminalTheme(),
                 availableThemes: getAvailableThemes(),
                 hideThinkingBlock: this.hideThinkingBlock,
                 collapseChangelog: this.settingsManager.getCollapseChangelog(),
@@ -3305,8 +3396,10 @@ export class InteractiveMode {
                 doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
                 treeFilterMode: this.settingsManager.getTreeFilterMode(),
                 showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+                showCacheMissNotices: this.settingsManager.getShowCacheMissNotices(),
                 defaultProjectTrust: this.settingsManager.getDefaultProjectTrust(),
                 editorPaddingX: this.settingsManager.getEditorPaddingX(),
+                outputPad: this.settingsManager.getOutputPad(),
                 autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
                 quietStartup: this.settingsManager.getQuietStartup(),
                 clearOnShrink: this.settingsManager.getClearOnShrink(),
@@ -3363,21 +3456,11 @@ export class InteractiveMode {
                     this.footer.invalidate();
                     this.updateEditorBorderColor();
                 },
-                onThemeChange: (themeName) => {
-                    const result = setTheme(themeName, true);
-                    this.settingsManager.setTheme(themeName);
-                    this.ui.invalidate();
-                    if (!result.success) {
-                        this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
-                    }
+                onThemeChange: (themeSetting) => {
+                    this.settingsManager.setTheme(themeSetting);
+                    void this.themeController.applyFromSettings();
                 },
-                onThemePreview: (themeName) => {
-                    const result = setTheme(themeName, true);
-                    if (result.success) {
-                        this.ui.invalidate();
-                        this.ui.requestRender();
-                    }
-                },
+                onThemePreview: (themeName) => this.themeController.preview(themeName),
                 onHideThinkingBlockChange: (hidden) => {
                     this.hideThinkingBlock = hidden;
                     this.settingsManager.setHideThinkingBlock(hidden);
@@ -3387,6 +3470,10 @@ export class InteractiveMode {
                         }
                     }
                     this.chatContainer.clear();
+                    this.rebuildChatFromMessages();
+                },
+                onShowCacheMissNoticesChange: (shown) => {
+                    this.settingsManager.setShowCacheMissNotices(shown);
                     this.rebuildChatFromMessages();
                 },
                 onCollapseChangelogChange: (collapsed) => {
@@ -3418,6 +3505,23 @@ export class InteractiveMode {
                         this.editor.setPaddingX(padding);
                     }
                 },
+                onOutputPadChange: (padding) => {
+                    this.settingsManager.setOutputPad(padding);
+                    this.outputPad = padding;
+                    if (this.streamingComponent || this.session.isStreaming) {
+                        for (const child of this.chatContainer.children) {
+                            if (child instanceof AssistantMessageComponent || child instanceof UserMessageComponent) {
+                                child.setOutputPad(padding);
+                            }
+                        }
+                        if (this.streamingComponent) {
+                            this.streamingComponent.setOutputPad(padding);
+                        }
+                        this.ui.requestRender();
+                        return;
+                    }
+                    this.rebuildChatFromMessages();
+                },
                 onAutocompleteMaxVisibleChange: (maxVisible) => {
                     this.settingsManager.setAutocompleteMaxVisible(maxVisible);
                     this.defaultEditor.setAutocompleteMaxVisible(maxVisible);
@@ -3428,6 +3532,9 @@ export class InteractiveMode {
                 onClearOnShrinkChange: (enabled) => {
                     this.settingsManager.setClearOnShrink(enabled);
                     this.ui.setClearOnShrink(enabled);
+                    if (!enabled && !this.activeStatusIndicator) {
+                        this.statusContainer.clear();
+                    }
                 },
                 onShowTerminalProgressChange: (enabled) => {
                     this.settingsManager.setShowTerminalProgress(enabled);
@@ -3658,20 +3765,17 @@ export class InteractiveMode {
         const initialSelectedId = userMessages[userMessages.length - 1]?.entryId;
         this.showSelector((done) => {
             const selector = new UserMessageSelectorComponent(userMessages.map((m) => ({ id: m.entryId, text: m.text })), async (entryId) => {
+                done();
                 try {
                     const result = await this.runtimeHost.fork(entryId);
                     if (result.cancelled) {
-                        done();
                         this.ui.requestRender();
                         return;
                     }
-                    this.renderCurrentSessionState();
                     this.editor.setText(result.selectedText ?? "");
-                    done();
                     this.showStatus("Forked to new session");
                 }
                 catch (error) {
-                    done();
                     this.showError(error instanceof Error ? error.message : String(error));
                 }
             }, () => {
@@ -3693,7 +3797,6 @@ export class InteractiveMode {
                 this.ui.requestRender();
                 return;
             }
-            this.renderCurrentSessionState();
             this.editor.setText("");
             this.showStatus("Cloned to new session");
         }
@@ -3747,16 +3850,16 @@ export class InteractiveMode {
                         break;
                     }
                 }
-                // Set up escape handler and loader if summarizing
-                let summaryLoader;
+                // Set up escape handler and status indicator if summarizing
+                let showingSummaryIndicator = false;
                 const originalOnEscape = this.defaultEditor.onEscape;
                 if (wantsSummary) {
                     this.defaultEditor.onEscape = () => {
                         this.session.abortBranchSummary();
                     };
                     this.chatContainer.addChild(new Spacer(1));
-                    summaryLoader = new Loader(this.ui, (spinner) => theme.fg("accent", spinner), (text) => theme.fg("muted", text), `Summarizing branch... (${keyText("app.interrupt")} to cancel)`);
-                    this.statusContainer.addChild(summaryLoader);
+                    this.showStatusIndicator(new BranchSummaryStatusIndicator(this.ui));
+                    showingSummaryIndicator = true;
                     this.ui.requestRender();
                 }
                 try {
@@ -3787,9 +3890,8 @@ export class InteractiveMode {
                     this.showError(error instanceof Error ? error.message : String(error));
                 }
                 finally {
-                    if (summaryLoader) {
-                        summaryLoader.stop();
-                        this.statusContainer.clear();
+                    if (showingSummaryIndicator) {
+                        this.clearStatusIndicator("branchSummary");
                     }
                     this.defaultEditor.onEscape = originalOnEscape;
                 }
@@ -3830,11 +3932,7 @@ export class InteractiveMode {
         });
     }
     async handleResumeSession(sessionPath, options) {
-        if (this.loadingAnimation) {
-            this.loadingAnimation.stop();
-            this.loadingAnimation = undefined;
-        }
-        this.statusContainer.clear();
+        this.clearStatusIndicator();
         try {
             const result = await this.runtimeHost.switchSession(sessionPath, {
                 withSession: options?.withSession,
@@ -3843,7 +3941,6 @@ export class InteractiveMode {
             if (result.cancelled) {
                 return result;
             }
-            this.renderCurrentSessionState();
             this.showStatus("Resumed session");
             return result;
         }
@@ -3862,7 +3959,6 @@ export class InteractiveMode {
                 if (result.cancelled) {
                     return result;
                 }
-                this.renderCurrentSessionState();
                 this.showStatus("Resumed session in current cwd");
                 return result;
             }
@@ -3908,13 +4004,82 @@ export class InteractiveMode {
         }
         return options.sort((a, b) => a.name.localeCompare(b.name));
     }
-    showLoginAuthTypeSelector() {
+    findLoginProviderOptions(providerRef) {
+        const normalizedProviderRef = providerRef.trim().toLowerCase();
+        if (!normalizedProviderRef) {
+            return [];
+        }
+        return this.getLoginProviderOptions().filter((provider) => provider.id.toLowerCase() === normalizedProviderRef ||
+            provider.name.toLowerCase() === normalizedProviderRef);
+    }
+    async handleLoginCommand(providerRef) {
+        if (!providerRef) {
+            this.showLoginAuthTypeSelector();
+            return;
+        }
+        const providerOptions = this.findLoginProviderOptions(providerRef);
+        if (providerOptions.length === 1) {
+            await this.startProviderLogin(providerOptions[0]);
+            return;
+        }
+        if (providerOptions.length > 1) {
+            const providerIds = new Set(providerOptions.map((provider) => provider.id));
+            if (providerIds.size === 1) {
+                this.showLoginAuthTypeSelector(providerOptions);
+                return;
+            }
+        }
+        this.showLoginProviderSelector(undefined, providerRef);
+    }
+    async startProviderLogin(providerOption) {
+        if (providerOption.authType === "oauth") {
+            await this.showLoginDialog(providerOption.id, providerOption.name);
+        }
+        else if (providerOption.id === BEDROCK_PROVIDER_ID) {
+            this.showBedrockSetupDialog(providerOption.id, providerOption.name);
+        }
+        else {
+            await this.showApiKeyLoginDialog(providerOption.id, providerOption.name);
+        }
+    }
+    showLoginAuthTypeSelector(providerOptions) {
         const subscriptionLabel = "Use a subscription";
         const apiKeyLabel = "Use an API key";
+        const availableAuthTypes = providerOptions
+            ? new Set(providerOptions.map((provider) => provider.authType))
+            : new Set(["oauth", "api_key"]);
+        const options = [];
+        if (availableAuthTypes.has("oauth")) {
+            options.push(subscriptionLabel);
+        }
+        if (availableAuthTypes.has("api_key")) {
+            options.push(apiKeyLabel);
+        }
+        if (options.length === 0) {
+            this.showStatus("No login methods available.");
+            return;
+        }
+        if (providerOptions && options.length === 1) {
+            const providerOption = providerOptions[0];
+            if (providerOption) {
+                void this.startProviderLogin(providerOption);
+            }
+            return;
+        }
+        const title = providerOptions?.[0]
+            ? `Select authentication method for ${providerOptions[0].name}:`
+            : "Select authentication method:";
         this.showSelector((done) => {
-            const selector = new ExtensionSelectorComponent("Select authentication method:", [subscriptionLabel, apiKeyLabel], (option) => {
+            const selector = new ExtensionSelectorComponent(title, options, (option) => {
                 done();
                 const authType = option === subscriptionLabel ? "oauth" : "api_key";
+                if (providerOptions) {
+                    const providerOption = providerOptions.find((provider) => provider.authType === authType);
+                    if (providerOption) {
+                        void this.startProviderLogin(providerOption);
+                    }
+                    return;
+                }
                 this.showLoginProviderSelector(authType);
             }, () => {
                 done();
@@ -3923,32 +4088,34 @@ export class InteractiveMode {
             return { component: selector, focus: selector };
         });
     }
-    showLoginProviderSelector(authType) {
+    showLoginProviderSelector(authType, initialSearchInput) {
         const providerOptions = this.getLoginProviderOptions(authType);
         if (providerOptions.length === 0) {
-            this.showStatus(authType === "oauth" ? "No subscription providers available." : "No API key providers available.");
+            const message = authType === "oauth"
+                ? "No subscription providers available."
+                : authType === "api_key"
+                    ? "No API key providers available."
+                    : "No login providers available.";
+            this.showStatus(message);
             return;
         }
         this.showSelector((done) => {
-            const selector = new OAuthSelectorComponent("login", this.session.modelRegistry.authStorage, providerOptions, async (providerId) => {
+            const selector = new OAuthSelectorComponent("login", this.session.modelRegistry.authStorage, providerOptions, async (providerId, selectedAuthType) => {
                 done();
-                const providerOption = providerOptions.find((provider) => provider.id === providerId);
+                const providerOption = providerOptions.find((provider) => provider.id === providerId && provider.authType === selectedAuthType);
                 if (!providerOption) {
                     return;
                 }
-                if (providerOption.authType === "oauth") {
-                    await this.showLoginDialog(providerOption.id, providerOption.name);
-                }
-                else if (providerOption.id === BEDROCK_PROVIDER_ID) {
-                    this.showBedrockSetupDialog(providerOption.id, providerOption.name);
-                }
-                else {
-                    await this.showApiKeyLoginDialog(providerOption.id, providerOption.name);
-                }
+                await this.startProviderLogin(providerOption);
             }, () => {
                 done();
-                this.showLoginAuthTypeSelector();
-            }, (providerId) => this.session.modelRegistry.getProviderAuthStatus(providerId));
+                if (authType) {
+                    this.showLoginAuthTypeSelector();
+                }
+                else {
+                    this.ui.requestRender();
+                }
+            }, (providerId) => this.session.modelRegistry.getProviderAuthStatus(providerId), initialSearchInput);
             return { component: selector, focus: selector };
         });
     }
@@ -4207,7 +4374,7 @@ export class InteractiveMode {
         const borderColor = (s) => theme.fg("border", s);
         reloadBox.addChild(new DynamicBorder(borderColor));
         reloadBox.addChild(new Spacer(1));
-        reloadBox.addChild(new Text(theme.fg("muted", "Reloading keybindings, extensions, skills, prompts, themes..."), 1, 0));
+        reloadBox.addChild(new Text(theme.fg("muted", "Reloading keybindings, extensions, skills, prompts, themes, and context files..."), 1, 0));
         reloadBox.addChild(new Spacer(1));
         reloadBox.addChild(new DynamicBorder(borderColor));
         const previousEditor = this.editor;
@@ -4222,8 +4389,20 @@ export class InteractiveMode {
             this.ui.setFocus(editor);
             this.ui.requestRender();
         };
+        let chatRestoredBeforeSessionStart = false;
+        let reloadBoxDismissed = false;
+        const restoreChatBeforeSessionStart = () => {
+            if (chatRestoredBeforeSessionStart) {
+                return;
+            }
+            this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+            this.outputPad = this.settingsManager.getOutputPad();
+            this.rebuildChatFromMessages();
+            chatRestoredBeforeSessionStart = true;
+        };
         try {
-            await this.session.reload();
+            await this.session.reload({ beforeSessionStart: restoreChatBeforeSessionStart });
+            restoreChatBeforeSessionStart();
             configureHttpDispatcher(this.settingsManager.getHttpIdleTimeoutMs());
             this.keybindings.reload();
             const activeHeader = this.customHeader ?? this.builtInHeader;
@@ -4231,12 +4410,7 @@ export class InteractiveMode {
                 activeHeader.setExpanded(this.toolOutputExpanded);
             }
             setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
-            this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
-            const themeName = this.settingsManager.getTheme();
-            const themeResult = themeName ? setTheme(themeName, true) : { success: true };
-            if (!themeResult.success) {
-                this.showError(`Failed to load theme "${themeName}": ${themeResult.error}\nFell back to dark theme.`);
-            }
+            await this.themeController.applyFromSettings();
             const editorPaddingX = this.settingsManager.getEditorPaddingX();
             const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
             this.defaultEditor.setPaddingX(editorPaddingX);
@@ -4246,12 +4420,14 @@ export class InteractiveMode {
                 this.editor.setAutocompleteMaxVisible?.(autocompleteMaxVisible);
             }
             this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
-            this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
+            const clearOnShrink = this.settingsManager.getClearOnShrink();
+            this.ui.setClearOnShrink(clearOnShrink);
+            if (!clearOnShrink && !this.activeStatusIndicator) {
+                this.statusContainer.clear();
+            }
             this.setupAutocompleteProvider();
             const runner = this.session.extensionRunner;
             this.setupExtensionShortcuts(runner);
-            this.rebuildChatFromMessages();
-            dismissReloadBox(this.editor);
             this.showLoadedResources({
                 force: false,
                 showDiagnosticsWhenQuiet: true,
@@ -4262,11 +4438,15 @@ export class InteractiveMode {
                 this.showError(`models.json error: ${modelsJsonError}`);
             }
             this.showStatus(savedImplicitProjectTrust
-                ? "Reloaded keybindings, extensions, skills, prompts, themes; saved project trust"
-                : "Reloaded keybindings, extensions, skills, prompts, themes");
+                ? "Reloaded keybindings, extensions, skills, prompts, themes, and context files; saved project trust"
+                : "Reloaded keybindings, extensions, skills, prompts, themes, and context files");
+            dismissReloadBox(this.editor);
+            reloadBoxDismissed = true;
         }
         catch (error) {
-            dismissReloadBox(previousEditor);
+            if (!reloadBoxDismissed) {
+                dismissReloadBox(previousEditor);
+            }
             this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
@@ -4323,17 +4503,12 @@ export class InteractiveMode {
             return;
         }
         try {
-            if (this.loadingAnimation) {
-                this.loadingAnimation.stop();
-                this.loadingAnimation = undefined;
-            }
-            this.statusContainer.clear();
+            this.clearStatusIndicator();
             const result = await this.runtimeHost.importFromJsonl(inputPath);
             if (result.cancelled) {
                 this.showStatus("Import cancelled");
                 return;
             }
-            this.renderCurrentSessionState();
             this.showStatus(`Session imported from: ${inputPath}`);
         }
         catch (error) {
@@ -4348,7 +4523,6 @@ export class InteractiveMode {
                     this.showStatus("Import cancelled");
                     return;
                 }
-                this.renderCurrentSessionState();
                 this.showStatus(`Session imported from: ${inputPath}`);
                 return;
             }
@@ -4475,13 +4649,37 @@ export class InteractiveMode {
             return;
         }
         this.session.setSessionName(name);
+        const sessionName = this.sessionManager.getSessionName();
+        if (sessionName !== name) {
+            this.showWarning(`Session name was normalized from ${JSON.stringify(name)} to ${JSON.stringify(sessionName)}`);
+        }
         this.chatContainer.addChild(new Spacer(1));
-        this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
+        this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${sessionName ?? name}`), 1, 0));
         this.ui.requestRender();
     }
     handleSessionCommand() {
         const stats = this.session.getSessionStats();
         const sessionName = this.sessionManager.getSessionName();
+        const entries = this.sessionManager.getEntries();
+        const cacheWaste = computeCacheWaste(entries, this.session.modelRegistry);
+        // Cost/token totals per provider/model actually used (e.g. OpenRouter `auto`
+        // resolves to a concrete responseModel), sorted by cost descending.
+        const perModelMap = new Map();
+        for (const entry of entries) {
+            if (entry.type !== "message" || entry.message.role !== "assistant")
+                continue;
+            const message = entry.message;
+            const usage = message.usage;
+            const key = `${message.provider}/${message.responseModel ?? message.model}`;
+            let bucket = perModelMap.get(key);
+            if (!bucket) {
+                bucket = { key, cost: 0, tokens: 0 };
+                perModelMap.set(key, bucket);
+            }
+            bucket.cost += usage.cost.total;
+            bucket.tokens += usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+        }
+        const perModel = Array.from(perModelMap.values()).sort((a, b) => b.cost - a.cost);
         let info = `${theme.bold("Session Info")}\n\n`;
         if (sessionName) {
             info += `${theme.fg("dim", "Name:")} ${sessionName}\n`;
@@ -4489,24 +4687,42 @@ export class InteractiveMode {
         info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
         info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;
         info += `${theme.bold("Messages")}\n`;
+        info += `${theme.fg("dim", "Total:")} ${stats.totalMessages}\n`;
         info += `${theme.fg("dim", "User:")} ${stats.userMessages}\n`;
         info += `${theme.fg("dim", "Assistant:")} ${stats.assistantMessages}\n`;
-        info += `${theme.fg("dim", "Tool Calls:")} ${stats.toolCalls}\n`;
-        info += `${theme.fg("dim", "Tool Results:")} ${stats.toolResults}\n`;
-        info += `${theme.fg("dim", "Total:")} ${stats.totalMessages}\n\n`;
+        info += `${theme.fg("dim", "Tools:")} ${stats.toolCalls} calls, ${stats.toolResults} results\n\n`;
         info += `${theme.bold("Tokens")}\n`;
-        info += `${theme.fg("dim", "Input:")} ${stats.tokens.input.toLocaleString()}\n`;
+        // "Input" is the full prompt volume. With cache activity, split it into
+        // cached (served from cache) vs uncached (everything else) - the only
+        // provider-independent split. Cache writes, where reported, are a detail
+        // of the uncached portion.
+        const { input, cacheRead, cacheWrite } = stats.tokens;
+        const promptTokens = input + cacheRead + cacheWrite;
+        info += `${theme.fg("dim", "Input:")} ${promptTokens.toLocaleString()}\n`;
+        if (promptTokens > 0 && (cacheRead > 0 || cacheWrite > 0)) {
+            const hitRate = theme.fg("dim", `(${((cacheRead / promptTokens) * 100).toFixed(1)}%)`);
+            info += `  ${theme.fg("dim", "Cached:")} ${cacheRead.toLocaleString()} ${hitRate}\n`;
+            const written = cacheWrite > 0 ? ` ${theme.fg("dim", `(${cacheWrite.toLocaleString()} written to cache)`)}` : "";
+            info += `  ${theme.fg("dim", "Uncached:")} ${(input + cacheWrite).toLocaleString()}${written}\n`;
+        }
         info += `${theme.fg("dim", "Output:")} ${stats.tokens.output.toLocaleString()}\n`;
-        if (stats.tokens.cacheRead > 0) {
-            info += `${theme.fg("dim", "Cache Read:")} ${stats.tokens.cacheRead.toLocaleString()}\n`;
-        }
-        if (stats.tokens.cacheWrite > 0) {
-            info += `${theme.fg("dim", "Cache Write:")} ${stats.tokens.cacheWrite.toLocaleString()}\n`;
-        }
         info += `${theme.fg("dim", "Total:")} ${stats.tokens.total.toLocaleString()}\n`;
-        if (stats.cost > 0) {
+        if (stats.cost > 0 || cacheWaste.missedTokens > 0) {
             info += `\n${theme.bold("Cost")}\n`;
-            info += `${theme.fg("dim", "Total:")} ${stats.cost.toFixed(4)}`;
+            info += `${theme.fg("dim", "Total:")} $${stats.cost.toFixed(3)}`;
+            if (perModel.length > 1) {
+                for (const entry of perModel) {
+                    info += `\n  ${theme.fg("dim", `${entry.key}:`)} $${entry.cost.toFixed(3)} ${theme.fg("dim", `(${formatTokens(entry.tokens)} tokens)`)}`;
+                }
+            }
+            if (cacheWaste.missedTokens > 0) {
+                const missLabel = cacheWaste.missCount === 1 ? "1 miss" : `${cacheWaste.missCount} misses`;
+                const detail = `${cacheWaste.missedTokens.toLocaleString()} tokens, ${missLabel}`;
+                info +=
+                    cacheWaste.missedCost >= 0.0001
+                        ? `\n${theme.fg("dim", "Cache Re-billed:")} $${cacheWaste.missedCost.toFixed(3)} ${theme.fg("dim", `(${detail})`)}`
+                        : `\n${theme.fg("dim", "Cache Re-billed:")} ${detail}`;
+            }
         }
         this.chatContainer.addChild(new Spacer(1));
         this.chatContainer.addChild(new Text(info, 1, 0));
@@ -4651,17 +4867,12 @@ export class InteractiveMode {
         this.ui.requestRender();
     }
     async handleClearCommand() {
-        if (this.loadingAnimation) {
-            this.loadingAnimation.stop();
-            this.loadingAnimation = undefined;
-        }
-        this.statusContainer.clear();
+        this.clearStatusIndicator();
         try {
             const result = await this.runtimeHost.newSession();
             if (result.cancelled) {
                 return;
             }
-            this.renderCurrentSessionState();
             this.chatContainer.addChild(new Spacer(1));
             this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
             this.ui.requestRender();
@@ -4783,17 +4994,7 @@ export class InteractiveMode {
         this.ui.requestRender();
     }
     async handleCompactCommand(customInstructions) {
-        const entries = this.sessionManager.getEntries();
-        const messageCount = entries.filter((e) => e.type === "message").length;
-        if (messageCount < 2) {
-            this.showWarning("Nothing to compact (no messages yet)");
-            return;
-        }
-        if (this.loadingAnimation) {
-            this.loadingAnimation.stop();
-            this.loadingAnimation = undefined;
-        }
-        this.statusContainer.clear();
+        this.clearStatusIndicator();
         try {
             await this.session.compact(customInstructions);
         }
@@ -4805,10 +5006,8 @@ export class InteractiveMode {
         if (this.settingsManager.getShowTerminalProgress()) {
             this.ui.terminal.setProgress(false);
         }
-        if (this.loadingAnimation) {
-            this.loadingAnimation.stop();
-            this.loadingAnimation = undefined;
-        }
+        this.clearStatusIndicator();
+        this.themeController.disableAutoSync();
         this.clearExtensionTerminalInputListeners();
         this.footer.dispose();
         this.footerDataProvider.dispose();

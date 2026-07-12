@@ -1,7 +1,41 @@
-import { Container, getKeybindings, Input, Spacer, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, } from "@earendil-works/pi-tui";
+import { Container, getKeybindings, Input, Spacer, sliceByColumn, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { formatKeyText, keyHint } from "./keybinding-hints.js";
+const TREE_GUTTER_WIDTH = 2;
+const MIN_VISIBLE_ANCHOR_CONTENT_WIDTH = 4;
+const MAX_VISIBLE_ANCHOR_CONTENT_WIDTH = 20;
+const MIN_ANCHOR_CONTEXT_WIDTH = 2;
+const MAX_ANCHOR_CONTEXT_WIDTH = 12;
+/**
+ * Render tree rows into a horizontally clipped viewport.
+ *
+ * The tree gutter is always kept visible. The row bodies are shifted left only
+ * when the selected row's anchor (the start of its entry text after tree
+ * indentation/markers) would otherwise be too far right to see useful content.
+ */
+function renderHorizontalViewport(rows, width) {
+    const viewportWidth = Math.max(0, width - TREE_GUTTER_WIDTH);
+    const maxBodyWidth = rows.reduce((max, row) => Math.max(max, row.bodyWidth), 0);
+    const maxHorizontalScroll = Math.max(0, maxBodyWidth - viewportWidth);
+    const selectedRow = rows.find((row) => row.isSelected);
+    // Only pan horizontally when needed to keep enough selected-row content visible after its anchor.
+    let horizontalScroll = 0;
+    if (selectedRow && maxHorizontalScroll > 0) {
+        const minVisibleAnchorContentWidth = Math.min(MAX_VISIBLE_ANCHOR_CONTENT_WIDTH, Math.max(MIN_VISIBLE_ANCHOR_CONTENT_WIDTH, Math.floor(viewportWidth / 3)));
+        if (selectedRow.anchorCol > viewportWidth - minVisibleAnchorContentWidth) {
+            const anchorContextWidth = Math.min(MAX_ANCHOR_CONTEXT_WIDTH, Math.max(MIN_ANCHOR_CONTEXT_WIDTH, Math.floor(viewportWidth / 4)));
+            horizontalScroll = Math.min(maxHorizontalScroll, selectedRow.anchorCol - anchorContextWidth);
+        }
+    }
+    // Clip only the body; the fixed-width gutter remains visible as navigation context.
+    return rows.map((row) => {
+        const line = horizontalScroll > 0
+            ? `${row.gutter}${sliceByColumn(row.body, horizontalScroll, viewportWidth, true)}\x1b[0m`
+            : row.gutter + row.body;
+        return truncateToWidth(line, width, "");
+    });
+}
 class TreeList {
     flatNodes = [];
     filteredNodes = [];
@@ -497,6 +531,7 @@ class TreeList {
         }
         const startIndex = Math.max(0, Math.min(this.selectedIndex - Math.floor(this.maxVisibleLines / 2), this.filteredNodes.length - this.maxVisibleLines));
         const endIndex = Math.min(startIndex + this.maxVisibleLines, this.filteredNodes.length);
+        const renderedRows = [];
         for (let i = startIndex; i < endIndex; i++) {
             const flatNode = this.filteredNodes[i];
             const entry = flatNode.node.entry;
@@ -555,12 +590,17 @@ class TreeList {
                 ? theme.fg("muted", `${this.formatLabelTimestamp(flatNode.node.labelTimestamp)} `)
                 : "";
             const content = this.getEntryDisplayText(flatNode.node, isSelected);
-            let line = cursor + theme.fg("dim", prefix) + foldMarker + pathMarker + label + labelTimestamp + content;
+            const prefixPart = theme.fg("dim", prefix) + foldMarker + pathMarker;
+            const anchorCol = visibleWidth(prefixPart);
+            let gutter = cursor;
+            let body = prefixPart + label + labelTimestamp + content;
             if (isSelected) {
-                line = theme.bg("selectedBg", line);
+                gutter = theme.bg("selectedBg", gutter);
+                body = theme.bg("selectedBg", body);
             }
-            lines.push(truncateToWidth(line, width));
+            renderedRows.push({ gutter, body, anchorCol, bodyWidth: visibleWidth(body), isSelected });
         }
+        lines.push(...renderHorizontalViewport(renderedRows, width));
         lines.push(truncateToWidth(theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${this.getStatusLabels()}`), width));
         return lines;
     }

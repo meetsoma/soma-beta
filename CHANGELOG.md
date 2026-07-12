@@ -10,6 +10,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.39.0] — 2026-07-12
+
+### Added
+- **soma:refdocs — General-purpose external docs fetcher.** Discover + fetch ANY external platform docs
+  as clean markdown using the `llms.txt` convention (Cloudflare, Vercel, React, and 25+ known domains).
+  Four caps: `refdocs.find` discovers the source, `refdocs.tree` shows the organized structure,
+  `refdocs.fetch` gets a single page, `refdocs.download` bulk-fetches to `.soma/refdocs/<name>/`
+  with section-organized `.md` files and an index. Bundled with Soma.
+- **soma:cf-docs — Cloudflare developer docs cap family.** Query CF docs as clean markdown with
+  no API key. Three caps: `index`, `read`, `query`. Hub package (`soma install`).
+- **Freebuff harness — $0 AI model access.** Headless freebuff sessions in tmux, programmatic
+  prompt→response via JSON extraction from `chat-messages.json`. Six free models available
+  (DeepSeek V4 Pro/Flash, MiniMax M3, Kimi K2.7, MiMo 2.5/Pro). Dev-only tool.
+
+### Changed
+- **Pi runtime: 0.79.6 → 0.80.6.** 13 versions (0.79.7–0.79.10, 0.80.1–0.80.6). New features
+  available: `max` thinking level, `showCacheMissNotices` toggle, extension hooks
+  (`agent_settled`, `before_provider_headers`), `pi config -l` for project-local config,
+  Claude Sonnet 5, GPT-5.6 family. edit-diff patch re-forked for surgical fuzzy matching.
+  Build verified: tests green, sandbox 106/106, TUI smoke with free model.
+
+### Fixed
+- **Freebuff parser: TUI scraping → JSON extraction.** Line-wrapping in `tmux capture-pane` broke
+  multi-paragraph responses. Switched to reading freebuff's `chat-messages.json` for clean,
+  wrapping-immune output. TUI parsing retained as fallback.
+- **Pi 0.80.6 compat fixes.** Fixed `setBedrockProviderModule` import path (moved in 0.80.0 API
+  restructuring) and duplicate `baseContent` declaration in re-forked edit-diff.
+- **edit-diff.soma.js cleanup.** Removed dead `countOccurrences` (superseded by `findEditSpan`),
+  documented trailing-whitespace quirk in fuzzy matching.
+
+
 ## [0.38.0] — 2026-06-26
 
 ### Fixed
