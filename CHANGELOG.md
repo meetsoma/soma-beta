@@ -6,8 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ---
 
-## [Unreleased]
+## [0.40.0] — 2026-07-13
 
+
+### Added
+- **'soma install npm:<pkg>' pass-through to Pi package manager + hub shows pi.dev (s01-2b2368)**
+- **{{enabled_models}} template variable — scoped models at boot (s01-2b2368)**
+- **pi.dev package search — soma:extensions.search + .show (s01-2b2368)**
+- **{{active_extensions}} template variable — auto-discovered at boot (s01-2b2368)**
+- **extensions list cap + body-parts dedup + discovered-vs-core split (s01-2b2368)**
+- **dynamic delegate model catalog + body parts auto-discovery (s01-2b2368)**
+
+### Fixed
+- **soma:agent.models now shows enabled/scoped models from settings.json (s01-2b2368)**
+- **sync core/ in soma-dev + add {{active_extensions}} to project _mind.md (s01-2b2368)**
+- **guard fix.sh against missing AGENT_DIR in wrong workspace**
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
 ## [0.39.0] — 2026-07-12

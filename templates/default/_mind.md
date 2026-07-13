@@ -64,3 +64,5 @@ soma_template_version: 0.29.0
 {{context_awareness}}
 {{date_time_cwd}}
 {{inbox_summary}}
+{{active_extensions}}
+{{enabled_models}}

@@ -696,6 +696,14 @@ if (args[0] === "map") {
 	process.exit(r.status === "success" ? 0 : 1);
 } else if (args[0] === "init" || args[0] === "content" || args[0] === "install" || args[0] === "list") {
 	// soma init / soma content init / soma install / soma list
+	//
+	// SX-XXX (s01-2b2368): if 'soma install npm:<pkg>', pass through to Pi's
+	// package manager (handlePackageCommand) instead of our AMP content-cli.
+	// Pi extensions are cross-compatible with Soma (same ExtensionAPI).
+	if (args[0] === "install" && args[1] && args[1].startsWith("npm:")) {
+		main(args);  // Pi handles 'install npm:...' natively
+		process.exit(0);
+	}
 	// Route to content-cli for project scaffolding and hub operations
 	const contentArgs = args[0] === "content" ? args.slice(1) : args;
 	let handled = false;
