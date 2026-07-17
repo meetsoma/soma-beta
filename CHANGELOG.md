@@ -6,7 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 ---
 
-## [Unreleased] — 2026-07-16
+## [Unreleased] —
+
+
+### Fixed
+- **Leanstral models no longer error on reasoning** — `labs-leanstral-*` now send `reasoning_effort` instead of `promptMode:"reasoning"`, which the Mistral API rejected with `400 code 3051`. (Site J patch)
+- **Runtime no longer breaks after a Pi bump sync** — `soma-dev sync main` now runs `npm install` when a merge changes `package.json`/lockfile, before rebuilding dist. Prevents the version skew that crashed boot with `this.models.getAvailable is not a function` (0.80.10 dist on 0.80.6 node_modules).
+- **verify CHANGELOG promotion survived sync-main (Step 4.5)**
+## [0.41.0] — 2026-07-17
 
 ### Added
 - **Delegation goes multi-model.** Child roles no longer default to a single Claude model —
