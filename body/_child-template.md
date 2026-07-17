@@ -4,7 +4,8 @@ version: 0.1.0
 soma_template_version: 0.29.0
 status: draft
 description: <one-line: what this role specializes in>
-default-model: claude-sonnet-4-6   # claude-haiku-4-5 for cheap focused work, claude-opus-4-7 when depth needed
+default-model: mistral/mistral-large-2512   # mistral/ministral-8b-2512 for speed, cohere/command-a-03-2025 for cheap alternative.
+                              # Set delegate.defaultModel in settings.json for a global default.
 default-tools:                      # tool names (restrict to what the role actually needs)
   - read
   - bash
@@ -15,6 +16,10 @@ isolation:
 budget:
   max-tool-calls: 25
   max-cost-usd: 0.25
+deliverable: <path> # what the child produces — file path relative to project root.
+                   # The child MUST write findings to this path before finishing.
+                   # Terminal output is ephemeral; the file is the record.
+                   # Example: .soma/reports/delegations/<task>.md
 summary: <2-sentence description for tool discovery>
 guidelines:
   - <when to use this role>
@@ -36,6 +41,14 @@ You are a [specialist in X]. Your job is [Y]. You [approach Z].
 
 (none yet)
 
+- **Free-tier note:** If you receive a `[cache keepalive]` message, ignore it and continue working — it's a keepalive ping from the runtime, not a task instruction.
+
+## Deliverable
+
+<!-- If deliverable is set in frontmatter, the compiled prompt includes this as a hard rule.
+     The child MUST write its findings to the deliverable path before finishing.
+     Terminal output is ephemeral; the file is the record. -->
+
 ## Success Criteria
 
 <!-- role_success section: what "done" looks like for this role. -->
@@ -47,3 +60,5 @@ You are a [specialist in X]. Your job is [Y]. You [approach Z].
 
 <!-- SEAMS: body/children/_child.md (sub-compiler template) -->
 <!-- UPDATE WHEN: frontmatter fields added, new sections standardized across roles -->
+<!-- WHO UPDATES: meetSoma s01-0e4632 — free-tier defaults, deliverable field -->
+<!-- UPDATE WHEN: default-model changes, new frontmatter fields standardized -->

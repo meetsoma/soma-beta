@@ -40,6 +40,7 @@ import { exportSessionToHtml } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import { ExtensionRunner, wrapRegisteredTools, } from "./extensions/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
+import { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate } from "./prompt-templates.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry } from "./session-manager.js";
 import { createSyntheticSourceInfo } from "./source-info.js";
@@ -61,6 +62,14 @@ export function parseSkillBlock(text) {
         content: match[3],
         userMessage: match[4]?.trim() || undefined,
     };
+}
+// ============================================================================
+// Types
+// ============================================================================
+function withoutDeletedHeaders(headers) {
+    return headers
+        ? Object.fromEntries(Object.entries(headers).filter((entry) => entry[1] !== null))
+        : undefined;
 }
 function estimateMessagesTokens(messages) {
     let tokens = 0;
@@ -126,8 +135,7 @@ export class AgentSession {
     _extensionShutdownHandler;
     _extensionErrorListener;
     _extensionErrorUnsubscriber;
-    // Model registry for API key resolution
-    _modelRegistry;
+    _modelRuntime;
     // Tool registry for extension getTools/setTools
     _toolRegistry = new Map();
     _toolDefinitions = new Map();
@@ -145,7 +153,7 @@ export class AgentSession {
         this._resourceLoader = config.resourceLoader;
         this._customTools = config.customTools ?? [];
         this._cwd = config.cwd;
-        this._modelRegistry = config.modelRegistry;
+        this._modelRuntime = config.modelRuntime;
         this._extensionRunnerRef = config.extensionRunnerRef;
         this._initialActiveToolNames = config.initialActiveToolNames;
         this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -162,22 +170,29 @@ export class AgentSession {
             includeAllExtensionTools: true,
         });
     }
-    /** Model registry for API key resolution and model discovery */
-    get modelRegistry() {
-        return this._modelRegistry;
+    get modelRuntime() {
+        return this._modelRuntime;
     }
     async _getRequiredRequestAuth(model) {
-        const result = await this._modelRegistry.getApiKeyAndHeaders(model);
-        if (!result.ok) {
-            if (result.error.startsWith("No API key found")) {
+        let result;
+        try {
+            result = await this._modelRuntime.getAuth(model);
+        }
+        catch (error) {
+            const cause = error instanceof Error ? error.cause : undefined;
+            if (cause instanceof Error && cause.message === "authHeader requires a resolved API key") {
                 throw new Error(formatNoApiKeyFoundMessage(model.provider));
             }
-            throw new Error(result.error);
+            throw error;
         }
-        if (result.apiKey) {
-            return { apiKey: result.apiKey, headers: result.headers, env: result.env };
+        if (result?.auth.apiKey) {
+            return {
+                apiKey: result.auth.apiKey,
+                headers: withoutDeletedHeaders(result.auth.headers),
+                env: result.env,
+            };
         }
-        const isOAuth = this._modelRegistry.isUsingOAuth(model);
+        const isOAuth = this._modelRuntime.isUsingOAuth(model.provider);
         if (isOAuth) {
             throw new Error(`Authentication failed for "${model.provider}". ` +
                 `Credentials may have expired or network is unavailable. ` +
@@ -185,12 +200,19 @@ export class AgentSession {
         }
         throw new Error(formatNoApiKeyFoundMessage(model.provider));
     }
-    async _getCompactionRequestAuth(model) {
+    async _getSummarizationRequestAuth(model) {
         if (this.agent.streamFn === streamSimple) {
             return this._getRequiredRequestAuth(model);
         }
-        const result = await this._modelRegistry.getApiKeyAndHeaders(model);
-        return result.ok ? { apiKey: result.apiKey, headers: result.headers, env: result.env } : {};
+        try {
+            const result = await this._modelRuntime.getAuth(model);
+            return result
+                ? { apiKey: result.auth.apiKey, headers: withoutDeletedHeaders(result.auth.headers), env: result.env }
+                : {};
+        }
+        catch {
+            return {};
+        }
     }
     /**
      * Install tool hooks once on the Agent instance.
@@ -841,8 +863,10 @@ export class AgentSession {
             if (!this.model) {
                 throw new Error(formatNoModelSelectedMessage());
             }
-            if (!this._modelRegistry.hasConfiguredAuth(this.model)) {
-                const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
+            const hasConfiguredAuth = this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
+                (await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
+            if (!hasConfiguredAuth) {
+                const isOAuth = this._modelRuntime.isUsingOAuth(this.model.provider);
                 if (isOAuth) {
                     throw new Error(`Authentication failed for "${this.model.provider}". ` +
                         `Credentials may have expired or network is unavailable. ` +
@@ -1187,7 +1211,7 @@ export class AgentSession {
      * @throws Error if no auth is configured for the model
      */
     async setModel(model) {
-        if (!this._modelRegistry.hasConfiguredAuth(model)) {
+        if (!(await this._modelRuntime.checkAuth(model.provider))) {
             throw new Error(`No API key for ${model.provider}/${model.id}`);
         }
         const previousModel = this.model;
@@ -1212,7 +1236,11 @@ export class AgentSession {
         return this._cycleAvailableModel(direction);
     }
     async _cycleScopedModel(direction) {
-        const scopedModels = this._scopedModels.filter((scoped) => this._modelRegistry.hasConfiguredAuth(scoped.model));
+        const checks = await Promise.all(this._scopedModels.map(async (scoped) => ({
+            scoped,
+            auth: await this._modelRuntime.checkAuth(scoped.model.provider),
+        })));
+        const scopedModels = checks.filter(({ auth }) => auth !== undefined).map(({ scoped }) => scoped);
         if (scopedModels.length <= 1)
             return undefined;
         const currentModel = this.model;
@@ -1236,7 +1264,7 @@ export class AgentSession {
         return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
     }
     async _cycleAvailableModel(direction) {
-        const availableModels = await this._modelRegistry.getAvailable();
+        const availableModels = await this._modelRuntime.getAvailable();
         if (availableModels.length <= 1)
             return undefined;
         const currentModel = this.model;
@@ -1364,7 +1392,7 @@ export class AgentSession {
             if (!this.model) {
                 throw new Error(formatNoModelSelectedMessage());
             }
-            const { apiKey, headers, env } = await this._getCompactionRequestAuth(this.model);
+            const { apiKey, headers, env } = await this._getSummarizationRequestAuth(this.model);
             const pathEntries = this.sessionManager.getBranch();
             const settings = this.settingsManager.getCompactionSettings();
             const preparation = prepareCompaction(pathEntries, settings);
@@ -1586,16 +1614,15 @@ export class AgentSession {
             let headers;
             let env;
             if (this.agent.streamFn === streamSimple) {
-                const authResult = await this._modelRegistry.getApiKeyAndHeaders(this.model);
-                if (!authResult.ok || !authResult.apiKey) {
+                const authResult = await this._modelRuntime.getAuth(this.model);
+                if (!authResult?.auth.apiKey)
                     return false;
-                }
-                apiKey = authResult.apiKey;
-                headers = authResult.headers;
+                apiKey = authResult.auth.apiKey;
+                headers = withoutDeletedHeaders(authResult.auth.headers);
                 env = authResult.env;
             }
             else {
-                ({ apiKey, headers, env } = await this._getCompactionRequestAuth(this.model));
+                ({ apiKey, headers, env } = await this._getSummarizationRequestAuth(this.model));
             }
             const pathEntries = this.sessionManager.getBranch();
             const preparation = prepareCompaction(pathEntries, settings);
@@ -1803,7 +1830,7 @@ export class AgentSession {
         if (!currentModel) {
             return;
         }
-        const refreshedModel = this._modelRegistry.find(currentModel.provider, currentModel.id);
+        const refreshedModel = this._modelRuntime.getModel(currentModel.provider, currentModel.id);
         if (!refreshedModel || refreshedModel === currentModel) {
             return;
         }
@@ -1872,7 +1899,7 @@ export class AgentSession {
             refreshTools: () => this._refreshToolRegistry(),
             getCommands,
             setModel: async (model) => {
-                if (!this.modelRegistry.hasConfiguredAuth(model))
+                if (!this._modelRuntime.hasConfiguredAuth(model.provider))
                     return false;
                 await this.setModel(model);
                 return true;
@@ -1912,11 +1939,11 @@ export class AgentSession {
             getSystemPromptOptions: () => this._baseSystemPromptOptions,
         }, {
             registerProvider: (name, config) => {
-                this._modelRegistry.registerProvider(name, config);
+                this._modelRuntime.registerProvider(name, config);
                 this._refreshCurrentModelFromRegistry();
             },
             unregisterProvider: (name) => {
-                this._modelRegistry.unregisterProvider(name);
+                this._modelRuntime.unregisterProvider(name);
                 this._refreshCurrentModelFromRegistry();
             },
         });
@@ -2018,7 +2045,7 @@ export class AgentSession {
                 extensionsResult.runtime.flagValues.set(name, value);
             }
         }
-        this._extensionRunner = new ExtensionRunner(extensionsResult.extensions, extensionsResult.runtime, this._cwd, this.sessionManager, this._modelRegistry);
+        this._extensionRunner = new ExtensionRunner(extensionsResult.extensions, extensionsResult.runtime, this._cwd, this.sessionManager, new ModelRegistry(this._modelRuntime));
         if (this._extensionRunnerRef) {
             this._extensionRunnerRef.current = this._extensionRunner;
         }
@@ -2315,7 +2342,7 @@ export class AgentSession {
             let summaryDetails;
             if (options.summarize && entriesToSummarize.length > 0 && !extensionSummary) {
                 const model = this.model;
-                const { apiKey, headers, env } = await this._getRequiredRequestAuth(model);
+                const { apiKey, headers, env } = await this._getSummarizationRequestAuth(model);
                 const branchSummarySettings = this.settingsManager.getBranchSummarySettings();
                 const result = await generateBranchSummary(entriesToSummarize, {
                     model,

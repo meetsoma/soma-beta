@@ -1,28 +1,3 @@
-// ============================================================================
-// SOMA VENDORED OVERRIDE of Pi's core/tools/edit-diff.js
-// Fork base: @earendil-works/pi-coding-agent 0.80.6 (see edit-diff.pristine.js).
-// Applied at build time by apply-patches.sh (drift-guarded: build FAILS LOUD if the
-// upstream file no longer matches edit-diff.pristine.js -> re-fork before shipping).
-//
-// SOMA changes vs pristine (s01-4409c8):
-//   #1 near-match hint   - getNotFoundError appends the ACTUAL nearby bytes from the file
-//                          (token-overlap located) so the model copies them instead of
-//                          re-reconstructing oldText from memory (the #1 "Could not find" cause).
-//   #4 surgical fuzzy    - fuzzy matching no longer normalizes the WHOLE file. Pristine
-//                          replaced in normalized space (normalizeForFuzzyMatch(content)),
-//                          silently flattening every em-dash/smart-quote/NBSP/trailing-ws in
-//                          the file on ANY fuzzy edit. We map the fuzzy match back to a byte
-//                          span in the ORIGINAL content and splice only that span, preserving
-//                          all untouched bytes. Verified by re-normalizing the chosen span; a
-//                          non-round-tripping match falls through to "not found" + hint rather
-//                          than a wrong/destructive write.
-//   ⚠ known quirk        - Fuzzy-match spans may consume trailing whitespace that was trimmed
-//                          during normalization (e.g. "hello   " → matches as "hello" but the
-//                          8-byte span replaces the 5-byte intended match). Benign for source
-//                          code (linters strip trailing ws anyway). Exact-match path unaffected.
-//   🧹 s01-2cb0c2         - Removed dead countOccurrences (superseded by findEditSpan's inline
-//                          occurrence counting). fuzzyFindText retained as legacy export.
-// ============================================================================
 /**
  * Shared diff computation utilities for the edit and similar tools.
  */
@@ -202,125 +177,16 @@ export function fuzzyFindText(content, oldText) {
 export function stripBom(content) {
     return content.startsWith("\uFEFF") ? { bom: "\uFEFF", text: content.slice(1) } : { bom: "", text: content };
 }
-function getNotFoundError(path, editIndex, totalEdits, content, oldText) {
-    const base = totalEdits === 1
-        ? `Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`
-        : `Could not find edits[${editIndex}] in ${path}. The oldText must match exactly including all whitespace and newlines.`;
-    // SOMA PATCH #1 (s01-4409c8): hand the model the actual nearby bytes to copy.
-    const hint = content !== undefined && oldText !== undefined ? findClosestHint(content, oldText) : "";
-    return new Error(base + hint);
+function countOccurrences(content, oldText) {
+    const fuzzyContent = normalizeForFuzzyMatch(content);
+    const fuzzyOldText = normalizeForFuzzyMatch(oldText);
+    return fuzzyContent.split(fuzzyOldText).length - 1;
 }
-// SOMA PATCH #1 (s01-4409c8): locate the closest region (token overlap, typo-tolerant) and
-// show its exact bytes, so the model copies them instead of reconstructing oldText from memory.
-function findClosestHint(content, oldText) {
-    try {
-        const contentLines = content.split("\n");
-        const normLines = contentLines.map((l) => normalizeForFuzzyMatch(l).toLowerCase());
-        const tokens = Array.from(new Set(normalizeForFuzzyMatch(oldText).toLowerCase().match(/[a-z0-9]{3,}/g) || []));
-        if (tokens.length === 0)
-            return "";
-        let bestLine = -1;
-        let bestScore = 0;
-        for (let i = 0; i < normLines.length; i++) {
-            let score = 0;
-            for (const t of tokens)
-                if (normLines[i].includes(t))
-                    score++;
-            if (score > bestScore) {
-                bestScore = score;
-                bestLine = i;
-            }
-        }
-        const need = Math.min(Math.max(2, Math.ceil(tokens.length / 2)), tokens.length);
-        if (bestLine < 0 || bestScore < need)
-            return "";
-        const start = Math.max(0, bestLine - 2);
-        const end = Math.min(contentLines.length, bestLine + 3);
-        const region = contentLines
-            .slice(start, end)
-            .map((l, k) => `${start + k + 1}: ${l}`)
-            .join("\n");
-        const capped = region.length > 1200 ? region.slice(0, 1200) + "\n...(truncated)" : region;
-        return `\n\nClosest match is near line ${bestLine + 1}. Copy these EXACT bytes (do not reconstruct from memory):\n${capped}`;
+function getNotFoundError(path, editIndex, totalEdits) {
+    if (totalEdits === 1) {
+        return new Error(`Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`);
     }
-    catch {
-        // best-effort hint; never let it mask the real error
-    }
-    return "";
-}
-// SOMA PATCH #4 (s01-4409c8): map one char through the same swaps normalizeForFuzzyMatch
-// applies (quotes/dashes/special-spaces -> ASCII). Length-preserving.
-function swapFuzzyChar(ch) {
-    if ("\u2018\u2019\u201A\u201B".indexOf(ch) !== -1)
-        return "'";
-    if ("\u201C\u201D\u201E\u201F".indexOf(ch) !== -1)
-        return '"';
-    if ("\u2010\u2011\u2012\u2013\u2014\u2015\u2212".indexOf(ch) !== -1)
-        return "-";
-    if (ch === "\u00A0" || ch === "\u202F" || ch === "\u205F" || ch === "\u3000" ||
-        (ch >= "\u2002" && ch <= "\u200A"))
-        return " ";
-    return ch;
-}
-// SOMA PATCH #4 (s01-4409c8): build the fuzzy-normalized string of `content` PLUS a position
-// map back to ORIGINAL byte offsets. Replicates normalizeForFuzzyMatch's per-line trimEnd +
-// char swaps (NFKC treated as identity for mapping; the caller re-normalizes the chosen span
-// and rejects any non-round-tripping match, so NFKC-altering content falls through to
-// "not found" + hint instead of corrupting). map[i] = original index of norm char i.
-function buildFuzzyMap(content) {
-    const out = [];
-    const map = [];
-    const lines = content.split("\n");
-    let pos = 0;
-    for (let li = 0; li < lines.length; li++) {
-        const line = lines[li];
-        const trimmed = line.trimEnd();
-        for (let ci = 0; ci < trimmed.length; ci++) {
-            out.push(swapFuzzyChar(line[ci]));
-            map.push(pos + ci);
-        }
-        if (li < lines.length - 1) {
-            out.push("\n");
-            map.push(pos + line.length);
-            pos += line.length + 1;
-        }
-        else {
-            pos += line.length;
-        }
-    }
-    map.push(content.length);
-    return { norm: out.join(""), map };
-}
-// SOMA PATCH #4 (s01-4409c8): find [start,end) in ORIGINAL content for oldText. Exact wins
-// (byte-perfect, unambiguous). Else fuzzy: locate in normalized space, map back to original
-// bytes, VERIFY the span re-normalizes to the target. Returns occurrences for uniqueness.
-function findEditSpan(content, oldText) {
-    const exactIndex = content.indexOf(oldText);
-    if (exactIndex !== -1) {
-        let occ = 0;
-        let from = 0;
-        let p;
-        while ((p = content.indexOf(oldText, from)) !== -1) {
-            occ++;
-            from = p + Math.max(1, oldText.length);
-        }
-        return { found: true, start: exactIndex, end: exactIndex + oldText.length, occurrences: occ };
-    }
-    const fuzzyOld = normalizeForFuzzyMatch(oldText);
-    if (fuzzyOld.length === 0)
-        return { found: false, start: 0, end: 0, occurrences: 0 };
-    const { norm, map } = buildFuzzyMap(content);
-    const occ = norm.split(fuzzyOld).length - 1;
-    if (occ === 0)
-        return { found: false, start: 0, end: 0, occurrences: 0 };
-    const fuzzyIndex = norm.indexOf(fuzzyOld);
-    const start = map[fuzzyIndex];
-    const end = map[fuzzyIndex + fuzzyOld.length];
-    if (start === undefined || end === undefined ||
-        normalizeForFuzzyMatch(content.slice(start, end)) !== fuzzyOld) {
-        return { found: false, start: 0, end: 0, occurrences: 0 };
-    }
-    return { found: true, start, end, occurrences: occ };
+    return new Error(`Could not find edits[${editIndex}] in ${path}. The oldText must match exactly including all whitespace and newlines.`);
 }
 function getDuplicateError(path, editIndex, totalEdits, occurrences) {
     if (totalEdits === 1) {
@@ -343,11 +209,11 @@ function getNoChangeError(path, totalEdits) {
 /**
  * Apply one or more exact-text replacements to LF-normalized content.
  *
- * SOMA PATCH #4 (s01-4409c8): all matching + replacement happens in ORIGINAL content space.
- * Each edit's oldText is located (exact, else surgical-fuzzy via findEditSpan) and only its
- * matched byte span is spliced. Unlike pristine Pi, a fuzzy match NEVER normalizes the rest
- * of the file, so untouched em-dashes / smart quotes / NBSP / trailing whitespace are
- * byte-preserved. Replacements apply in reverse offset order so earlier offsets stay valid.
+ * All edits are matched against the same original content. Replacements are
+ * then applied in reverse order so offsets remain stable. If any edit needs
+ * fuzzy matching, the operation runs in fuzzy-normalized content space and then
+ * overlays those line-level changes onto the original content so unchanged line
+ * blocks keep their original bytes.
  */
 export function applyEditsToNormalizedContent(normalizedContent, edits, path) {
     const normalizedEdits = edits.map((edit) => ({
@@ -359,21 +225,24 @@ export function applyEditsToNormalizedContent(normalizedContent, edits, path) {
             throw getEmptyOldTextError(path, i, normalizedEdits.length);
         }
     }
-    const baseContent = normalizedContent;
+    const initialMatches = normalizedEdits.map((edit) => fuzzyFindText(normalizedContent, edit.oldText));
+    const usedFuzzyMatch = initialMatches.some((match) => match.usedFuzzyMatch);
+    const replacementBaseContent = usedFuzzyMatch ? normalizeForFuzzyMatch(normalizedContent) : normalizedContent;
     const matchedEdits = [];
     for (let i = 0; i < normalizedEdits.length; i++) {
         const edit = normalizedEdits[i];
-        const span = findEditSpan(baseContent, edit.oldText);
-        if (!span.found) {
-            throw getNotFoundError(path, i, normalizedEdits.length, baseContent, edit.oldText);
+        const matchResult = fuzzyFindText(replacementBaseContent, edit.oldText);
+        if (!matchResult.found) {
+            throw getNotFoundError(path, i, normalizedEdits.length);
         }
-        if (span.occurrences > 1) {
-            throw getDuplicateError(path, i, normalizedEdits.length, span.occurrences);
+        const occurrences = countOccurrences(replacementBaseContent, edit.oldText);
+        if (occurrences > 1) {
+            throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
         }
         matchedEdits.push({
             editIndex: i,
-            matchIndex: span.start,
-            matchLength: span.end - span.start,
+            matchIndex: matchResult.index,
+            matchLength: matchResult.matchLength,
             newText: edit.newText,
         });
     }
@@ -385,7 +254,10 @@ export function applyEditsToNormalizedContent(normalizedContent, edits, path) {
             throw new Error(`edits[${previous.editIndex}] and edits[${current.editIndex}] overlap in ${path}. Merge them into one edit or target disjoint regions.`);
         }
     }
-    const newContent = applyReplacements(normalizedContent, matchedEdits);
+    const baseContent = normalizedContent;
+    const newContent = usedFuzzyMatch
+        ? applyReplacementsPreservingUnchangedLines(normalizedContent, replacementBaseContent, matchedEdits)
+        : applyReplacements(replacementBaseContent, matchedEdits);
     if (baseContent === newContent) {
         throw getNoChangeError(path, normalizedEdits.length);
     }

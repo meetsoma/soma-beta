@@ -16,6 +16,7 @@ const RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS = [
     "app.tools.expand",
     "app.thinking.toggle",
     "app.editor.external",
+    "app.message.copy",
     "app.message.followUp",
     "tui.input.submit",
     "tui.select.confirm",
@@ -396,6 +397,9 @@ export class ExtensionRunner {
             };
         });
     }
+    getModelRegistry() {
+        return this.modelRegistry;
+    }
     getRegisteredCommands() {
         this.commandDiagnostics = [];
         return this.resolveRegisteredCommands();
@@ -412,6 +416,10 @@ export class ExtensionRunner {
      */
     shutdown() {
         this.shutdownHandler();
+    }
+    getActiveTools() {
+        this.assertActive();
+        return this.runtime.getActiveTools();
     }
     /**
      * Create an ExtensionContext for use in event handlers and tool execution.

@@ -18,7 +18,6 @@ import { ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION }
 import { createAgentSessionRuntime } from "./core/agent-session-runtime.js";
 import { createAgentSessionFromServices, createAgentSessionServices, } from "./core/agent-session-services.js";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
-import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.js";
 import { resolveCliModel, resolveModelScope } from "./core/model-resolver.js";
@@ -270,7 +269,7 @@ async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
     }
     return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
 }
-function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegistry, settingsManager) {
+function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRuntime, settingsManager) {
     const options = {};
     const diagnostics = [];
     let cliThinkingFromModel = false;
@@ -282,7 +281,7 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
             cliProvider: parsed.provider,
             cliModel: parsed.model,
             cliThinking: parsed.thinking,
-            modelRegistry,
+            modelRuntime,
         });
         if (resolved.warning) {
             diagnostics.push({ type: "warning", message: resolved.warning });
@@ -304,7 +303,7 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
         // Check if saved default is in scoped models - use it if so, otherwise first scoped model
         const savedProvider = settingsManager.getDefaultProvider();
         const savedModelId = settingsManager.getDefaultModel();
-        const savedModel = savedProvider && savedModelId ? modelRegistry.find(savedProvider, savedModelId) : undefined;
+        const savedModel = savedProvider && savedModelId ? modelRuntime.getModel(savedProvider, savedModelId) : undefined;
         const savedInScope = savedModel ? scopedModels.find((sm) => modelsAreEqual(sm.model, savedModel)) : undefined;
         if (savedInScope) {
             options.model = savedInScope.model;
@@ -334,7 +333,7 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
             thinkingLevel: sm.thinkingLevel,
         }));
     }
-    // API key from CLI - set in authStorage
+    // API key from CLI - set as a non-persistent runtime override
     // (handled by caller before createAgentSession)
     // Tools
     if (parsed.noTools) {
@@ -485,7 +484,6 @@ export async function main(args, options) {
     const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
     const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
     const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
-    const authStorage = AuthStorage.create();
     const createRuntime = async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext, }) => {
         const isInitialRuntime = sessionStartEvent === undefined;
         const projectTrustDiagnostics = [];
@@ -501,7 +499,6 @@ export async function main(args, options) {
         const services = await createAgentSessionServices({
             cwd,
             agentDir,
-            authStorage,
             settingsManager: runtimeSettingsManager,
             extensionFlagValues: parsed.unknownFlags,
             resourceLoaderReloadOptions: shouldResolveProjectTrust
@@ -542,7 +539,7 @@ export async function main(args, options) {
                 extensionFactories: options?.extensionFactories,
             },
         });
-        const { settingsManager, modelRegistry, resourceLoader } = services;
+        const { settingsManager, modelRuntime, resourceLoader } = services;
         const diagnostics = [
             ...projectTrustDiagnostics,
             ...services.diagnostics,
@@ -553,8 +550,8 @@ export async function main(args, options) {
             })),
         ];
         const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
-        const scopedModels = modelPatterns && modelPatterns.length > 0 ? await resolveModelScope(modelPatterns, modelRegistry) : [];
-        const { options: sessionOptions, cliThinkingFromModel, diagnostics: sessionOptionDiagnostics, } = buildSessionOptions(parsed, scopedModels, sessionManager.buildSessionContext().messages.length > 0, modelRegistry, settingsManager);
+        const scopedModels = modelPatterns && modelPatterns.length > 0 ? await resolveModelScope(modelPatterns, modelRuntime) : [];
+        const { options: sessionOptions, cliThinkingFromModel, diagnostics: sessionOptionDiagnostics, } = buildSessionOptions(parsed, scopedModels, sessionManager.buildSessionContext().messages.length > 0, modelRuntime, settingsManager);
         diagnostics.push(...sessionOptionDiagnostics);
         if (parsed.apiKey) {
             if (!sessionOptions.model) {
@@ -564,7 +561,8 @@ export async function main(args, options) {
                 });
             }
             else {
-                authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
+                await modelRuntime.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
+                await services.modelRuntime.getAvailable();
             }
         }
         const created = await createAgentSessionFromServices({
@@ -597,7 +595,7 @@ export async function main(args, options) {
     });
     time("createAgentSessionRuntime");
     const { services, session, modelFallbackMessage } = runtime;
-    const { settingsManager, modelRegistry, resourceLoader } = services;
+    const { settingsManager, modelRuntime, resourceLoader } = services;
     applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
     configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
     if (parsed.help) {
@@ -609,7 +607,7 @@ export async function main(args, options) {
     }
     if (parsed.listModels !== undefined) {
         const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-        await listModels(modelRegistry, searchPattern);
+        await listModels(modelRuntime, searchPattern);
         process.exit(0);
     }
     // Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC

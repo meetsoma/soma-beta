@@ -22,6 +22,19 @@ function emitOsc52(text) {
     process.stdout.write(`\x1b]52;c;${encoded}\x07`);
     return true;
 }
+/** Read plain text from the system clipboard, if native clipboard access is available. */
+export async function readClipboardText() {
+    if (!clipboard) {
+        return null;
+    }
+    try {
+        const text = await clipboard.getText();
+        return text || null;
+    }
+    catch {
+        return null;
+    }
+}
 export async function copyToClipboard(text) {
     let copied = false;
     const p = platform();

@@ -3,8 +3,7 @@ export { parseArgs } from "./cli/args.js";
 // Config paths
 export { CONFIG_DIR_NAME, getAgentDir, getDocsPath, getExamplesPath, getPackageDir, getReadmePath, VERSION, } from "./config.js";
 export { AgentSession, parseSkillBlock, } from "./core/agent-session.js";
-// Auth and model registry
-export { AuthStorage, FileAuthStorageBackend, InMemoryAuthStorageBackend, } from "./core/auth-storage.js";
+export { readStoredCredential } from "./core/auth-storage.js";
 // Compaction
 export { calculateContextTokens, collectEntriesForBranchSummary, compact, DEFAULT_COMPACTION_SETTINGS, estimateTokens, findCutPoint, findTurnStartIndex, generateBranchSummary, generateSummary, getLastAssistantUsage, prepareBranchEntries, serializeConversation, shouldCompact, } from "./core/compaction/index.js";
 export { createEventBus } from "./core/event-bus.js";
@@ -12,6 +11,7 @@ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, Extensio
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
 export { resolveCliModel, resolveModelScopeWithDiagnostics, } from "./core/model-resolver.js";
+export { ModelRuntime, } from "./core/model-runtime.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
 // SDK for programmatic usage
