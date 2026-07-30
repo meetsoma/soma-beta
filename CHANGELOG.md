@@ -4,13 +4,18 @@ All notable changes to the Soma agent are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follows [Semantic Versioning](https://semver.org/).
 
+**Entries are lean: one or two lines naming the fix, change, or addition, and its effect on you.**
+Root cause, diagnosis, what it cost and how it was tested are kept — in the project's internal
+development logs, not here. This file answers *what changed for me?*
+
 ---
 
-## [Unreleased] —
-
+## [Unreleased]
 
 ### Added
-- **add claude-file backend — file-based delegation (delegate.sh pattern)**
+- **`soma:agent.claude` — delegate a Claude child through a contract file** instead of argv, so a
+  large prompt can't fail on argument length.
+
 ## [0.41.1] — 2026-07-17
 
 ### Fixed
