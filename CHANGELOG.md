@@ -2153,39 +2153,17 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 - `/scrape` command + `scrape:build` router capability — intelligent doc discovery (#c950f2b)
 - Boot session warnings injection — tool usage stats from previous session (#0cda314)
 - Boot last conversation context — inject last N messages on fresh boot (#f1d7f3d)
-- Periodic auto-commit for crash resilience (#c6caccc)
-- `graceTurns` setting — configurable grace period before auto-breathe rotation (#c9ab5a8)
-- Guard v2: tool→muscle gating — require reading muscles before dangerous commands (#1c6b725)
-- Protocol TL;DR extraction — `protocolSummary()` prefers `## TL;DR` body section (#83ec9ee)
-- Scratch lifecycle: session IDs, date sections, note management, auto-inject (#fd0bda2, #0d364f2)
-- Combined session ID format (`sNN-<hex>`) — sequential for order, hex for uniqueness (#e7c4057)
-- Statusline session ID display (#d474cbf)
-- Session log nudge with template at trigger point (#eb8acc8)
-- Identity layer in pattern-evolution, tool-awareness in working-style (#5e4219d)
 - Post-commit auto-changelog + pre-push docs-drift nudge hooks (#cc2ef55)
 
 ### Changed
 - System prompt trimmed ~19% — remove duplication and stale content (#de9c517)
-- Self-awareness protocols rewritten — 5 redundant protocols → configuration guides (#b70ca44)
 - Config-first script extensions via `settings.scripts.extensions` (#dadb78e)
-- Migrated `globalThis.__somaKeepalive` to router (#e919481)
 
 ### Fixed
 - Boot: clean up muscle/protocol/automation formatting (#38a643f)
-- Boot: resume without fingerprint sends minimal boot, not full redundant injection (#7fd064b)
-- Boot: grace countdown skips tool turns during auto-breathe (#53bd421)
-- Boot: preload filename overwrites + rotation when preload pre-exists (#378a1b1)
-- Boot: auto-init `.soma/.git` when autoCommit is true (#276f6f2)
-- Boot: clear restart signal at factory load time (#0bddce2, #bb8350c)
-- Muscles/automations: filter archived status + README in discovery (#5f5ccae, #e42da9b)
 - Protocols: clean stale references, fix broken frontmatter (#7087d6a)
 - Protocols: correct attribution — Curtis Mercier only on personal/protocols-derived (#5d8fb83)
-- Heat: dynamic muscle read + script execution detection (#99a7663)
-- Extensions: soma-route.ts import path — use pi-coding-agent not claude-code (#49454ea)
-- Scripts: stop shipping dev-only scripts to users (#2c8db4a)
-- Scripts: sync paths after _dev/ move, AGENT_DIR resolution (#46615ef, #a520c13)
-- Statusline: restart detection, fs/path imports, signal path fixes (#f845894, #926fd4a, #18eba69)
-- Auto-breathe: reduce triple notifications, preload-as-signal rotation (#927bd74)
+- Scripts: sync-to-website AGENT_DIR resolution — `dirname` went one level too shallow (#a520c13)
 
 ---
 
