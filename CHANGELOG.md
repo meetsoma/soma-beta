@@ -2160,7 +2160,6 @@ Restructure release. AMPS consolidated, CLI script routing, Pi runtime bumped, 2
 - Scratch lifecycle: session IDs, date sections, note management, auto-inject (#fd0bda2, #0d364f2)
 - Combined session ID format (`sNN-<hex>`) — sequential for order, hex for uniqueness (#e7c4057)
 - Statusline session ID display (#d474cbf)
-- Polyglot script discovery — .sh, .py, .ts, .js, .mjs (#1acb8c2)
 - Session log nudge with template at trigger point (#eb8acc8)
 - Identity layer in pattern-evolution, tool-awareness in working-style (#5e4219d)
 - Post-commit auto-changelog + pre-push docs-drift nudge hooks (#cc2ef55)
