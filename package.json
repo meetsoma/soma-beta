@@ -1,6 +1,6 @@
 {
   "name": "soma-beta-runtime",
-  "version": "0.41.2",
+  "version": "0.42.0",
   "description": "Soma compiled runtime — the AI agent that remembers",
   "private": true,
   "type": "module",
@@ -9,10 +9,10 @@
     "configDir": ".soma"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.80.10",
-    "@earendil-works/pi-ai": "0.80.10",
-    "@earendil-works/pi-coding-agent": "0.80.10",
-    "@earendil-works/pi-tui": "0.80.10",
+    "@earendil-works/pi-agent-core": "0.82.0",
+    "@earendil-works/pi-ai": "0.82.0",
+    "@earendil-works/pi-coding-agent": "0.82.0",
+    "@earendil-works/pi-tui": "0.82.0",
     "@mariozechner/clipboard": "0.3.9",
     "@silvia-odwyer/photon-node": "0.3.4",
     "chalk": "5.6.2",

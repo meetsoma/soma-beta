@@ -28,6 +28,7 @@ import { assertValidSessionId, SessionManager } from "./core/session-manager.js"
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.js";
+import { builtInExtensions } from "./extensions/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
@@ -361,6 +362,7 @@ async function promptForMissingSessionCwd(issue, settingsManager) {
 }
 export async function main(args, options) {
     resetTimings();
+    const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
     const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
     if (offlineMode) {
         process.env.PI_OFFLINE = "1";
@@ -374,7 +376,7 @@ export async function main(args, options) {
     const bootstrapSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
     applyHttpProxySettings(bootstrapSettingsManager.getGlobalSettings().httpProxy);
     configureHttpDispatcher();
-    if (await handlePackageCommand(args, { extensionFactories: options?.extensionFactories })) {
+    if (await handlePackageCommand(args, { extensionFactories })) {
         const exitCode = process.exitCode ?? 0;
         if (process.platform === "win32" && exitCode === 0 && args[0] === "update") {
             // We normally prefer process.exit(0) for package commands so bad extensions cannot keep
@@ -386,7 +388,7 @@ export async function main(args, options) {
         process.exit(exitCode);
         return;
     }
-    if (await handleConfigCommand(args, { extensionFactories: options?.extensionFactories })) {
+    if (await handleConfigCommand(args, { extensionFactories })) {
         return;
     }
     const parsed = parseArgs(args);
@@ -536,7 +538,7 @@ export async function main(args, options) {
                 noContextFiles: parsed.noContextFiles,
                 systemPrompt: parsed.systemPrompt,
                 appendSystemPrompt: parsed.appendSystemPrompt,
-                extensionFactories: options?.extensionFactories,
+                extensionFactories,
             },
         });
         const { settingsManager, modelRuntime, resourceLoader } = services;
@@ -561,7 +563,7 @@ export async function main(args, options) {
                 });
             }
             else {
-                await modelRuntime.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
+                await modelRuntime.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey, { allowNetwork: false });
                 await services.modelRuntime.getAvailable();
             }
         }
@@ -644,6 +646,10 @@ export async function main(args, options) {
     if (startupBenchmark && appMode !== "interactive") {
         console.error(chalk.red("Error: PI_STARTUP_BENCHMARK only supports interactive mode"));
         process.exit(1);
+    }
+    // RPC refreshes catalogs here in the background; interactive mode starts its refresh after TUI initialization.
+    if (!offlineMode && appMode === "rpc") {
+        void modelRuntime.refresh().catch(() => { });
     }
     if (appMode === "rpc") {
         printTimings();

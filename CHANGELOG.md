@@ -6,11 +6,327 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 
 **Entries are lean: one or two lines naming the fix, change, or addition, and its effect on you.**
 Root cause, diagnosis, what it cost and how it was tested are kept — in the project's internal
-development logs, not here. This file answers *what changed for me?*
+`.soma/` logs, not here. This file answers *what changed for me?*; the logs answer *why, and how*.
+
+<!-- CONVENTION (s01-dcd604, Curtis): LEAN entries. No storytelling.
+     If an entry exceeds ~3 lines, or contains "because" / "which is why" / "it cost", it is a
+     session-log entry in a CHANGELOG costume — cut it and MOVE the remainder to
+     .soma/memory/sessions/, .soma/memory/mlx/, or the owning cycle. Move, never delete.
+     WHO UPDATES: .soma/body/children/changelog_curator.md v0.2.0 owns this rule; that role
+     previously mandated the opposite ("write paragraphs, ~3-5 sentences") and produced a 497-line
+     [Unreleased]. Historical sections below still carry the old verbose style. -->
 
 ---
 
 ## [Unreleased]
+
+<!-- Entries accumulate here and get promoted to a versioned section on release. -->
+
+## [0.42.0] — 2026-07-31
+
+### Fixed
+
+- **Relayed prompts were rejected while streaming** — bridge-connect passed Pi's inner option
+  name (`streamingBehavior`) on the extension surface, which takes `deliverAs`, so every relayed
+  `prompt` failed. `steer` was unaffected, which is why it went unnoticed.
+
+- **String.repeat crashed the whole TUI on a narrow pane**
+
+- **Dangerous-command guard fired on words containing `rm`** — `platform`, `confirm`, `terraform`,
+  `perform`. Read-only commands in those directories no longer prompt "could cause data loss".
+
+- **This file no longer repeats itself.** 363 bullet lines that had been stamped across every
+  historical section are gone, and entries are now lean — one or two lines naming a change and its
+  effect on you. The diagnosis and cost behind each one moved to the project's internal logs.
+
+### Added
+
+- **`guard.trust` — earned, scoped command trust.** Approve the same command 3× in a project and the
+  guard stops asking (30-day expiry, per-directory). Never applies to `rm -rf`, force-push,
+  `reset --hard`, `clean -f`, or root-path truncation. Configure via
+  `guard.trust.{enabled,threshold,ttlDays}`; ledger at `~/.soma/state/guard-trust.json`.
+
+### Internal
+
+- **`soma-release-ship.sh` Step 2 broke on an unquoted heredoc backtick.** A `#`-comment inside
+  `python3 <<PY` contained a literal backtick pair, which bash parses as command substitution
+  even inside a comment when the heredoc delimiter is unquoted. Caught live on the v0.42.0 ship
+  attempt before any CHANGELOG damage.
+
+- **`soma-release-ship.sh` promotion regex required a blank line after `## [Unreleased]`**
+  that the lean-entries format (same cycle) no longer has — the heading is followed directly by
+  `### Fixed`. Dropped the gap requirement; the next `## [X.Y.Z]` heading still bounds the capture.
+
+> **Track: Pi 0.82.0.** Entries below were developed against 0.80.6 and re-verified on 0.82.0; all
+
+> four `pi-*` packages move in lockstep.
+
+### Added
+
+- **`{{parent_inbox}}` slot** — a delegated child can drop a report letter into its parent's inbox
+  (Stage 1, child-parent-comms).
+
+- **`{{last_mlx}}` / `{{last_preload}}` / `{{last_session}}` / `{{last_note}}` memory slots** — a
+  preload can now name the artifacts it was written from.
+
+- **Graduated keepalive ladder, configured by `body/_keepalives.md`** — pings 1-2 stay quiet, 3
+  triggers a mid-session reflection, 4 winds down, 5 is the final call. Rungs are editable content;
+  with no template present the behaviour is unchanged.
+
+- **`soma:agent.fold` — the MLR drain is now callable.** Reads children's reflections and proposes
+  amendments to their role definitions. Dry by default: it proposes, it doesn't rewrite.
+
+- **Real HTML→markdown for `refdocs` and `browser`** — `format: "markdown"` returns markdown instead
+  of raw HTML. ~82% smaller output on a real page, no new dependencies.
+
+### Fixed
+
+- **Child liveness in `soma:agent.list`** — dead children no longer sit at `running` for hours, a
+  child that died shows `ended?` rather than `completed`, and a live child that has shelled out is no
+  longer reported dead. Covered by `tests/test-tmux-alive.sh`.
+
+- **`soma:agent.intern` `backend: 'agy'` resolves its binary via `PATH`**, like the `cursor` and
+  `gemini` backends, instead of an absolute path under one developer's home.
+
+- **Child prompts get their stacked context, once** — roles declaring `context:` had their resolved
+  files dropped by the shipped `_child.md`, and the template's own doc-comment was substituted too,
+  giving every child a second garbled copy of task/soul/voice/context (up to 20K per spawn). Slot
+  mismatches now warn in both directions.
+
+- **`soma:agent.claude` is registered and callable** — delegate a Claude child through a contract file
+  instead of argv, so a large prompt can't fail on argument length. `soma:agent.claude_harvest({runDir})`
+  reads the report, returning not-finished while the child still runs. Shipped unreachable in v0.41.2.
+
+- **The shipped harness tells every agent to cite only from files it has open** — one line in
+  `prompts/system-core.md`, so it reaches future installs. Adds optional evidence tags for
+  load-bearing claims: `[ran: <cmd>]` · `[read: file:line]` · `[inferred]`.
+
+- **Pi runtime 0.80.6 → 0.82.0** (four releases in one step). One migration: `AuthStorage` →
+  `readStoredCredential()`. New surface: constrained tool sampling (strict JSON-Schema and grammar),
+  OpenRouter and Kimi OAuth sign-in, `PI_SESSION_ID`/`PI_MODEL` exposed to bash tools, live
+  `models.json` reload in `/model`, and usage accounting that covers tool calls and compaction.
+
+- **Two upstream patches re-enabled** — Site E (Anthropic content guard) and Site H (OpenRouter
+  body-level `session_id`) had been switched off as "removed upstream"; both had only moved
+  `providers/` → `api/`.
+
+- **`soma:agent.delegate` refuses to spawn on an unconfigured model** instead of falling through to a
+  hardcoded fallback. An explicit `{model}`, a role default, or any configured setting proceeds as
+  before; pass `{model:'default'}` to opt into the default deliberately. Headless mode is exempt.
+
+- **The `soma:seam.*` caps worked for nobody but us.** They resolved a `_pro/` source path that
+  never ships, then told you it was a paid feature — while the script they needed sat installed two
+  directories away. All six caps work on a normal install now. (The `soma seam …` CLI verb was
+  always fine; only the caps were blind.)
+
+### Removed
+
+- **The vendored `edit-diff.js` override — deleted, not re-forked.** Upstream Pi now preserves
+  untouched lines verbatim, which is what the fork's fuzzy-matching half existed to protect. The
+  near-match hint returns later as a `tool_result` enricher; the old delta stays recoverable via
+  `git show d0760833^:scripts/_dev/patches/edit-diff.soma.js`.
+
+### Fixed
+
+- **Context stacking works** — a child role's `context:` files are delivered. Frontmatter list
+  promotion is structural (any key with `  - ` children), list-item trailing comments are
+  stripped, and an indented `#` comment no longer injects a garbage key.
+
+- **Statusline session cost stopped under-counting.** The footer `$` figure now includes
+  sub-agent, compaction and branch-summary usage, not just assistant messages.
+
+- **Docs drift corrected** — `soma-reflect-eco.py` and `soma-steno.py` now have Bundled Scripts
+  entries; `getting-started.md`'s tree lists `soma-reflect.sh` instead of the PRO-tier
+  `soma-seam.sh`, seeded-script count 11 → 12.
+
+- **`post-commit` skips CHANGELOG auto-append when the commit already touches `CHANGELOG.md`** —
+  a hand-curated entry no longer gets a mechanical duplicate beside it.
+
+- **Groq no longer 400s on `prompt_cache_key`** — a new patch site excludes Groq from
+  long-cache-retention detection. Repro: `soma -p "hi" --provider groq --model llama-3.1-8b-instant`.
+
+### Added
+
+- **`soma:reflect.drift`** — md5-compares same-relative-path body files across sibling `.soma`
+  roots and flags files a sibling has that this root doesn't. `{all_roots:true}` sweeps the
+  whole ecosystem; self-scoped by default.
+
+### Fixed
+
+- **Delegate sync path no longer crashes with "AgentClass is not a constructor."** Non-`claude-cli/*`
+  models route through the headless `soma -p` subprocess, model ids resolve to their real provider
+  instead of a hardcoded `opencode`, and the in-process path fails with a clear message.
+
+### Added
+
+- **`soma:seam.hotspots`** ranks session turns by thinking-token spikes; **`soma:reflect.timeline`
+  / `.roots`** emit one chronological timeline across every `.soma`/`.claude`/`.agents` root and
+  git repo below a directory.
+
+- **`soma:agent.intern`** shells out to cursor-agent / agy / gemini; **`soma:models.openrouter`**
+  searches OpenRouter's 342 models by keyword, price, context or provider; **`soma:body.index`**
+  lists body files with their frontmatter.
+
+- **Delegate sync path resolves 38 providers from Pi's registry** instead of a hardcoded 7 —
+  Mistral, Groq, Cohere, OpenCode and 25+ others stopped failing with "all chain entries exhausted."
+
+- **Outcome-per-token ratio logged at every exhale** — artifacts per 10K tokens, appended to
+  STATE.md's activity log, and syncs auto-log there too. `soma-steno.py` and `state-log.sh` ship
+  in `BUNDLED_SCRIPTS`, so a fresh `soma init` gets both.
+
+- **Agent announces its resolved connection identity on bridge connect** (`mode`, `channel`,
+  `agentId`, sockets, protocol version), so the Somaverse chat pane binds to what the agent
+  actually resolved instead of re-guessing from `window.location`.
+
+- **`dev-cohere-models`** — a developer-local extension you drop into your own
+  `~/.soma/agent/extensions/`. It is **not distributed**: installing this release does not give
+  you Cohere models.
+
+### Changed
+
+- **Meta-tool listing is progressively disclosed** — `soma(op='list')` shows 109 caps in ~18 lines
+  grouped CORE/SUPPORT, a family drill gives a 5-line view with hot caps and usage patterns, and
+  errors show families rather than 100+ cap names. `{verbose:true}` for the full dump.
+
+- **Browser bridge-down errors name the recovery command** — `soma-bridge.sh start`, or Chrome
+  with `--remote-debugging-port=9333`.
+
+- **`systemPrompt.mode` (`soma|pi|custom`)** decides who owns the system prompt at boot; `soma`
+  stays default, and a `system-prompt.md` template ships for custom mode.
+
+- **Scripts table capped at `settings.scripts.maxInPrompt` (default 40), sorted by usage** — was
+  ~2900 uncapped tokens on every request. The unused tail is still listable via `ls amps/scripts/`.
+
+- **Boot detects external-extension conflicts** — new or changed files auto-run `soma-extcheck.sh`;
+  HIGH findings surface as a boot notification, clean ones stay silent.
+
+- **`soma:body.slots` has a `mode` column** (`lazy`/`full`/`-`), so lazy-loaded body files are
+  visually distinct from full-injected ones.
+
+### Fixed
+
+- **`runScript` picks the interpreter by extension** (`.py` → `python3`), so `soma:reflect.timeline`
+  returns results instead of ImageMagick usage text.
+
+- **dev builds again** — two committed syntax errors and a double-comma in the meta-tool factory
+  that stopped the `soma` meta-tool registering; `cohere-models.ts` is allowlisted in the pre-push
+  extension check.
+
+- **Chain failures report "model id not in registry"** instead of the opaque "chain exhausted."
+
+- **Background `claude-cli` passes the `--system-prompt-file` path**, not the file's contents.
+
+- **jiti-alias-longest-match patch added, then REVERSED** in this same window — the original
+  resolution order was already longest-first.
+
+- **STATE.md activity log trim repaired** and capped at 15 entries.
+
+- **OAuth "billing check failed" on bare `soma` resolved** — a user-global Pi extension was
+  overwriting Soma's compiled system prompt. The Site L billing-marker patch and the
+  booted-decouple boot change are **REVERSED** as wrong fixes; `systemPrompt.mode` is the
+  supported lever.
+
+- **Slot map reports lazy files at their real injected size** (`ecosystem.md` read 2449 tok
+  against ~107 actual; `pulse` and `journal` too), and `soma:body.audit` stopped flagging every
+  lazy file as missing.
+
+- **`soma-dev switch <ref>` no longer aborts** when stale local tags clash with the remote.
+
+- **`readStoredCredential` → `AuthStorage` REVERSED** for Pi 0.80.6 compatibility.
+
+- **Duplicate identity line removed from `system-core.md`**; two stale build-output files
+  untracked from git.
+
+### Changed
+
+- CHANGELOG promotion hardened for v0.41.2.
+
+### Internal
+
+- **Release migration gate could not fail.** Two independent false-pass paths in
+  `soma-release-prepare.sh` Phase 0.6 — a non-version tag made the diff ref unresolvable,
+  and a `v`-prefix mismatch made CONFLICT-HARD unreachable. Both fixed and falsified;
+  the same tag-resolution bug was corrected at 6 other call sites.
+- **The SX-807 live render smoke is now opt-in** (`SOMA_TEST_LIVE_BROWSER=1`) instead of
+  firing whenever any CDP endpoint happened to answer on :9333.
+
+- **clear Step 3b leak blockers + repair the blind [Unreleased] gate**
+
+- **`soma-dev delegate` cleared no handoff files before gating on them** — a leftover
+  `/tmp/fix-brief.md` from a previous issue passed the `ci-fix` phase-2 gate, and the builder
+  applied that stale fix. Same in the `pr` flow; both now `rm -f` first.
+
+- **scope the drift-verify hook to staged files, not the whole tree**
+
+- **npm test could only fail if the LAST test file failed**
+
+- **make the child-prompt slot list a single exported source of truth**
+
+- **Pre-commit lint for a missing test summary line** (contributor-side, not shipped) — a suite that
+  omits its `Results:` line is flagged as you write it, instead of scoring zero at the release gate.
+
+- **Test gates count per section, not per suite** — a suite with a dead section, or one measuring only
+  its last suite, no longer reports green. `⊘` skips still honoured. Known limit: a dead loop inside a
+  section that has other live assertions is still invisible.
+
+- **`test-somaverse.sh` hub device-key section asserts again** — all six checks had been skipping since
+  the file they read was deleted; repointed at `_shared/bridge-client.ts`.
+
+- **Dead-path detector no longer reports 29 live gates as dead.**
+
+- **Hardcoded home paths in shipped code now block the release** — the hygiene check runs against
+  `dist/` rather than source, and says so out loud when `dist/` hasn't been built.
+
+- **Test coverage for `soma:reflect.*` and `soma:seam.hotspots`** — `tests/test-reflect-caps.sh` (new,
+  6 checks) covers `.timeline`, `.roots`, `.drift`; `tests/test-seam-caps.sh` gained a Tier 1b.
+
+- **Frontmatter stamper hook now actually runs.** `updated:` dates stamp on commit again, in both
+  the agent repo and `.soma`, and the stamper replaces only the date token instead of flattening
+  the whole line (the `(s01-… — reason)` suffix survives).
+
+- **Meta-tool format and test-hygiene suites are green again.** Tier assertions now run against
+  the real CORE and SUPPORT line ranges, so a family rendered in the wrong tier fails instead of
+  passing.
+
+- **STATE.md activity log records rows again.** One shared writer (`lib/log-activity.sh`) that
+  verifies the row landed and that the file still starts with `---`; `release` is wired in too.
+  No more blank line accumulating under the heading, and `sync dev` stopped echoing a stray `}`.
+
+- **`dist/.dev-synced` carries what it synced to** — `branch@sha`, subject, version, piVersion,
+  buildId, timestamp — instead of being a zero-byte flag. `soma-dev switch status` prints it.
+
+- **`test-sx780-system-core-load` checks structural headings, not prose,** and names the missing
+  marker plus the compiled block size on failure.
+
+- **`upstream-monitor` no longer reports "0 behind" while blind.**
+
+- **Two TypeScript errors fixed** — a non-existent type import in `extensions/cohere-models.ts`
+  and a missing required `capLines` argument in `extensions/dev-addons/opencode.ts`.
+  `soma-dev check` is green.
+
+- **`test-delegate-headless.sh` expectations match the current `changelog_curator` frontmatter.**
+
+- **`soma-dev sync docs` only copies git-tracked files** — untracked local `docs/` content can no
+  longer be swept toward the public website repo.
+
+
+## [0.41.2] — 2026-07-17
+
+**Maintenance release — nothing user-facing.** These notes were written retroactively (2026-07-25): the
+release shipped with no narrative at all, because the CHANGELOG promotion step matched on
+`## [Unreleased]\n\n` while the real heading read `## [Unreleased] —`, found no match, and then `exit(0)`'d
+— reporting success and shipping anyway. Both the regex and the silent-success are fixed (v0.42.0).
+
+The only code addition was an internal `claude-file` delegation backend, deliberately **not** listed as a
+feature: its capability registration sits commented out at the end of the file, nothing imports it, and
+`soma:agent.claude` does not exist in the running tool set. It is unreachable, so there is nothing here for
+a user to try. It will appear in the release that actually wires it up.
+
+Everything else in the range was release plumbing — changelog promotion fixes, `apply-patches`
+canonicalisation, and a dev/main reconciliation merge. That merge is also why `git log v0.41.1..v0.41.2`
+looks larger than this release: it drags in commits that already shipped, including the Leanstral
+`reasoning_effort` fix documented above under `[0.41.1]`. `--first-parent` shows the real spine: six
+commits, none of them user-visible.
 
 ## [0.41.1] — 2026-07-17
 
@@ -56,16 +372,29 @@ development logs, not here. This file answers *what changed for me?*
 
 ### Internal
 <!-- Not shipped in soma-beta. Meta-work on our own Soma; excluded from public changelog + docs. -->
-- **Anthropic OAuth "billing gate" — misdiagnosis, no code fix needed.** Attributed a wave of
+- **⛔ WRONG — DO NOT TRUST THE ENTRY BELOW (flagged 2026-07-22, s01-0d3f16, by Curtis + meetsoma).**
+  The "account extra-usage exhaustion" root cause is **DISPROVEN by live evidence**: the
+  claude.ai/settings/usage dashboard shows **"All models" 85% used (NOT exhausted)**, and
+  **Usage credits OFF — CA$0.00 spent, 0% used**, $50 monthly limit untouched. Extra usage is
+  literally DISABLED and UNSPENT, so "out of extra usage / account exhaustion" **cannot** be the
+  cause. (Only **Fable**, one model tier, read 100% — a per-model cap, unrelated.) OAuth is now
+  **working again** with these code changes in place — `79528afe` (first-party identity prepend),
+  `daad4f4e` (remove dup identity line), `4aea0164` (revert readStoredCredential→AuthStorage for
+  0.80.6 compat) — which **contradicts "no code fix needed"** and means the prepend's "no-op /
+  revert candidate" verdict is ALSO suspect (it rests on the wrong billing diagnosis). **Do NOT
+  revert the prepend or the identity/auth changes until the real cause is proven.** Real cause
+  UNRESOLVED — see arc `oauth-cause-and-branch-sync` (releases/cycles). Original (wrong) entry kept
+  below as fossil:
+- **Anthropic OAuth "billing gate" — ~~misdiagnosis, no code fix needed~~ [SUPERSEDED — see ⛔ above].** Attributed a wave of
   `out of extra usage` / `billing_error` OAuth rejections to a system-prompt identity problem and
   prepended `"You are an expert coding assistant."` to the compiled prompt (`soma-boot.ts` ~2706).
   Later verified this is a **no-op**: Pi's `buildParams` (`pi-ai .../anthropic-messages.js`)
   unconditionally sets `system[0] = "You are Claude Code, Anthropic's official CLI for Claude."`
   for every `sk-ant-oat` token, with Soma's compiled prompt shielded behind it at `system[1]`.
-  A live one-shot on `claude-opus-4-7` returned `400 "You're out of extra usage."` — the real cause
-  was **account extra-usage exhaustion** (claude.ai/settings/usage), not identity classification and
-  not the Pi 0.80.10 bump (errors began ~23h before it). The prepend is harmless but does nothing;
-  revert candidate (s01-…).
+  A live one-shot on `claude-opus-4-7` returned `400 "You're out of extra usage."` — ~~the real cause
+  was **account extra-usage exhaustion** (claude.ai/settings/usage)~~ **[WRONG — disproven above]**, not identity classification and
+  not the Pi 0.80.10 bump (errors began ~23h before it). The prepend is ~~harmless but does nothing;
+  revert candidate~~ **[verdict suspect — do not revert]** (s01-…).
 - **State-disk sync muscle.** Documents the drift pattern where moving or deleting a body file
   under `_archive/` leaves a ghost entry in `state.json`; proposes a boot-time prune (s01-639c5f).
 - **Release script hardening.** `soma-release-ship.sh` now auto-updates `_kanban.md`'s

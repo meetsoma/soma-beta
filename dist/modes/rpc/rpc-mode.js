@@ -394,6 +394,10 @@ export async function runRpcMode(runtimeHost) {
                 }
                 return success(id, "cycle_thinking_level", { level });
             }
+            case "get_available_thinking_levels": {
+                const levels = session.getAvailableThinkingLevels();
+                return success(id, "get_available_thinking_levels", { levels });
+            }
             // =================================================================
             // Queue Modes
             // =================================================================
@@ -433,6 +437,7 @@ export async function runRpcMode(runtimeHost) {
             case "bash": {
                 const result = await session.executeBash(command.command, undefined, {
                     excludeFromContext: command.excludeFromContext,
+                    id,
                 });
                 return success(id, "bash", result);
             }

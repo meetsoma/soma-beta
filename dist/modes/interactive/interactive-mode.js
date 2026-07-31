@@ -25,6 +25,7 @@ import { SessionManager, sessionEntryToContextMessages } from "../../core/sessio
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.js";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.js";
+import { getUsageCostBreakdown } from "../../core/usage-totals.js";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard, readClipboardText } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
@@ -64,6 +65,7 @@ import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { TrustSelectorComponent } from "./components/trust-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
+import { editInExternalEditor } from "./external-editor.js";
 import { getModelSearchText } from "./model-search.js";
 import { getAvailableThemes, getAvailableThemesWithPaths, getEditorTheme, getMarkdownTheme, getThemeByName, onThemeChange, setRegisteredThemes, stopThemeWatcher, Theme, theme, } from "./theme/theme.js";
 import { InteractiveThemeController } from "./theme/theme-controller.js";
@@ -272,7 +274,7 @@ export class InteractiveMode {
             await this.rebindCurrentSession({ renderBeforeBind: true });
         });
         this.version = VERSION;
-        this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+        this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor(), getAgentDir());
         this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
         this.headerContainer = new Container();
         this.loadedResourcesContainer = new Container();
@@ -580,6 +582,12 @@ export class InteractiveMode {
      */
     async run() {
         await this.init();
+        if (!process.env.PI_OFFLINE) {
+            void this.session.modelRuntime
+                .refresh()
+                .then(() => this.updateAvailableProviderCount())
+                .catch(() => { });
+        }
         // Start version check asynchronously
         checkForNewPiVersion(this.version).then((newRelease) => {
             if (newRelease) {
@@ -791,8 +799,15 @@ export class InteractiveMode {
      * Get a short path relative to the package root for display.
      */
     getShortPath(fullPath, sourceInfo) {
+        const normalizedFullPath = fullPath.replace(/\\/g, "/");
         const baseDir = sourceInfo?.baseDir;
         if (baseDir && this.isPackageSource(sourceInfo)) {
+            const normalizedBaseDir = baseDir.replace(/\\/g, "/");
+            const npmRootMatch = normalizedBaseDir.match(/^(.*\/node_modules)\/(@?[^/]+(?:\/[^/]+)?)$/);
+            // If fullPath is under the same node_modules root as baseDir, preserve that relative topology.
+            if (npmRootMatch?.[1] && normalizedFullPath.startsWith(`${npmRootMatch[1]}/`)) {
+                return path.posix.relative(normalizedBaseDir, normalizedFullPath);
+            }
             const relativePath = path.relative(path.resolve(baseDir), path.resolve(fullPath));
             if (relativePath &&
                 relativePath !== "." &&
@@ -803,11 +818,11 @@ export class InteractiveMode {
             }
         }
         const source = sourceInfo?.source ?? "";
-        const npmMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
+        const npmMatch = normalizedFullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
         if (npmMatch && source.startsWith("npm:")) {
             return npmMatch[2];
         }
-        const gitMatch = fullPath.match(/git\/[^/]+\/[^/]+\/(.*)/);
+        const gitMatch = normalizedFullPath.match(/git\/[^/]+\/[^/]+\/(.*)/);
         if (gitMatch && source.startsWith("git:")) {
             return gitMatch[1];
         }
@@ -1063,7 +1078,10 @@ export class InteractiveMode {
         const promptsResult = this.session.resourceLoader.getPrompts();
         const themesResult = this.session.resourceLoader.getThemes();
         const extensions = options?.extensions ??
-            this.session.resourceLoader.getExtensions().extensions.map((extension) => ({
+            this.session.resourceLoader
+                .getExtensions()
+                .extensions.filter((extension) => !extension.hidden)
+                .map((extension) => ({
                 path: extension.path,
                 sourceInfo: extension.sourceInfo,
             }));
@@ -1344,6 +1362,7 @@ export class InteractiveMode {
             sessionManager: this.sessionManager,
             modelRegistry: extensionRunner.getModelRegistry(),
             model: this.session.model,
+            thinkingLevel: this.session.thinkingLevel,
             isIdle: () => this.session.isIdle,
             isProjectTrusted: () => this.settingsManager.isProjectTrusted(),
             signal: this.session.agent.signal,
@@ -2029,7 +2048,7 @@ export class InteractiveMode {
         this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
         this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
         this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
-        this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
+        this.defaultEditor.onAction("app.editor.external", () => void this.handleOpenExternalEditor());
         this.defaultEditor.onAction("app.message.copy", () => void this.handleCopyCommand());
         this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
         this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
@@ -2391,6 +2410,9 @@ export class InteractiveMode {
                 }
                 this.ui.requestRender();
                 break;
+            case "bash_execution_update":
+                // The bash execution callback handles TUI output rendering.
+                break;
             case "tool_execution_start": {
                 let component = this.pendingTools.get(event.toolCallId);
                 if (!component) {
@@ -2509,6 +2531,28 @@ export class InteractiveMode {
                 if (!event.success) {
                     this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
                 }
+                this.ui.requestRender();
+                break;
+            }
+            case "summarization_retry_scheduled": {
+                this.showError(event.errorMessage);
+                this.showStatusIndicator(new RetryStatusIndicator(this.ui, event.attempt, event.maxAttempts, event.delayMs));
+                this.ui.requestRender();
+                break;
+            }
+            case "summarization_retry_attempt_start": {
+                this.clearStatusIndicator("retry");
+                if (event.source === "branchSummary") {
+                    this.showStatusIndicator(new BranchSummaryStatusIndicator(this.ui));
+                }
+                else {
+                    this.showStatusIndicator(new CompactionStatusIndicator(this.ui, event.reason));
+                }
+                this.ui.requestRender();
+                break;
+            }
+            case "summarization_retry_finished": {
+                this.clearStatusIndicator("retry");
                 this.ui.requestRender();
                 break;
             }
@@ -3091,51 +3135,21 @@ export class InteractiveMode {
         }
         this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
     }
-    async openExternalEditor() {
+    async handleOpenExternalEditor() {
         const editorCmd = this.settingsManager.getExternalEditorCommand();
-        if (!editorCmd) {
-            this.showWarning("No editor configured. Set externalEditor in settings.json or $VISUAL/$EDITOR.");
-            return;
-        }
-        const currentText = this.editor.getExpandedText?.() ?? this.editor.getText();
-        const tmpFile = path.join(os.tmpdir(), `pi-editor-${Date.now()}.pi.md`);
+        const content = this.editor.getExpandedText?.() ?? this.editor.getText();
+        this.ui.stop();
         try {
-            // Write current content to temp file
-            fs.writeFileSync(tmpFile, currentText, "utf-8");
-            // Stop TUI to release terminal
-            this.ui.stop();
-            // Split by space to support editor arguments (e.g., "code --wait")
-            const [editor, ...editorArgs] = editorCmd.split(" ");
-            process.stdout.write(`Launching external editor: ${editorCmd}\nPi will resume when the editor exits.\n`);
-            // Do not use spawnSync here. On Windows, synchronous child_process calls can keep
-            // Node/libuv's console input read active after ui.stop() pauses stdin, racing
-            // vim/nvim for the console input buffer until Ctrl+C cancels the pending read.
-            const status = await new Promise((resolve) => {
-                const child = spawn(editor, [...editorArgs, tmpFile], {
-                    stdio: "inherit",
-                    shell: process.platform === "win32",
-                });
-                child.on("error", () => resolve(null));
-                child.on("close", (code) => resolve(code));
+            const result = await editInExternalEditor({
+                command: editorCmd,
+                content,
             });
-            // On successful exit (status 0), replace editor content
-            if (status === 0) {
-                const newContent = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
-                this.editor.setText(newContent);
+            if (result.status === "complete") {
+                this.editor.setText(result.content);
             }
-            // On non-zero exit, keep original text (no action needed)
         }
         finally {
-            // Clean up temp file
-            try {
-                fs.unlinkSync(tmpFile);
-            }
-            catch {
-                // Ignore cleanup errors
-            }
-            // Restart TUI
             this.ui.start();
-            // Force full re-render since external editor uses alternate screen
             this.ui.requestRender(true);
         }
     }
@@ -3322,8 +3336,10 @@ export class InteractiveMode {
             for (const message of preCommands) {
                 await this.session.prompt(message.text);
             }
-            // Send first prompt (starts streaming)
-            const promptPromise = this.session.prompt(firstPrompt.text).catch((error) => {
+            // Start a prompt when idle, or queue it into a run still finishing compaction.
+            const promptPromise = this.session
+                .prompt(firstPrompt.text, { streamingBehavior: firstPrompt.mode })
+                .catch((error) => {
                 restoreQueue(error);
             });
             // Queue remaining messages
@@ -3588,10 +3604,12 @@ export class InteractiveMode {
             return [];
         }
     }
-    /** Update the footer's available provider count from current model candidates */
-    async updateAvailableProviderCount() {
-        const models = await this.getModelCandidates();
-        const uniqueProviders = new Set(models.map((m) => m.provider));
+    /** Update the footer's available provider count from the current snapshot without refreshing catalogs. */
+    updateAvailableProviderCount() {
+        const models = this.session.scopedModels.length > 0
+            ? this.session.scopedModels.map((scoped) => scoped.model)
+            : this.session.modelRuntime.getAvailableSnapshot();
+        const uniqueProviders = new Set(models.map((model) => model.provider));
         this.footerDataProvider.setAvailableProviderCount(uniqueProviders.size);
     }
     async maybeWarnAboutAnthropicSubscriptionAuth(model = this.session.model) {
@@ -4679,23 +4697,9 @@ export class InteractiveMode {
         const entries = this.sessionManager.getEntries();
         const cacheWaste = computeCacheWaste(entries, this.session.modelRuntime);
         // Cost/token totals per provider/model actually used (e.g. OpenRouter `auto`
-        // resolves to a concrete responseModel), sorted by cost descending.
-        const perModelMap = new Map();
-        for (const entry of entries) {
-            if (entry.type !== "message" || entry.message.role !== "assistant")
-                continue;
-            const message = entry.message;
-            const usage = message.usage;
-            const key = `${message.provider}/${message.responseModel ?? message.model}`;
-            let bucket = perModelMap.get(key);
-            if (!bucket) {
-                bucket = { key, cost: 0, tokens: 0 };
-                perModelMap.set(key, bucket);
-            }
-            bucket.cost += usage.cost.total;
-            bucket.tokens += usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
-        }
-        const perModel = Array.from(perModelMap.values()).sort((a, b) => b.cost - a.cost);
+        // resolves to a concrete responseModel). Usage without model attribution is
+        // grouped separately so the breakdown reconciles with the session total.
+        const usageBreakdown = getUsageCostBreakdown(entries);
         let info = `${theme.bold("Session Info")}\n\n`;
         if (sessionName) {
             info += `${theme.fg("dim", "Name:")} ${sessionName}\n`;
@@ -4726,8 +4730,8 @@ export class InteractiveMode {
         if (stats.cost > 0 || cacheWaste.missedTokens > 0) {
             info += `\n${theme.bold("Cost")}\n`;
             info += `${theme.fg("dim", "Total:")} $${stats.cost.toFixed(3)}`;
-            if (perModel.length > 1) {
-                for (const entry of perModel) {
+            if (usageBreakdown.length > 1) {
+                for (const entry of usageBreakdown) {
                     info += `\n  ${theme.fg("dim", `${entry.key}:`)} $${entry.cost.toFixed(3)} ${theme.fg("dim", `(${formatTokens(entry.tokens)} tokens)`)}`;
                 }
             }

@@ -702,6 +702,7 @@ export class DefaultResourceLoader {
             const extensionPath = `<inline:${isNamed ? input.name : index + 1}>`;
             try {
                 const extension = await loadExtensionFromFactory(factory, this.cwd, this.eventBus, runtime, extensionPath);
+                extension.hidden = isNamed && input.hidden;
                 extensions.push(extension);
             }
             catch (error) {

@@ -40,8 +40,16 @@ function parseCatalog(providerId, value) {
         .filter((entry) => typeof entry === "object" && entry !== null && "id" in entry)
         .map((model) => ({ ...model, provider: providerId }));
 }
+function remoteModels(entry, localGeneratedAt) {
+    if (!entry)
+        return [];
+    if (localGeneratedAt !== undefined && (entry.lastModified === undefined || entry.lastModified <= localGeneratedAt)) {
+        return [];
+    }
+    return entry.models;
+}
 /** Add a persisted pi.dev catalog overlay to a static built-in provider. */
-export function withRemoteCatalog(provider, catalogBaseUrl = DEFAULT_CATALOG_BASE_URL) {
+export function withRemoteCatalog(provider, catalogBaseUrl = DEFAULT_CATALOG_BASE_URL, localGeneratedAt) {
     let dynamicModels = [];
     let inflightRefresh;
     return {
@@ -51,12 +59,12 @@ export function withRemoteCatalog(provider, catalogBaseUrl = DEFAULT_CATALOG_BAS
             inflightRefresh ??= (async () => {
                 try {
                     const stored = await context.store.read();
-                    if (stored)
-                        dynamicModels = stored.models.filter((model) => model.provider === provider.id);
+                    dynamicModels = remoteModels(stored, localGeneratedAt).filter((model) => model.provider === provider.id);
                     if (!context.allowNetwork || context.signal?.aborted)
                         return;
                     if (!context.force &&
                         stored?.checkedAt !== undefined &&
+                        stored.lastModified !== undefined &&
                         Date.now() - stored.checkedAt < REMOTE_CATALOG_REFRESH_INTERVAL_MS) {
                         return;
                     }
@@ -72,18 +80,24 @@ export function withRemoteCatalog(provider, catalogBaseUrl = DEFAULT_CATALOG_BAS
                         return;
                     const checkedAt = Date.now();
                     if (response.status === 404 || response.status === 501) {
-                        await context.store.write({ models: dynamicModels, checkedAt });
+                        await context.store.write({ ...(stored ?? { models: [] }), checkedAt, lastModified: 0 });
                         return;
                     }
                     if (!response.ok) {
-                        await context.store.write({ models: dynamicModels, checkedAt });
+                        await context.store.write({ ...(stored ?? { models: [] }), checkedAt });
                         throw new Error(`Model catalog request failed for ${provider.id}: ${response.status}`);
                     }
                     const refreshed = parseCatalog(provider.id, await response.json());
+                    const lastModified = Date.parse(response.headers.get("last-modified") ?? "");
                     if (context.signal?.aborted)
                         return;
-                    dynamicModels = refreshed;
-                    await context.store.write({ models: refreshed, checkedAt });
+                    const entry = {
+                        models: refreshed,
+                        checkedAt,
+                        lastModified: Number.isNaN(lastModified) ? 0 : lastModified,
+                    };
+                    dynamicModels = remoteModels(entry, localGeneratedAt);
+                    await context.store.write(entry);
                 }
                 finally {
                     inflightRefresh = undefined;
