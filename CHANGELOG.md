@@ -12,10 +12,6 @@ development logs, not here. This file answers *what changed for me?*
 
 ## [Unreleased]
 
-### Added
-- **`soma:agent.claude` — delegate a Claude child through a contract file** instead of argv, so a
-  large prompt can't fail on argument length.
-
 ## [0.41.1] — 2026-07-17
 
 ### Fixed
