@@ -3,8 +3,8 @@ type: content
 name: dna
 status: active
 created: 2026-03-23
-updated: 2026-04-23
-soma_template_version: 0.29.0
+updated: 2026-07-31
+soma_template_version: 0.42.1
 description: Body blueprint — how your files work, how to grow them
 lazy: true
 ---
@@ -41,7 +41,8 @@ body/
 ├── _mind.md          ← template      System prompt layout
 ├── _memory.md        ← template      Preload format (what you write at exhale)
 ├── _boot.md          ← template      Boot message (what you see at session start)
-└── _first-breath.md  ← template      First-ever session greeting
+├── _first-breath.md  ← template      First-ever session greeting
+└── _keepalives.md    ← template      Optional: graduated keepalive ping messages (see below)
 ```
 
 ## Your Templates
@@ -59,6 +60,23 @@ content — the system prompt already carries identity and protocols.
 
 **`_first-breath.md`** — Your very first session in a project. Guides
 you through orientation, self-exploration, and meeting the user.
+
+**`_keepalives.md`** — Optional. Not shipped by default — absence means the legacy flat
+keepalive ping ("respond with just 'ok'") is unchanged. Create it to graduate long-session
+pings into an escalating ladder. Only a `## Ladder` heading is parsed; everything else in the
+file is prose for you. Format:
+
+```markdown
+## Ladder
+- `1-2`: [quiet ping — optional, omit to use the legacy message]
+- `3`: [ask for a mid-session reflection]
+- `4`: [ask the session to wind down]
+- `5`: [final call]
+- `default`: [fallback for any ping number not matched above]
+```
+
+Highest matching rung wins. Read live at every ping (no caching) — edit it mid-session and the
+next ping picks up the change. See `docs/statusline.md` §Keepalive ladder.
 
 ## Conditional Blocks
 
@@ -101,6 +119,21 @@ Create any `.md` in `body/` and it becomes a variable. Dashes become underscores
 |------------|----------|-----------------|
 | `my-rules.md` | `{{my_rules}}` | `{{my_rules}}` |
 | `project-context.md` | `{{project_context}}` | `{{project_context}}` |
+
+**Built-in memory slots** work the same way but aren't files you create — they're always
+available, resolving to the *newest* file in each `memory/` subdir (by mtime, same rule
+`/inhale` uses). Cost nothing unless referenced.
+
+| Variable | Resolves to |
+|----------|-------------|
+| `{{last_mlx}}` / `{{last_mlx_ref}}` | Newest `memory/mlx/*.md` (content / path-only) |
+| `{{last_preload}}` / `{{last_preload_ref}}` | Newest `memory/preloads/*.md` |
+| `{{last_session}}` / `{{last_session_ref}}` | Newest `memory/sessions/*.md` |
+| `{{last_note}}` / `{{last_note_ref}}` | Newest `memory/notes/*.md` |
+
+The full-content versions are large — prefer `{{last_session|section:Name}}` or
+`{{last_mlx|lines:20}}` over the bare variable. `_boot.md` uses the `_ref` (path-only)
+variants as a fresh-boot breadcrumb.
 
 ## Lazy vs Eager
 

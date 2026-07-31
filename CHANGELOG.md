@@ -22,6 +22,48 @@ Root cause, diagnosis, what it cost and how it was tested are kept — in the pr
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.42.1] — 2026-07-31
+
+### Fixed
+
+- **The default shipped body templates never used v0.42.0's own new features.** A fresh
+  `soma init` referenced none of the four memory slots, and nothing documented the
+  keepalive-ladder template or the in-session tool-call pattern. `_boot.md` now shows a
+  last-session/last-reflection breadcrumb on disk (zero-cost, degrades to nothing on a
+  brand-new project); `DNA.md` documents `_keepalives.md` and the memory slots;
+  `_first-breath.md` mentions `soma:code.*` tool calls and `soma({hot:true})` alongside the
+  existing CLI examples.
+
+- **`soma:browser.render`'s `format:'markdown'` silently returned unconverted plain text on
+  every call without an explicit `selector`** — the shipped v0.42.0 headline feature
+  ("~82% smaller output") never actually ran the HTML→markdown converter for its documented
+  default usage. A duplicated format check read `document.body.innerText` (no HTML at all)
+  instead of `document.documentElement.outerHTML`, so there was nothing for the converter to
+  clean — verified live against real pages (near-0% "reduction", full nav/footer chrome still
+  present). Also: the converter no longer deletes a page's own in-content `<header>`/`<nav>`
+  (an article's title, breadcrumbs, subtitle) identically to global site chrome — it now
+  extracts the semantic `<main>`/`<article>` region first and only blunt-strips nav/header/
+  footer when no real anchor was found. 21 new tests (`test-html2md.sh`); this module had zero
+  dedicated test coverage before.
+
+- **Delegated children's `max-cost-usd` budget was silently unenforced for every
+  `claude-cli/*`-backed role, regardless of what the role declared.** Three compounding
+  bugs on one line: the enforcement code read a frontmatter key (`max-usd`) that no role
+  actually sets (all 23 shipped/project roles use the documented `max-cost-usd`); even
+  fixed, `Number(x) || undefined` silently turned an explicit `0` — a role deliberately
+  capping spend at zero, e.g. a free-tier-only role that should never draw billed overage
+  — into "no cap at all"; the same falsy-zero bug existed twice more in the flag-building
+  code that talks to the `claude` CLI itself. All three fixed with explicit undefined/null
+  checks. For every non-claude-cli backend (the common case — mistral/groq/cohere), this
+  budget was and remains advisory-only: shown to the child in its own prompt, with no
+  runtime cutoff behind it; `max-tool-calls` is the only hard ceiling those roles get. Now
+  documented honestly in `_child-template.md` rather than implied as universally enforced.
+  6 new tests (`test-claude-cli-budget.sh`). Also verified: no custom or project-specific
+  child role definitions ship in `soma-beta` — only the required `body/children/_child.md`
+  compiler template; the 13 generic roles (auditor, builder, verifier, ...) and any
+  project's own custom roles both stay out of the public tarball.
+
+
 ## [0.42.0] — 2026-07-31
 
 ### Fixed

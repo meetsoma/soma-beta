@@ -1,7 +1,7 @@
 ---
 name: <role-name>
 version: 0.1.0
-soma_template_version: 0.29.0
+soma_template_version: 0.42.1
 status: draft
 description: <one-line: what this role specializes in>
 default-model: mistral/mistral-large-2512   # mistral/ministral-8b-2512 for speed, cohere/command-a-03-2025 for cheap alternative.
@@ -14,8 +14,17 @@ inherits:                           # protocols from parent to pass through (emp
 isolation:
   type: none                        # none | worktree | docker
 budget:
-  max-tool-calls: 25
-  max-cost-usd: 0.25
+  max-tool-calls: 25                # REAL enforcement, every backend: aborts the child
+                                     # once it exceeds this many tool calls.
+  max-cost-usd: 0.25                # REAL enforcement ONLY for default-model: claude-cli/*
+                                     # (passed through as --max-budget-usd to the claude CLI).
+                                     # For every other backend (mistral/groq/cohere/etc, i.e.
+                                     # what every shipped default role below actually uses) this
+                                     # number is ADVISORY ONLY — shown to the model in its own
+                                     # prompt as a request, with no runtime cutoff behind it.
+                                     # max-tool-calls is the only hard ceiling those roles get.
+                                     # 0 is a real value, not "unset" — use it to hard-cap a
+                                     # claude-cli role at zero billed spend (e.g. free-tier-only).
 deliverable: <path> # what the child produces — file path relative to project root.
                    # The child MUST write findings to this path before finishing.
                    # Terminal output is ephemeral; the file is the record.
@@ -37,7 +46,9 @@ You are a [specialist in X]. Your job is [Y]. You [approach Z].
 
 <!-- role_knowledge section: observations the role has built up across invocations.
      Start empty. MLR auto-appends auto-applicable observations.
-     Human/curator adds curated knowledge. -->
+     Human/curator adds curated knowledge, OR run soma:agent.fold to review queued
+     observations across ALL roles and propose amendments here (dry-run by default;
+     {write:true} to persist). -->
 
 (none yet)
 
