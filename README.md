@@ -4,6 +4,8 @@ Compiled runtime for [Soma](https://soma.gravicity.ai) — the AI agent that rem
 
 This repo contains the obfuscated runtime that `soma init` downloads. You don't need to interact with it directly.
 
+**Version:** soma-beta 0.42.x (beta runtime). meetsoma core 0.50 is planned, est. Nov 15, 2026; this beta stays on pi 0.82. Run `soma update` to get the latest 0.42.x.
+
 ## Install
 
 ```bash

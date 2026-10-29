@@ -12,6 +12,9 @@ process.title = "soma";
 // Soma has its own versioning — skip Pi's upstream version check
 // which compares Soma 0.1.0 against pi-coding-agent 0.57.1 on npm
 process.env.PI_SKIP_VERSION_CHECK = "1";
+// Pi reports an install count to pi.dev after an install or upgrade (default ON). Soma sends nothing:
+// PI_TELEMETRY=0 switches it off (core/telemetry.js); a user who sets PI_TELEMETRY themselves wins.
+process.env.PI_TELEMETRY ??= "0";
 import { setBedrockProviderModule } from "@earendil-works/pi-ai/api/bedrock-converse-stream.lazy";
 import { bedrockProviderModule } from "@earendil-works/pi-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";

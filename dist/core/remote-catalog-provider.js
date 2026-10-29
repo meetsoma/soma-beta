@@ -11,9 +11,20 @@
  * Contact for commercial licensing: meetsoma@gravicity.ai
  */
 
+import { readFileSync } from "node:fs";
 import { VERSION } from "../config.js";
 import { getPiUserAgent } from "../utils/pi-user-agent.js";
 const DEFAULT_CATALOG_BASE_URL = "https://pi.dev";
+/** pi.dev serves its model catalog by PI version, not Soma's: report the bundled pi (0.82.x), else it answers 404 and new models never arrive. */
+const PI_BASE_VERSION = (() => {
+    for (const rel of ["../../node_modules/@earendil-works/pi-coding-agent/package.json", "../node_modules/@earendil-works/pi-coding-agent/package.json"]) {
+        try {
+            return JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8")).version;
+        }
+        catch { /* try the next layout */ }
+    }
+    return VERSION;
+})();
 export const REMOTE_CATALOG_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000;
 function mergeModels(baseline, dynamic) {
     const merged = [...baseline];
@@ -72,7 +83,7 @@ export function withRemoteCatalog(provider, catalogBaseUrl = DEFAULT_CATALOG_BAS
                     const response = await fetch(url, {
                         headers: {
                             accept: "application/json",
-                            "User-Agent": getPiUserAgent(VERSION),
+                            "User-Agent": getPiUserAgent(PI_BASE_VERSION),
                         },
                         signal: context.signal,
                     });

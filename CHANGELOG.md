@@ -22,6 +22,17 @@ Root cause, diagnosis, what it cost and how it was tested are kept — in the pr
 
 <!-- Entries accumulate here and get promoted to a versioned section on release. -->
 
+## [0.42.2] — 2026-10-29
+
+> soma-beta 0.42.x (beta runtime). meetsoma core 0.50 is planned, est. Nov 15, 2026; this beta stays on pi 0.82.
+
+### Fixed
+- **Newer AI models are available.** `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` and the other recent models now appear in `/model` and `--model` once you are signed in to the provider and online, and stay listed offline.
+- **`soma model --list` and `soma model <id>` list those models too**, and any you add in `~/.soma/agent/models.json`.
+
+### Changed
+- **Soma no longer sends an install count to pi.dev.** The runtime Soma is built on reported a count to `pi.dev` after an install or upgrade; Soma now switches that off at every launch. Set `PI_TELEMETRY=1` yourself if you want it back.
+
 ## [0.42.1] — 2026-07-31
 
 ### Fixed

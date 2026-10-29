@@ -71,6 +71,18 @@ async function loadModels() {
       }
     }
   }
+  // Overlay the same sources the runtime reads: the pi.dev catalog cache and the user's models.json.
+  const addExtra = (provider, m) => {
+    if (m && m.id && !all.some(x => x.provider === provider && x.id === m.id)) all.push({ ...m, provider });
+  };
+  try {
+    const store = JSON.parse(readFileSync(join(agentDir, "models-store.json"), "utf-8"));
+    for (const [provider, entry] of Object.entries(store)) for (const m of entry?.models ?? []) addExtra(provider, m);
+  } catch { /* no cache yet */ }
+  try {
+    const cfg = JSON.parse(readFileSync(join(agentDir, "models.json"), "utf-8"));
+    for (const [provider, p] of Object.entries(cfg.providers ?? {})) for (const m of p?.models ?? []) addExtra(provider, m);
+  } catch { /* no models.json */ }
   return all;
 }
 

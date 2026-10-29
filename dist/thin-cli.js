@@ -1399,6 +1399,7 @@ async function delegateToCore() {
     PI_CODING_AGENT_DIR: CORE_DIR,
     SOMA_CODING_AGENT_DIR: CORE_DIR,
     PI_PACKAGE_DIR: CORE_DIR,
+    PI_TELEMETRY: process.env.PI_TELEMETRY ?? "0", // no install ping to pi.dev; the user's own value wins
   };
 
   for (const cli of cliLocations) {
